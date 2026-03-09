@@ -1,0 +1,12 @@
+[package]
+name = "univis_editor_persistence"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+univis_editor_core = { path = "../univis_editor_core" }
+univis_editor_runtime = { path = "../univis_editor_runtime" }
+univis_editor_ui = { path = "../univis_editor_ui" }

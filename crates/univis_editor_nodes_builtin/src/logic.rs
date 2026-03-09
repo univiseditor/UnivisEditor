@@ -1,0 +1,265 @@
+//! عُقد المنطق - للمقارنات والشروط
+
+use bevy::prelude::*;
+use univis_editor_core::register_node;
+use univis_editor_core::node_definition::{
+    NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
+};
+use univis_editor_core::value::{NodeValue, ValueType};
+
+// ═════════════════════════════════════════════════════
+// لون موحد لعُقد المنطق
+// ═════════════════════════════════════════════════════
+
+const LOGIC_NODE_COLOR: Color = Color::srgb(0.8, 0.5, 0.3);
+
+// ========== عقدة المقارنة ==========
+
+pub struct CompareNode;
+
+impl NodeDefinition for CompareNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("logic/compare")
+    }
+
+    fn display_name(&self) -> &str {
+        "Compare"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new(NodeCategory::LOGIC)
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Compares two values")
+    }
+
+    fn color(&self) -> Color {
+        LOGIC_NODE_COLOR
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::input_float("A").with_default(NodeValue::float(0.0)),
+            PortDefinition::input_float("B").with_default(NodeValue::float(0.0)),
+        ]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::new("Equal", ValueType::Bool),
+            PortDefinition::new("Not Equal", ValueType::Bool),
+            PortDefinition::new("Greater", ValueType::Bool),
+            PortDefinition::new("Less", ValueType::Bool),
+        ]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let a = ctx.get_float_or(0, 0.0);
+        let b = ctx.get_float_or(1, 0.0);
+
+        ctx.set_bool(0, (a - b).abs() < f64::EPSILON);
+        ctx.set_bool(1, (a - b).abs() >= f64::EPSILON);
+        ctx.set_bool(2, a > b);
+        ctx.set_bool(3, a < b);
+
+        ProcessResult::Success
+    }
+}
+
+// ========== عقدة التفرع ==========
+
+pub struct BranchNode;
+
+impl NodeDefinition for BranchNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("logic/branch")
+    }
+
+    fn display_name(&self) -> &str {
+        "Branch"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new(NodeCategory::LOGIC)
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Returns True value if condition is true, else False value")
+    }
+
+    fn color(&self) -> Color {
+        LOGIC_NODE_COLOR
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::input_bool("Condition").with_default(NodeValue::bool(false)),
+            PortDefinition::new("True", ValueType::Any).with_description("Value if true"),
+            PortDefinition::new("False", ValueType::Any).with_description("Value if false"),
+        ]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::output_any("Result")]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let condition = ctx.get_bool_or(0, false);
+
+        let result = if condition {
+            ctx.inputs.get(1).cloned().unwrap_or_default()
+        } else {
+            ctx.inputs.get(2).cloned().unwrap_or_default()
+        };
+
+        ctx.set(0, result);
+        ProcessResult::Success
+    }
+}
+
+// ========== عقدة And ==========
+
+pub struct AndNode;
+
+impl NodeDefinition for AndNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("logic/and")
+    }
+
+    fn display_name(&self) -> &str {
+        "And"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new(NodeCategory::LOGIC)
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Logical AND operation")
+    }
+
+    fn color(&self) -> Color {
+        LOGIC_NODE_COLOR
+    }
+
+    fn icon(&self) -> Option<&str> {
+        Some("&&")
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::input_bool("A").with_default(NodeValue::bool(false)),
+            PortDefinition::input_bool("B").with_default(NodeValue::bool(false)),
+        ]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::new("Result", ValueType::Bool)]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let a = ctx.get_bool_or(0, false);
+        let b = ctx.get_bool_or(1, false);
+        ctx.set_bool(0, a && b);
+        ProcessResult::Success
+    }
+}
+
+// ========== عقدة Or ==========
+
+pub struct OrNode;
+
+impl NodeDefinition for OrNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("logic/or")
+    }
+
+    fn display_name(&self) -> &str {
+        "Or"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new(NodeCategory::LOGIC)
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Logical OR operation")
+    }
+
+    fn color(&self) -> Color {
+        LOGIC_NODE_COLOR
+    }
+
+    fn icon(&self) -> Option<&str> {
+        Some("||")
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::input_bool("A").with_default(NodeValue::bool(false)),
+            PortDefinition::input_bool("B").with_default(NodeValue::bool(false)),
+        ]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::new("Result", ValueType::Bool)]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let a = ctx.get_bool_or(0, false);
+        let b = ctx.get_bool_or(1, false);
+        ctx.set_bool(0, a || b);
+        ProcessResult::Success
+    }
+}
+
+// ========== عقدة Not ==========
+
+pub struct NotNode;
+
+impl NodeDefinition for NotNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("logic/not")
+    }
+
+    fn display_name(&self) -> &str {
+        "Not"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new(NodeCategory::LOGIC)
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Logical NOT operation")
+    }
+
+    fn color(&self) -> Color {
+        LOGIC_NODE_COLOR
+    }
+
+    fn icon(&self) -> Option<&str> {
+        Some("!")
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::input_bool("Value").with_default(NodeValue::bool(false))]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::new("Result", ValueType::Bool)]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let value = ctx.get_bool_or(0, false);
+        ctx.set_bool(0, !value);
+        ProcessResult::Success
+    }
+}
+
+register_node!(CompareNode);
+register_node!(BranchNode);
+register_node!(AndNode);
+register_node!(OrNode);
+register_node!(NotNode);

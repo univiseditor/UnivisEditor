@@ -1,0 +1,20 @@
+[workspace]
+members = [
+  "crates/univis_editor_core",
+  "crates/univis_editor_runtime",
+  "crates/univis_editor_ui",
+  "crates/univis_editor_persistence",
+  "crates/univis_editor_nodes_builtin",
+  "crates/univis_editor_game_editor",
+  "crates/univis_editor_app",
+]
+default-members = ["crates/univis_editor_app"]
+resolver = "2"
+
+[workspace.dependencies]
+bevy = "0.17.3"
+univis_ui = "0.2.0-alpha.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+typetag = "0.2"
+inventory = "0.3"

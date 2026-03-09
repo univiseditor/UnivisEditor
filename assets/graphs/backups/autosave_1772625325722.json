@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "definition_id": "example/vec3_build",
+      "position": [
+        -110.90086,
+        201.65286
+      ],
+      "inputs": [
+        "None",
+        "None",
+        "None"
+      ],
+      "input_count": 3,
+      "output_count": 1
+    },
+    {
+      "id": 2,
+      "definition_id": "example/float_bias",
+      "position": [
+        -368.3373,
+        105.10063
+      ],
+      "inputs": [
+        "None",
+        "None"
+      ],
+      "input_count": 2,
+      "output_count": 1
+    },
+    {
+      "id": 3,
+      "definition_id": "assembly/crane_part",
+      "position": [
+        196.52914,
+        297.13934
+      ],
+      "inputs": [
+        "None",
+        "None"
+      ],
+      "input_count": 2,
+      "output_count": 1
+    },
+    {
+      "id": 4,
+      "definition_id": "assembly/wheel",
+      "position": [
+        227.95657,
+        194.15004
+      ],
+      "inputs": [
+        "None",
+        "None",
+        "None"
+      ],
+      "input_count": 3,
+      "output_count": 1
+    },
+    {
+      "id": 5,
+      "definition_id": "material/air",
+      "position": [
+        17.940784,
+        15.8259325
+      ],
+      "inputs": [
+        "None",
+        "None",
+        "None"
+      ],
+      "input_count": 3,
+      "output_count": 1
+    },
+    {
+      "id": 6,
+      "definition_id": "example/prefix_text",
+      "position": [
+        341.8967,
+        64.98356
+      ],
+      "inputs": [
+        {
+          "String": "A"
+        }
+      ],
+      "input_count": 1,
+      "output_count": 1
+    },
+    {
+      "id": 7,
+      "definition_id": "example/toggle_text",
+      "position": [
+        -291.2307,
+        -147.22417
+      ],
+      "inputs": [
+        "None",
+        "None",
+        "None"
+      ],
+      "input_count": 3,
+      "output_count": 1
+    },
+    {
+      "id": 8,
+      "definition_id": "example/color_boost",
+      "position": [
+        -713.65466,
+        510.3946
+      ],
+      "inputs": [
+        "None",
+        "None"
+      ],
+      "input_count": 2,
+      "output_count": 1
+    },
+    {
+      "id": 9,
+      "definition_id": "math/lerp",
+      "position": [
+        -709.3885,
+        351.73483
+      ],
+      "inputs": [
+        "None",
+        "None",
+        "None"
+      ],
+      "input_count": 3,
+      "output_count": 1
+    }
+  ],
+  "links": [
+    {
+      "from_node_id": 7,
+      "from_index": 0,
+      "to_node_id": 6,
+      "to_index": 0
+    }
+  ],
+  "ui": {
+    "camera": {
+      "translation": [
+        -158.62262,
+        171.20883,
+        0.0
+      ],
+      "ortho_scale": 1.3950334
+    },
+    "selected_node_ids": []
+  }
+}

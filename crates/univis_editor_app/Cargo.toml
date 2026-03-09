@@ -1,0 +1,33 @@
+[package]
+name = "univis_editor_app"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["craft", "legacy"]
+craft = []
+legacy = []
+game_editor = ["dep:univis_editor_game_editor"]
+
+[dependencies]
+bevy.workspace = true
+serde_json.workspace = true
+univis_ui.workspace = true
+univis_editor_core = { path = "../univis_editor_core" }
+univis_editor_runtime = { path = "../univis_editor_runtime" }
+univis_editor_ui = { path = "../univis_editor_ui" }
+univis_editor_persistence = { path = "../univis_editor_persistence" }
+univis_editor_nodes_builtin = { path = "../univis_editor_nodes_builtin" }
+univis_editor_game_editor = { path = "../univis_editor_game_editor", optional = true }
+
+[[example]]
+name = "simple_editor"
+path = "../../examples/simple_editor.rs"
+
+[[example]]
+name = "custom_nodes"
+path = "../../examples/custom_nodes.rs"
+
+[[example]]
+name = "custom_visual_node"
+path = "../../examples/custom_visual_node.rs"
