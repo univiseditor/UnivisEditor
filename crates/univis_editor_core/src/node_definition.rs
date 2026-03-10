@@ -7,7 +7,7 @@ use serde_json::Value as JsonValue;
 use std::any::Any;
 use std::sync::Arc;
 
-use super::value::{NodeValue, NodeValues, ValueType};
+use super::value::{EntityValue, NodeValue, NodeValues, ValueType};
 
 /// معرف فريد للعقدة
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -164,6 +164,11 @@ impl PortDefinition {
         Self::new(name, ValueType::Vec3)
     }
 
+    /// منفذ مدخل entity
+    pub fn input_entity(name: impl Into<String>) -> Self {
+        Self::new(name, ValueType::Entity)
+    }
+
     /// منفذ مدخل بعلامة نوع مخصصة
     pub fn input_tag(name: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::new(name, ValueType::CustomTag(tag.into()))
@@ -177,6 +182,11 @@ impl PortDefinition {
     /// منفذ مخرج any
     pub fn output_any(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Any)
+    }
+
+    /// منفذ مخرج entity
+    pub fn output_entity(name: impl Into<String>) -> Self {
+        Self::new(name, ValueType::Entity)
     }
 
     /// منفذ مخرج بعلامة نوع مخصصة
@@ -252,6 +262,11 @@ impl<'a> ProcessContext<'a> {
         self.inputs.get(index)?.as_tagged()
     }
 
+    /// قراءة EntityValue من مدخل
+    pub fn get_entity(&self, index: usize) -> Option<&EntityValue> {
+        self.inputs.get(index)?.as_entity()
+    }
+
     /// كتابة مخرج
     pub fn set(&mut self, index: usize, value: NodeValue) {
         if let Some(out) = self.outputs.get_mut(index) {
@@ -292,6 +307,11 @@ impl<'a> ProcessContext<'a> {
     /// كتابة TaggedData في مخرج
     pub fn set_tagged(&mut self, index: usize, tag: impl Into<String>, payload: JsonValue) {
         self.set(index, NodeValue::tagged(tag, payload));
+    }
+
+    /// كتابة EntityValue في مخرج
+    pub fn set_entity(&mut self, index: usize, value: EntityValue) {
+        self.set(index, NodeValue::entity(value));
     }
 }
 

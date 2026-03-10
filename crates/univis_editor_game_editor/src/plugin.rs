@@ -1,12 +1,15 @@
 use crate::components::{COMPONENT_KIND_ENTITY_ROOT, component_display_name};
 use crate::context::*;
 use crate::persistence::*;
+use crate::projection::{ActiveEntityGraphProjection, project_active_entity};
 use crate::scene::{EditorScene, SavedComponentLink, SavedGraphLayoutNode};
 use crate::schemas::ComponentSchemaRegistry;
 use crate::ui::*;
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet};
 use univis_editor_core::prelude::*;
+use univis_editor_persistence::graph_persistence::GraphPersistenceActivation;
+use univis_editor_ui::GraphEditingUiActivation;
 use univis_editor_ui::node_spawn::{
     spawn_component_mode_node_entity, spawn_missing_component_mode_node_entity,
 };
@@ -33,6 +36,7 @@ impl Plugin for GameEditorPlugin {
             .init_resource::<SelectedComponentContext>()
             .init_resource::<GameEditorRuntimeState>()
             .init_resource::<ComponentCompositionDiagnostics>()
+            .init_resource::<ActiveEntityGraphProjection>()
             .init_resource::<EditorScene>()
             .init_resource::<ComponentSchemaRegistry>()
             .init_resource::<ScenePersistenceSettings>()
@@ -87,10 +91,12 @@ impl Plugin for GameEditorPlugin {
             .add_systems(
                 PostUpdate,
                 (
+                    sync_graph_mode_bridge_resources,
                     sync_active_entity_context,
                     rebuild_canvas_links_from_scene,
                     sync_component_layout_from_canvas,
                     sync_component_links_from_canvas,
+                    sync_active_entity_graph_projection,
                     refresh_scene_dirty_state,
                     autosave_dirty_scene,
                     draw_game_editor_status_ui,
@@ -130,6 +136,38 @@ fn sync_active_entity_context(
     if active_context.active_entity_id != scene.active_entity_id {
         active_context.active_entity_id = scene.active_entity_id;
     }
+}
+
+fn sync_graph_mode_bridge_resources(
+    mode: Res<EditorModeState>,
+    mut graph_persistence_activation: ResMut<GraphPersistenceActivation>,
+    mut graph_editing_activation: ResMut<GraphEditingUiActivation>,
+) {
+    let enabled = mode.mode == EditorMode::LegacyGraph;
+    graph_persistence_activation.enabled = enabled;
+    graph_editing_activation.enabled = enabled;
+}
+
+fn sync_active_entity_graph_projection(
+    mode: Res<EditorModeState>,
+    scene: Res<EditorScene>,
+    mut projection: ResMut<ActiveEntityGraphProjection>,
+    mut diagnostics: ResMut<ComponentCompositionDiagnostics>,
+) {
+    if mode.mode != EditorMode::ComponentMode {
+        *projection = ActiveEntityGraphProjection::default();
+        return;
+    }
+
+    let next_projection = project_active_entity(&scene);
+
+    diagnostics
+        .orphan_component_ids
+        .extend(next_projection.disconnected_component_ids.iter().copied());
+    diagnostics.warnings.extend(next_projection.warnings.iter().cloned());
+    diagnostics.warnings.truncate(4);
+
+    *projection = next_projection;
 }
 
 fn handle_set_editor_mode_requests(

@@ -3,7 +3,6 @@
 
 use crate::prelude::*;
 use bevy::prelude::*;
-use univis_editor_core::mode::{EditorMode, EditorModeState};
 use univis_ui::prelude::*;
 
 /// مورد لتخزين حالة القائمة
@@ -35,15 +34,11 @@ pub fn open_context_menu(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     mut menu_state: ResMut<ContextMenuState>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphEditingUiActivation>>,
     // نتحقق هل ضغطنا على منفذ؟ إذا نعم، لا تفتح القائمة (تجنب التضارب مع wire_start_system)
     ports: Query<&UInteraction, With<GraphPort>>,
 ) {
-    if mode
-        .as_ref()
-        .map(|mode| mode.mode != EditorMode::LegacyGraph)
-        .unwrap_or(false)
-    {
+    if !graph_editing_enabled(activation.as_deref()) {
         menu_state.is_open = false;
         return;
     }
@@ -76,15 +71,11 @@ pub fn open_context_menu(
 pub fn draw_context_menu(
     mut commands: Commands,
     menu_state: Res<ContextMenuState>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphEditingUiActivation>>,
     existing_menu: Query<Entity, With<ContextMenuUI>>,
     registry: Res<NodeRegistry>,
 ) {
-    if mode
-        .as_ref()
-        .map(|mode| mode.mode != EditorMode::LegacyGraph)
-        .unwrap_or(false)
-    {
+    if !graph_editing_enabled(activation.as_deref()) {
         for entity in existing_menu.iter() {
             commands.entity(entity).despawn();
         }
@@ -270,7 +261,7 @@ pub struct NodeTypeButton {
 pub fn interact_context_menu(
     mut commands: Commands,
     registry: Res<NodeRegistry>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphEditingUiActivation>>,
     mut interaction_query: Query<
         (&Interaction, &NodeTypeButton),
         (Changed<Interaction>, With<Button>),
@@ -279,11 +270,7 @@ pub fn interact_context_menu(
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
 ) {
-    if mode
-        .as_ref()
-        .map(|mode| mode.mode != EditorMode::LegacyGraph)
-        .unwrap_or(false)
-    {
+    if !graph_editing_enabled(activation.as_deref()) {
         return;
     }
 
@@ -309,4 +296,8 @@ pub fn interact_context_menu(
             }
         }
     }
+}
+
+fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
+    activation.map(|activation| activation.enabled).unwrap_or(true)
 }

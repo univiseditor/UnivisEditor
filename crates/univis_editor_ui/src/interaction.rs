@@ -3,7 +3,6 @@
 use crate::prelude::*;
 use bevy::ecs::relationship::Relationship;
 use bevy::{input::mouse::MouseWheel, platform::collections::HashSet, prelude::*};
-use univis_editor_core::mode::{EditorMode, EditorModeState};
 use univis_ui::prelude::*;
 
 fn find_graph_node_ancestor(
@@ -108,15 +107,11 @@ pub fn node_highlight_system(
 pub fn delete_node_system(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphEditingUiActivation>>,
     selected_nodes: Query<Entity, With<Selected>>,
     mut connect: ResMut<Connecting>,
 ) {
-    if mode
-        .as_ref()
-        .map(|mode| mode.mode != EditorMode::LegacyGraph)
-        .unwrap_or(false)
-    {
+    if !graph_editing_enabled(activation.as_deref()) {
         return;
     }
 
@@ -128,6 +123,10 @@ pub fn delete_node_system(
                 .retain(|link| link.from_node != entity && link.to_node != entity);
         }
     }
+}
+
+fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
+    activation.map(|activation| activation.enabled).unwrap_or(true)
 }
 
 /// نظام إعادة ضبط المداخل غير المتصلة

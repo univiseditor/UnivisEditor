@@ -1,5 +1,5 @@
 //! نظام القيم الديناميكية للعُقد
-//! يدعم الأنواع الأساسية: Float, Int, Bool, String, Vec2, Vec3, Vec4, Color
+//! يدعم الأنواع الأساسية إضافةً إلى EntityValue التركيبي للمشاهد المعتمدة على الجراف.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,7 @@ pub enum ValueType {
     Vec3,
     Vec4,
     Color,
+    Entity,
     CustomTag(String),
     Any, // لأي نوع آخر
 }
@@ -34,6 +35,7 @@ impl ValueType {
             ValueType::Vec3 => "Vec3".to_string(),
             ValueType::Vec4 => "Vec4".to_string(),
             ValueType::Color => "Color".to_string(),
+            ValueType::Entity => "Entity".to_string(),
             ValueType::CustomTag(tag) => format!("Tag({})", tag),
             ValueType::Any => "Any".to_string(),
         }
@@ -50,6 +52,7 @@ impl ValueType {
             ValueType::Vec3 => Color::srgb(0.6, 0.8, 1.0),  // سماوي
             ValueType::Vec4 => Color::srgb(0.5, 0.9, 0.9),  // تركواز
             ValueType::Color => Color::srgb(1.0, 0.5, 0.8), // وردي
+            ValueType::Entity => Color::srgb(0.88, 0.67, 0.28),
             ValueType::CustomTag(tag) => custom_tag_color(tag),
             ValueType::Any => Color::srgb(0.7, 0.7, 0.7), // رمادي
         }
@@ -68,6 +71,266 @@ fn custom_tag_color(tag: &str) -> Color {
     Color::srgb(r, g, b)
 }
 
+fn default_entity_scale() -> Vec3 {
+    Vec3::ONE
+}
+
+fn default_entity_rotation_deg() -> f32 {
+    0.0
+}
+
+fn default_entity_sprite_size() -> Vec2 {
+    Vec2::ONE
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransformComponentValue {
+    pub translation: Vec3,
+    #[serde(default = "default_entity_rotation_deg")]
+    pub rotation_deg: f32,
+    #[serde(default = "default_entity_scale")]
+    pub scale: Vec3,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpriteComponentValue {
+    #[serde(default = "default_entity_sprite_size")]
+    pub size: Vec2,
+    pub color: Color,
+    #[serde(default)]
+    pub sprite_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Camera2DComponentValue {
+    pub zoom: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntityComponentKind {
+    Transform,
+    Sprite,
+    Camera2D,
+    Custom(String),
+}
+
+impl EntityComponentKind {
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::Transform => "Transform",
+            Self::Sprite => "Sprite",
+            Self::Camera2D => "Camera2D",
+            Self::Custom(kind) => kind.as_str(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum EntityMergePolicy {
+    #[default]
+    KeepExisting,
+    ReplaceExisting,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EntityComponentValue {
+    Transform(TransformComponentValue),
+    Sprite(SpriteComponentValue),
+    Camera2D(Camera2DComponentValue),
+    Custom { kind: String, payload: JsonValue },
+}
+
+impl EntityComponentValue {
+    pub fn transform(translation: Vec3) -> Self {
+        Self::Transform(TransformComponentValue {
+            translation,
+            rotation_deg: default_entity_rotation_deg(),
+            scale: default_entity_scale(),
+        })
+    }
+
+    pub fn sprite(size: Vec2, color: Color) -> Self {
+        Self::Sprite(SpriteComponentValue {
+            size,
+            color,
+            sprite_id: None,
+        })
+    }
+
+    pub fn sprite_with_id(size: Vec2, color: Color, sprite_id: impl Into<String>) -> Self {
+        Self::Sprite(SpriteComponentValue {
+            size,
+            color,
+            sprite_id: Some(sprite_id.into()),
+        })
+    }
+
+    pub fn camera_2d(zoom: f32) -> Self {
+        Self::Camera2D(Camera2DComponentValue { zoom })
+    }
+
+    pub fn custom(kind: impl Into<String>, payload: JsonValue) -> Self {
+        Self::Custom {
+            kind: kind.into(),
+            payload,
+        }
+    }
+
+    pub fn kind(&self) -> EntityComponentKind {
+        match self {
+            Self::Transform(_) => EntityComponentKind::Transform,
+            Self::Sprite(_) => EntityComponentKind::Sprite,
+            Self::Camera2D(_) => EntityComponentKind::Camera2D,
+            Self::Custom { kind, .. } => EntityComponentKind::Custom(kind.clone()),
+        }
+    }
+
+    pub fn kind_name(&self) -> &str {
+        match self {
+            Self::Transform(_) => "Transform",
+            Self::Sprite(_) => "Sprite",
+            Self::Camera2D(_) => "Camera2D",
+            Self::Custom { kind, .. } => kind.as_str(),
+        }
+    }
+
+    pub fn as_transform(&self) -> Option<&TransformComponentValue> {
+        match self {
+            Self::Transform(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_sprite(&self) -> Option<&SpriteComponentValue> {
+        match self {
+            Self::Sprite(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_camera_2d(&self) -> Option<&Camera2DComponentValue> {
+        match self {
+            Self::Camera2D(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EntityValue {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub components: Vec<EntityComponentValue>,
+    #[serde(default)]
+    pub children: Vec<EntityValue>,
+}
+
+impl EntityValue {
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: Some(name.into()),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_component(mut self, component: EntityComponentValue) -> Self {
+        self.set_component(component);
+        self
+    }
+
+    pub fn with_child(mut self, child: EntityValue) -> Self {
+        self.children.push(child);
+        self
+    }
+
+    pub fn merge_with(&self, other: &EntityValue) -> Self {
+        self.merge_with_policy(other, EntityMergePolicy::KeepExisting)
+    }
+
+    pub fn merge_with_policy(&self, other: &EntityValue, policy: EntityMergePolicy) -> Self {
+        let mut merged = self.clone();
+        merged.merge_in_place_with_policy(other, policy);
+        merged
+    }
+
+    pub fn merge_in_place(&mut self, other: &EntityValue) {
+        self.merge_in_place_with_policy(other, EntityMergePolicy::KeepExisting);
+    }
+
+    pub fn merge_in_place_with_policy(
+        &mut self,
+        other: &EntityValue,
+        policy: EntityMergePolicy,
+    ) {
+        if self.name.is_none() {
+            self.name = other.name.clone();
+        }
+
+        for component in &other.components {
+            self.merge_component(component.clone(), policy);
+        }
+
+        self.children.extend(other.children.iter().cloned());
+    }
+
+    pub fn component(&self, kind: EntityComponentKind) -> Option<&EntityComponentValue> {
+        self.components
+            .iter()
+            .find(|component| component.kind() == kind)
+    }
+
+    pub fn component_by_name(&self, kind: &str) -> Option<&EntityComponentValue> {
+        self.components
+            .iter()
+            .find(|component| component.kind_name() == kind)
+    }
+
+    pub fn find_first_component(&self, kind: EntityComponentKind) -> Option<&EntityComponentValue> {
+        if let Some(component) = self.component(kind.clone()) {
+            return Some(component);
+        }
+
+        for child in &self.children {
+            if let Some(component) = child.find_first_component(kind.clone()) {
+                return Some(component);
+            }
+        }
+
+        None
+    }
+
+    pub fn transform(&self) -> Option<&TransformComponentValue> {
+        self.components.iter().find_map(EntityComponentValue::as_transform)
+    }
+
+    pub fn set_component(&mut self, component: EntityComponentValue) {
+        if let Some(existing) = self
+            .components
+            .iter_mut()
+            .find(|existing| existing.kind() == component.kind())
+        {
+            *existing = component;
+        } else {
+            self.components.push(component);
+        }
+    }
+
+    fn merge_component(&mut self, component: EntityComponentValue, policy: EntityMergePolicy) {
+        if let Some(existing) = self
+            .components
+            .iter_mut()
+            .find(|existing| existing.kind() == component.kind())
+        {
+            if matches!(policy, EntityMergePolicy::ReplaceExisting) {
+                *existing = component;
+            }
+        } else {
+            self.components.push(component);
+        }
+    }
+}
+
 /// قيمة ديناميكية يمكن تمريرها بين العُقد
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NodeValue {
@@ -79,6 +342,7 @@ pub enum NodeValue {
     Vec3(Vec3),
     Vec4(Vec4),
     Color(Color),
+    Entity(EntityValue),
     TaggedData { tag: String, payload: JsonValue },
     None, // قيمة فارغة
 }
@@ -101,6 +365,7 @@ impl NodeValue {
             NodeValue::Vec3(_) => ValueType::Vec3,
             NodeValue::Vec4(_) => ValueType::Vec4,
             NodeValue::Color(_) => ValueType::Color,
+            NodeValue::Entity(_) => ValueType::Entity,
             NodeValue::TaggedData { tag, .. } => ValueType::CustomTag(tag.clone()),
             NodeValue::None => ValueType::Any,
         }
@@ -178,6 +443,13 @@ impl NodeValue {
         }
     }
 
+    pub fn as_entity(&self) -> Option<&EntityValue> {
+        match self {
+            NodeValue::Entity(value) => Some(value),
+            _ => None,
+        }
+    }
+
     pub fn as_tagged(&self) -> Option<(&str, &JsonValue)> {
         match self {
             NodeValue::TaggedData { tag, payload } => Some((tag.as_str(), payload)),
@@ -219,6 +491,10 @@ impl NodeValue {
         NodeValue::Color(Color::srgba(r, g, b, a))
     }
 
+    pub fn entity(value: EntityValue) -> Self {
+        NodeValue::Entity(value)
+    }
+
     pub fn tagged(tag: impl Into<String>, payload: JsonValue) -> Self {
         NodeValue::TaggedData {
             tag: tag.into(),
@@ -256,6 +532,9 @@ impl NodeValue {
             (ValueType::Color, ValueType::Vec4) => true,
             (ValueType::Vec4, ValueType::Color) => true,
 
+            // Entity values compose only with entity ports.
+            (ValueType::Entity, ValueType::Entity) => true,
+
             _ => false,
         }
     }
@@ -281,6 +560,18 @@ impl NodeValue {
                 format!(
                     "({:.1}, {:.1}, {:.1}, {:.1})",
                     srgba.red, srgba.green, srgba.blue, srgba.alpha
+                )
+            }
+            NodeValue::Entity(entity) => {
+                let label = entity
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "Entity".to_string());
+                format!(
+                    "{} [{} component(s), {} child(ren)]",
+                    label,
+                    entity.components.len(),
+                    entity.children.len()
                 )
             }
             NodeValue::TaggedData { tag, payload } => {

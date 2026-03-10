@@ -19,4 +19,4 @@ Cargo.lock
 /target
 
 # Runtime graph state
-assets/graphs/current_graph.json
+assets/graphs/

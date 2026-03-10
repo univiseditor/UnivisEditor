@@ -1,26 +1,20 @@
 //! نظام حفظ/تحميل الجراف إلى JSON
 
 use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use univis_editor_core::mode::{EditorMode, EditorModeState};
 use univis_editor_core::prelude::*;
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
 use univis_editor_ui::prelude::GraphCamera;
 
-const GRAPH_SAVE_VERSION: u32 = 1;
 const DEFAULT_SAVE_FILE_PATH: &str = "assets/graphs/current_graph.json";
 const DEFAULT_BACKUP_DIRECTORY: &str = "assets/graphs/backups";
-
-fn default_graph_save_version() -> u32 {
-    GRAPH_SAVE_VERSION
-}
 
 /// إعدادات الحفظ/التحميل
 #[derive(Resource, Debug, Clone)]
@@ -82,6 +76,17 @@ impl Default for GraphPersistenceRuntimeState {
     }
 }
 
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct GraphPersistenceActivation {
+    pub enabled: bool,
+}
+
+impl Default for GraphPersistenceActivation {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PersistenceStatusSeverity {
     Info,
@@ -126,60 +131,15 @@ pub struct LoadGraphFromPathRequest {
     pub force_if_dirty: bool,
 }
 
-/// ملف الحفظ - schema v1
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct GraphSaveFile {
-    #[serde(default = "default_graph_save_version")]
-    pub version: u32,
-    #[serde(default)]
-    pub nodes: Vec<SavedNode>,
-    #[serde(default)]
-    pub links: Vec<SavedLink>,
-    #[serde(default)]
-    pub ui: SavedUiState,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedNode {
-    pub id: u64,
-    pub definition_id: NodeId,
-    pub position: [f32; 2],
-    #[serde(default)]
-    pub inputs: Vec<NodeValue>,
-    pub input_count: usize,
-    pub output_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedLink {
-    pub from_node_id: u64,
-    pub from_index: usize,
-    pub to_node_id: u64,
-    pub to_index: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SavedUiState {
-    pub camera: Option<SavedCameraState>,
-    #[serde(default)]
-    pub selected_node_ids: Vec<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedCameraState {
-    pub translation: [f32; 3],
-    pub ortho_scale: f32,
-}
-
 /// schema v0 (بدون version، وعدادات منافذ اختيارية)
 #[derive(Debug, Clone, Deserialize, Default)]
 struct GraphSaveFileV0 {
     #[serde(default)]
     nodes: Vec<SavedNodeV0>,
     #[serde(default)]
-    links: Vec<SavedLink>,
+    links: Vec<GraphDocumentEdge>,
     #[serde(default)]
-    ui: SavedUiState,
+    ui: GraphDocumentViewState,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -202,9 +162,9 @@ struct PendingGraphLoad {
     source_path: Option<String>,
     node_map: HashMap<u64, Entity>,
     node_inputs: Vec<(Entity, Vec<NodeValue>)>,
-    links: Vec<SavedLink>,
+    edges: Vec<GraphDocumentEdge>,
     selected_node_ids: Vec<u64>,
-    camera: Option<SavedCameraState>,
+    camera: Option<GraphDocumentCameraState>,
     placeholder_count: usize,
 }
 
@@ -214,7 +174,7 @@ impl PendingGraphLoad {
         self.source_path = None;
         self.node_map.clear();
         self.node_inputs.clear();
-        self.links.clear();
+        self.edges.clear();
         self.selected_node_ids.clear();
         self.camera = None;
         self.placeholder_count = 0;
@@ -228,6 +188,7 @@ impl Plugin for GraphPersistencePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GraphPersistenceSettings>()
             .init_resource::<GraphPersistenceRuntimeState>()
+            .init_resource::<GraphPersistenceActivation>()
             .init_resource::<GraphPersistenceStatusState>()
             .init_resource::<PendingGraphLoad>()
             .add_message::<SaveGraphRequest>()
@@ -262,12 +223,12 @@ impl Plugin for GraphPersistencePlugin {
 /// - Ctrl+O: تحميل المسار الحالي (مع تأكيد إذا dirty)
 fn graph_persistence_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     mut save_writer: MessageWriter<SaveGraphRequest>,
     mut save_as_writer: MessageWriter<SaveGraphToPathRequest>,
     mut load_writer: MessageWriter<LoadGraphRequest>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         return;
     }
 
@@ -291,7 +252,7 @@ fn graph_persistence_shortcuts(
 fn handle_save_graph_requests(
     mut save_requests: MessageReader<SaveGraphRequest>,
     mut save_to_path_requests: MessageReader<SaveGraphToPathRequest>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     mut settings: ResMut<GraphPersistenceSettings>,
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
@@ -300,7 +261,7 @@ fn handle_save_graph_requests(
     mut status: ResMut<GraphPersistenceStatusState>,
     time: Res<Time>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         return;
     }
 
@@ -358,7 +319,7 @@ fn handle_load_graph_requests(
     mut commands: Commands,
     mut load_requests: MessageReader<LoadGraphRequest>,
     mut load_from_path_requests: MessageReader<LoadGraphFromPathRequest>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     mut settings: ResMut<GraphPersistenceSettings>,
     registry: Res<NodeRegistry>,
     mut graph: ResMut<Connecting>,
@@ -368,7 +329,7 @@ fn handle_load_graph_requests(
     mut status: ResMut<GraphPersistenceStatusState>,
     time: Res<Time>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         return;
     }
 
@@ -499,9 +460,9 @@ fn handle_load_graph_requests(
         pending.node_inputs.push((spawned, saved_node.inputs));
     }
 
-    pending.links = save_file.links;
-    pending.selected_node_ids = save_file.ui.selected_node_ids;
-    pending.camera = save_file.ui.camera;
+    pending.edges = save_file.edges;
+    pending.selected_node_ids = save_file.view.selected_node_ids;
+    pending.camera = save_file.view.camera;
     pending.source_path = Some(path.clone());
     pending.is_pending = true;
 
@@ -528,7 +489,7 @@ fn handle_load_graph_requests(
 fn finalize_pending_graph_load(
     mut commands: Commands,
     mut pending: ResMut<PendingGraphLoad>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     mut graph: ResMut<Connecting>,
     q_ports: Query<(Entity, &GraphPort)>,
     mut q_nodes: Query<&mut GraphNode>,
@@ -538,7 +499,7 @@ fn finalize_pending_graph_load(
     settings: Res<GraphPersistenceSettings>,
     time: Res<Time>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         return;
     }
 
@@ -562,21 +523,21 @@ fn finalize_pending_graph_load(
     }
 
     graph.connections.clear();
-    for link in &pending.links {
-        let Some(from_node) = pending.node_map.get(&link.from_node_id).copied() else {
+    for edge in &pending.edges {
+        let Some(from_node) = pending.node_map.get(&edge.from_node_id).copied() else {
             skipped_link_count += 1;
             continue;
         };
-        let Some(to_node) = pending.node_map.get(&link.to_node_id).copied() else {
+        let Some(to_node) = pending.node_map.get(&edge.to_node_id).copied() else {
             skipped_link_count += 1;
             continue;
         };
 
-        let Some(from_port) = output_ports.get(&(from_node, link.from_index)).copied() else {
+        let Some(from_port) = output_ports.get(&(from_node, edge.from_index)).copied() else {
             skipped_link_count += 1;
             continue;
         };
-        let Some(to_port) = input_ports.get(&(to_node, link.to_index)).copied() else {
+        let Some(to_port) = input_ports.get(&(to_node, edge.to_index)).copied() else {
             skipped_link_count += 1;
             continue;
         };
@@ -613,7 +574,7 @@ fn finalize_pending_graph_load(
         {
             warn!(
                 "Skipping loaded link: input port already connected (node {:?}, input {})",
-                to_node, link.to_index
+                to_node, edge.to_index
             );
             skipped_link_count += 1;
             continue;
@@ -621,9 +582,9 @@ fn finalize_pending_graph_load(
 
         graph.connections.push(GraphLink {
             from_node,
-            from_index: link.from_index,
+            from_index: edge.from_index,
             to_node,
-            to_index: link.to_index,
+            to_index: edge.to_index,
             from_port,
             to_port,
         });
@@ -697,19 +658,19 @@ fn finalize_pending_graph_load(
 /// تحديث dirty state عبر مقارنة توقيع المشهد الحالي مع آخر نسخة محفوظة
 fn refresh_dirty_state(
     graph: Res<Connecting>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         runtime.autosave_elapsed_secs = 0.0;
         runtime.open_confirm_until_secs = None;
         return;
     }
 
-    let current_file = build_graph_save_file(&graph, &q_nodes, &q_camera);
-    let Ok(current_signature) = graph_signature(&current_file) else {
+    let current_document = build_graph_document(&graph, &q_nodes, &q_camera);
+    let Ok(current_signature) = graph_signature(&current_document) else {
         return;
     };
 
@@ -732,14 +693,14 @@ fn refresh_dirty_state(
 fn autosave_dirty_graph(
     time: Res<Time>,
     settings: Res<GraphPersistenceSettings>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatusState>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         runtime.autosave_elapsed_secs = 0.0;
         return;
     }
@@ -816,11 +777,11 @@ fn autosave_dirty_graph(
 fn draw_persistence_status_ui(
     mut commands: Commands,
     mut status: ResMut<GraphPersistenceStatusState>,
-    mode: Option<Res<EditorModeState>>,
+    activation: Option<Res<GraphPersistenceActivation>>,
     time: Res<Time>,
     existing: Query<Entity, With<GraphPersistenceStatusUi>>,
 ) {
-    if !graph_persistence_enabled(mode.as_deref()) {
+    if !graph_persistence_enabled(activation.as_deref()) {
         for entity in existing.iter() {
             commands.entity(entity).despawn();
         }
@@ -903,12 +864,11 @@ fn set_persistence_status(
     status.rendered_key = None;
 }
 
-fn graph_persistence_enabled(mode: Option<&EditorModeState>) -> bool {
-    mode.map(|mode| mode.mode == EditorMode::LegacyGraph)
-        .unwrap_or(true)
+fn graph_persistence_enabled(activation: Option<&GraphPersistenceActivation>) -> bool {
+    activation.map(|activation| activation.enabled).unwrap_or(true)
 }
 
-fn parse_and_migrate_graph(content: &str) -> Result<(GraphSaveFile, Option<String>), String> {
+fn parse_and_migrate_graph(content: &str) -> Result<(GraphDocument, Option<String>), String> {
     let value: Value =
         serde_json::from_str(content).map_err(|err| format!("invalid JSON: {}", err))?;
 
@@ -930,7 +890,7 @@ fn parse_and_migrate_graph(content: &str) -> Result<(GraphSaveFile, Option<Strin
                     let inferred_input_count = node.input_count.unwrap_or(node.inputs.len());
                     let inferred_output_count = node.output_count.unwrap_or(0);
 
-                    SavedNode {
+                    GraphDocumentNode {
                         id: node.id,
                         definition_id: node.definition_id,
                         position: node.position,
@@ -942,23 +902,23 @@ fn parse_and_migrate_graph(content: &str) -> Result<(GraphSaveFile, Option<Strin
                 .collect();
 
             Ok((
-                GraphSaveFile {
-                    version: GRAPH_SAVE_VERSION,
+                GraphDocument {
+                    version: GRAPH_DOCUMENT_VERSION,
                     nodes,
-                    links: legacy.links,
-                    ui: legacy.ui,
+                    edges: legacy.links,
+                    view: legacy.ui,
                 },
-                Some("Migrated graph schema from v0 to v1.".to_string()),
+                Some("Migrated graph document schema from v0 to v1.".to_string()),
             ))
         }
-        GRAPH_SAVE_VERSION => {
-            let current: GraphSaveFile = serde_json::from_value(value)
+        GRAPH_DOCUMENT_VERSION => {
+            let current: GraphDocument = serde_json::from_value(value)
                 .map_err(|err| format!("invalid schema v1 payload: {}", err))?;
             Ok((current, None))
         }
         other => Err(format!(
             "unsupported schema version {} (latest supported {})",
-            other, GRAPH_SAVE_VERSION
+            other, GRAPH_DOCUMENT_VERSION
         )),
     }
 }
@@ -969,18 +929,18 @@ fn persist_graph_to_path(
     graph: &Connecting,
     q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
-) -> Result<(GraphSaveFile, String), String> {
-    let save_file = build_graph_save_file(graph, q_nodes, q_camera);
-    let signature = graph_signature(&save_file)?;
-    write_graph_save_file(path, &save_file, pretty_json)?;
-    Ok((save_file, signature))
+) -> Result<(GraphDocument, String), String> {
+    let document = build_graph_document(graph, q_nodes, q_camera);
+    let signature = graph_signature(&document)?;
+    write_graph_document(path, &document, pretty_json)?;
+    Ok((document, signature))
 }
 
-fn build_graph_save_file(
+fn build_graph_document(
     graph: &Connecting,
     q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
-) -> GraphSaveFile {
+) -> GraphDocument {
     let mut nodes_data = Vec::new();
     for (entity, node, transform, selected) in q_nodes.iter() {
         nodes_data.push((
@@ -1009,7 +969,7 @@ fn build_graph_save_file(
             selected_node_ids.push(saved_id);
         }
 
-        nodes.push(SavedNode {
+        nodes.push(GraphDocumentNode {
             id: saved_id,
             definition_id,
             position,
@@ -1019,7 +979,7 @@ fn build_graph_save_file(
         });
     }
 
-    let mut links = Vec::new();
+    let mut edges = Vec::new();
     for link in &graph.connections {
         let Some(from_node_id) = entity_to_saved_id.get(&link.from_node).copied() else {
             continue;
@@ -1028,7 +988,7 @@ fn build_graph_save_file(
             continue;
         };
 
-        links.push(SavedLink {
+        edges.push(GraphDocumentEdge {
             from_node_id,
             from_index: link.from_index,
             to_node_id,
@@ -1039,7 +999,7 @@ fn build_graph_save_file(
     let camera = q_camera
         .iter()
         .next()
-        .map(|(transform, projection)| SavedCameraState {
+        .map(|(transform, projection)| GraphDocumentCameraState {
             translation: [
                 transform.translation.x,
                 transform.translation.y,
@@ -1051,25 +1011,25 @@ fn build_graph_save_file(
             },
         });
 
-    GraphSaveFile {
-        version: GRAPH_SAVE_VERSION,
+    GraphDocument {
+        version: GRAPH_DOCUMENT_VERSION,
         nodes,
-        links,
-        ui: SavedUiState {
+        edges,
+        view: GraphDocumentViewState {
             camera,
             selected_node_ids,
         },
     }
 }
 
-fn graph_signature(save_file: &GraphSaveFile) -> Result<String, String> {
-    serde_json::to_string(save_file)
+fn graph_signature(document: &GraphDocument) -> Result<String, String> {
+    serde_json::to_string(document)
         .map_err(|err| format!("signature serialization failed: {}", err))
 }
 
-fn write_graph_save_file(
+fn write_graph_document(
     path: &str,
-    save_file: &GraphSaveFile,
+    document: &GraphDocument,
     pretty_json: bool,
 ) -> Result<(), String> {
     let target = Path::new(path);
@@ -1079,10 +1039,10 @@ fn write_graph_save_file(
     }
 
     let payload = if pretty_json {
-        serde_json::to_string_pretty(save_file)
+        serde_json::to_string_pretty(document)
             .map_err(|err| format!("cannot serialize JSON payload: {}", err))?
     } else {
-        serde_json::to_string(save_file)
+        serde_json::to_string(document)
             .map_err(|err| format!("cannot serialize JSON payload: {}", err))?
     };
 
@@ -1091,7 +1051,7 @@ fn write_graph_save_file(
 }
 
 fn write_backup_file(
-    save_file: &GraphSaveFile,
+    document: &GraphDocument,
     pretty_json: bool,
     backup_directory: &str,
     max_backup_files: usize,
@@ -1108,11 +1068,11 @@ fn write_backup_file(
     let backup_name = format!("autosave_{}.json", unix_timestamp_millis());
     let backup_path = backup_dir.join(backup_name);
 
-    write_graph_save_file(
+    write_graph_document(
         backup_path
             .to_str()
             .ok_or_else(|| "backup path is not valid UTF-8".to_string())?,
-        save_file,
+        document,
         pretty_json,
     )?;
 

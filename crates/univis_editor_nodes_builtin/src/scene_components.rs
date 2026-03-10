@@ -2,16 +2,11 @@
 
 use bevy::prelude::*;
 use univis_editor_core::register_node;
-use serde_json::{Value as JsonValue, json};
 use univis_editor_core::node_definition::{
     GraphNode, NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
-use univis_editor_core::value::{NodeValue, ValueType};
+use univis_editor_core::value::{EntityValue, NodeValue, ValueType, EntityComponentValue};
 use univis_ui::prelude::*;
-
-pub const TAG_COMPONENT_SPRITE2D: &str = "component/sprite2d";
-pub const TAG_COMPONENT_CAMERA2D: &str = "component/camera2d";
-pub const TAG_SCENE_MAIN: &str = "scene/main";
 
 const SCENE_COMPONENT_COLOR: Color = Color::srgb(0.3, 0.5, 0.85);
 const SCENE_COMPOSITION_COLOR: Color = Color::srgb(0.22, 0.62, 0.46);
@@ -223,10 +218,7 @@ impl NodeDefinition for Sprite2DComponentNode {
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::output_tag(
-            "Sprite2D",
-            TAG_COMPONENT_SPRITE2D,
-        )]
+        vec![PortDefinition::output_entity("Entity")]
     }
 
     fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
@@ -242,23 +234,16 @@ impl NodeDefinition for Sprite2DComponentNode {
             .unwrap_or_else(|| Color::srgba(0.18, 0.8, 0.45, 1.0))
             .to_srgba();
 
-        ctx.set_tagged(
-            0,
-            TAG_COMPONENT_SPRITE2D,
-            json!({
-                "kind": TAG_COMPONENT_SPRITE2D,
-                "transform": {
-                    "x": x,
-                    "y": y,
-                    "z": z
-                },
-                "size": {
-                    "x": width,
-                    "y": height
-                },
-                "color": [color.red, color.green, color.blue, color.alpha]
-            }),
-        );
+        let entity = EntityValue::named("Sprite2D")
+            .with_component(EntityComponentValue::transform(Vec3::new(
+                x as f32, y as f32, z as f32,
+            )))
+            .with_component(EntityComponentValue::sprite(
+                Vec2::new(width as f32, height as f32),
+                Color::srgba(color.red, color.green, color.blue, color.alpha),
+            ));
+
+        ctx.set_entity(0, entity);
         ProcessResult::Success
     }
 }
@@ -307,10 +292,7 @@ impl NodeDefinition for Camera2DComponentNode {
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::output_tag(
-            "Camera2D",
-            TAG_COMPONENT_CAMERA2D,
-        )]
+        vec![PortDefinition::output_entity("Entity")]
     }
 
     fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
@@ -318,18 +300,11 @@ impl NodeDefinition for Camera2DComponentNode {
         let y = ctx.get_float_or(1, 0.0);
         let zoom = ctx.get_float_or(2, 1.0).clamp(0.2, 5.0);
 
-        ctx.set_tagged(
-            0,
-            TAG_COMPONENT_CAMERA2D,
-            json!({
-                "kind": TAG_COMPONENT_CAMERA2D,
-                "transform": {
-                    "x": x,
-                    "y": y
-                },
-                "zoom": zoom
-            }),
-        );
+        let entity = EntityValue::named("Camera2D")
+            .with_component(EntityComponentValue::transform(Vec3::new(x as f32, y as f32, 0.0)))
+            .with_component(EntityComponentValue::camera_2d(zoom as f32));
+
+        ctx.set_entity(0, entity);
         ProcessResult::Success
     }
 }
@@ -350,7 +325,7 @@ impl NodeDefinition for MainSceneComposeNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Compose Sprite2D + Camera2D into one scene payload")
+        Some("Compose Sprite2D + Camera2D entities into one scene root")
     }
 
     fn color(&self) -> Color {
@@ -359,45 +334,28 @@ impl NodeDefinition for MainSceneComposeNode {
 
     fn inputs(&self) -> Vec<PortDefinition> {
         vec![
-            PortDefinition::input_tag("Sprite", TAG_COMPONENT_SPRITE2D),
-            PortDefinition::input_tag("Camera", TAG_COMPONENT_CAMERA2D),
+            PortDefinition::input_entity("Sprite"),
+            PortDefinition::input_entity("Camera"),
         ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::output_tag("Scene", TAG_SCENE_MAIN)]
+        vec![PortDefinition::output_entity("Scene")]
     }
 
     fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
-        let Some((sprite_tag, sprite_payload)) = ctx.get_tagged(0) else {
+        let Some(sprite_entity) = ctx.get_entity(0).cloned() else {
             return ProcessResult::MissingInput(0);
         };
-        let Some((camera_tag, camera_payload)) = ctx.get_tagged(1) else {
+        let Some(camera_entity) = ctx.get_entity(1).cloned() else {
             return ProcessResult::MissingInput(1);
         };
 
-        if sprite_tag != TAG_COMPONENT_SPRITE2D {
-            return ProcessResult::Error(format!(
-                "Expected {}, got {}",
-                TAG_COMPONENT_SPRITE2D, sprite_tag
-            ));
-        }
-        if camera_tag != TAG_COMPONENT_CAMERA2D {
-            return ProcessResult::Error(format!(
-                "Expected {}, got {}",
-                TAG_COMPONENT_CAMERA2D, camera_tag
-            ));
-        }
+        let scene_root = EntityValue::named("Main Scene")
+            .with_child(sprite_entity)
+            .with_child(camera_entity);
 
-        ctx.set_tagged(
-            0,
-            TAG_SCENE_MAIN,
-            json!({
-                "kind": TAG_SCENE_MAIN,
-                "sprite": sprite_payload,
-                "camera": camera_payload
-            }),
-        );
+        ctx.set_entity(0, scene_root);
         ProcessResult::Success
     }
 
@@ -500,60 +458,184 @@ impl NodeDefinition for MainSceneComposeNode {
     }
 }
 
-fn build_scene_preview_visual(node: &GraphNode) -> ScenePreviewVisual {
-    let Some(NodeValue::TaggedData { tag, payload }) = node.values.outputs.first() else {
-        return ScenePreviewVisual::default();
-    };
-    if tag != TAG_SCENE_MAIN {
-        return ScenePreviewVisual::default();
+pub struct MergeEntityNode;
+
+impl NodeDefinition for MergeEntityNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("entity/merge")
     }
 
-    let Some(camera) = payload.get("camera") else {
+    fn display_name(&self) -> &str {
+        "Merge Entity"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new("Craft/Scene Composition")
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Keep base components, add missing components from the second entity, and append children")
+    }
+
+    fn color(&self) -> Color {
+        SCENE_COMPOSITION_COLOR
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::input_entity("Base")
+                .with_description("Primary entity value that receives merged components"),
+            PortDefinition::input_entity("Addition")
+                .with_description("Entity value to merge into the base"),
+        ]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::output_entity("Entity")]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let Some(base) = ctx.get_entity(0).cloned() else {
+            return ProcessResult::MissingInput(0);
+        };
+        let Some(addition) = ctx.get_entity(1).cloned() else {
+            return ProcessResult::MissingInput(1);
+        };
+
+        ctx.set_entity(0, base.merge_with(&addition));
+        ProcessResult::Success
+    }
+}
+
+pub struct AddChildNode;
+
+impl NodeDefinition for AddChildNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("entity/add_child")
+    }
+
+    fn display_name(&self) -> &str {
+        "Add Child"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new("Craft/Scene Composition")
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Attach a child entity to a parent entity and return a new parent value")
+    }
+
+    fn color(&self) -> Color {
+        SCENE_COMPOSITION_COLOR
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![
+            PortDefinition::input_entity("Parent")
+                .with_description("Entity value that will receive the child"),
+            PortDefinition::input_entity("Child")
+                .with_description("Entity value to append as a child"),
+        ]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::output_entity("Parent")]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        let Some(parent) = ctx.get_entity(0).cloned() else {
+            return ProcessResult::MissingInput(0);
+        };
+        let Some(child) = ctx.get_entity(1).cloned() else {
+            return ProcessResult::MissingInput(1);
+        };
+
+        ctx.set_entity(0, parent.with_child(child));
+        ProcessResult::Success
+    }
+}
+
+fn build_scene_preview_visual(node: &GraphNode) -> ScenePreviewVisual {
+    let Some(NodeValue::Entity(scene_entity)) = node.values.outputs.first() else {
         return ScenePreviewVisual::default();
     };
-    let Some(sprite) = payload.get("sprite") else {
+    let Some((camera_transform, camera)) = find_first_camera(scene_entity) else {
+        return ScenePreviewVisual::default();
+    };
+    let Some((sprite_transform, sprite)) = find_first_sprite(scene_entity) else {
         return ScenePreviewVisual::default();
     };
 
     ScenePreviewVisual {
         ready: true,
-        camera_x: json_path_f32(camera, &["transform", "x"], 0.0),
-        camera_y: json_path_f32(camera, &["transform", "y"], 0.0),
-        camera_zoom: json_path_f32(camera, &["zoom"], 1.0),
-        sprite_x: json_path_f32(sprite, &["transform", "x"], 0.0),
-        sprite_y: json_path_f32(sprite, &["transform", "y"], 0.0),
-        sprite_w: json_path_f32(sprite, &["size", "x"], 40.0).max(1.0),
-        sprite_h: json_path_f32(sprite, &["size", "y"], 40.0).max(1.0),
-        sprite_color: json_color(sprite.get("color"))
-            .unwrap_or_else(|| Color::srgb(0.35, 0.35, 0.35)),
+        camera_x: camera_transform
+            .map(|transform| transform.translation.x)
+            .unwrap_or(0.0),
+        camera_y: camera_transform
+            .map(|transform| transform.translation.y)
+            .unwrap_or(0.0),
+        camera_zoom: camera.zoom.max(0.2),
+        sprite_x: sprite_transform
+            .map(|transform| transform.translation.x)
+            .unwrap_or(0.0),
+        sprite_y: sprite_transform
+            .map(|transform| transform.translation.y)
+            .unwrap_or(0.0),
+        sprite_w: sprite.size.x.max(1.0),
+        sprite_h: sprite.size.y.max(1.0),
+        sprite_color: sprite.color,
     }
 }
 
-fn json_path_f32(value: &JsonValue, path: &[&str], default: f32) -> f32 {
-    let mut current = value;
-    for key in path {
-        let Some(next) = current.get(*key) else {
-            return default;
-        };
-        current = next;
+fn find_first_camera(
+    entity: &EntityValue,
+) -> Option<(
+    Option<&univis_editor_core::value::TransformComponentValue>,
+    &univis_editor_core::value::Camera2DComponentValue,
+)> {
+    if let Some(camera) = entity
+        .components
+        .iter()
+        .find_map(EntityComponentValue::as_camera_2d)
+    {
+        return Some((entity.transform(), camera));
     }
 
-    current.as_f64().map(|v| v as f32).unwrap_or(default)
+    for child in &entity.children {
+        if let Some(found) = find_first_camera(child) {
+            return Some(found);
+        }
+    }
+
+    None
 }
 
-fn json_color(value: Option<&JsonValue>) -> Option<Color> {
-    let arr = value?.as_array()?;
-    if arr.len() < 4 {
-        return None;
+fn find_first_sprite(
+    entity: &EntityValue,
+) -> Option<(
+    Option<&univis_editor_core::value::TransformComponentValue>,
+    &univis_editor_core::value::SpriteComponentValue,
+)> {
+    if let Some(sprite) = entity
+        .components
+        .iter()
+        .find_map(EntityComponentValue::as_sprite)
+    {
+        return Some((entity.transform(), sprite));
     }
 
-    let r = arr[0].as_f64()? as f32;
-    let g = arr[1].as_f64()? as f32;
-    let b = arr[2].as_f64()? as f32;
-    let a = arr[3].as_f64()? as f32;
-    Some(Color::srgba(r, g, b, a))
+    for child in &entity.children {
+        if let Some(found) = find_first_sprite(child) {
+            return Some(found);
+        }
+    }
+
+    None
 }
 
 register_node!(Sprite2DComponentNode);
 register_node!(Camera2DComponentNode);
+register_node!(MergeEntityNode);
+register_node!(AddChildNode);
 register_node!(MainSceneComposeNode, visual = main_scene_visual_hook);

@@ -15,6 +15,17 @@ use univis_ui::{
 };
 use wire::*;
 
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct GraphEditingUiActivation {
+    pub enabled: bool,
+}
+
+impl Default for GraphEditingUiActivation {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 pub struct NodeUiPlugin;
 
 impl Plugin for NodeUiPlugin {
@@ -29,6 +40,7 @@ impl Plugin for NodeUiPlugin {
         app.init_resource::<univis_editor_core::pin::DragState>()
             .init_resource::<univis_editor_core::pin::Connecting>()
             .init_resource::<univis_editor_core::pin::WireConnectionState>()
+            .init_resource::<GraphEditingUiActivation>()
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
             .add_plugins(NodePopupPlugin)
@@ -69,6 +81,7 @@ pub mod prelude {
     pub use univis_editor_runtime::prelude::*;
 
     pub use crate::NodeUiPlugin;
+    pub use crate::GraphEditingUiActivation;
     pub use crate::editor::*;
     pub use crate::interaction::*;
     pub use crate::menu::*;

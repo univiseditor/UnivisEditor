@@ -4,7 +4,6 @@ use crate::prelude::*;
 use bevy::picking::prelude::Pickable;
 use bevy::prelude::*;
 use std::fmt::Write as _;
-use univis_editor_core::mode::{EditorMode, EditorModeState};
 use univis_ui::prelude::UInteraction;
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -62,7 +61,7 @@ impl Plugin for NodePopupPlugin {
             .add_systems(
                 Update,
                 (
-                    close_popup_outside_legacy_mode,
+                    close_popup_when_graph_editing_disabled,
                     handle_node_settings_button_clicks,
                     handle_popup_close_button,
                     handle_popup_adjust_buttons,
@@ -177,25 +176,27 @@ fn setup_node_popup_ui(mut commands: Commands) {
         });
 }
 
-fn close_popup_outside_legacy_mode(
-    mode: Option<Res<EditorModeState>>,
+fn close_popup_when_graph_editing_disabled(
+    activation: Option<Res<GraphEditingUiActivation>>,
     mut popup: ResMut<NodePopupState>,
 ) {
-    if mode
-        .as_ref()
-        .map(|mode| mode.mode != EditorMode::LegacyGraph)
-        .unwrap_or(false)
-    {
+    if !graph_editing_enabled(activation.as_deref()) {
         popup.open_for = None;
     }
 }
 
 fn handle_node_settings_button_clicks(
     mouse: Res<ButtonInput<MouseButton>>,
+    activation: Option<Res<GraphEditingUiActivation>>,
     mut popup: ResMut<NodePopupState>,
     buttons: Query<(&UInteraction, &NodeSettingsButton)>,
     node_transforms: Query<&Transform, With<GraphNode>>,
 ) {
+    if !graph_editing_enabled(activation.as_deref()) {
+        popup.open_for = None;
+        return;
+    }
+
     if !mouse.just_pressed(MouseButton::Left) {
         return;
     }
@@ -216,6 +217,10 @@ fn handle_node_settings_button_clicks(
         }
         return;
     }
+}
+
+fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
+    activation.map(|activation| activation.enabled).unwrap_or(true)
 }
 
 fn handle_popup_close_button(

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use std::collections::HashSet;
 
-pub use univis_editor_core::mode::{EditorMode, EditorModeState};
+pub use crate::mode::{EditorMode, EditorModeState};
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct ActiveEntityContext {
