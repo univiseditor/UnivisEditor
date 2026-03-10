@@ -17,3 +17,6 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# Runtime graph state
+assets/graphs/current_graph.json

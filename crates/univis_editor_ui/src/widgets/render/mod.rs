@@ -23,12 +23,13 @@ use bevy::{
             RenderCommandResult, SetItemPipeline, ViewSortedRenderPhases,
         },
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BlendState,
-            ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState,
-            DynamicUniformBuffer, FragmentState, MultisampleState, PipelineCache, PolygonMode,
-            PrimitiveState, RenderPipelineDescriptor, ShaderStages, ShaderType,
-            SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState,
-            TextureFormat, VertexState, binding_types::uniform_buffer,
+            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntries, BlendState, ColorTargetState, ColorWrites, CompareFunction,
+            DepthBiasState, DepthStencilState, DynamicUniformBuffer, FragmentState,
+            MultisampleState, PipelineCache, PolygonMode, PrimitiveState,
+            RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
+            SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat,
+            VertexState, binding_types::uniform_buffer,
         },
         renderer::{RenderDevice, RenderQueue},
         sync_world::RenderEntity,
@@ -477,6 +478,8 @@ type DrawInfiniteGrid = (
 
 #[derive(Resource)]
 struct InfiniteGridPipeline {
+    view_layout_descriptor: BindGroupLayoutDescriptor,
+    infinite_grid_layout_descriptor: BindGroupLayoutDescriptor,
     view_layout: BindGroupLayout,
     infinite_grid_layout: BindGroupLayout,
 }
@@ -484,14 +487,14 @@ struct InfiniteGridPipeline {
 impl FromWorld for InfiniteGridPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
-        let view_layout = render_device.create_bind_group_layout(
+        let view_layout_descriptor = BindGroupLayoutDescriptor::new(
             "grid-view-bind-group-layout",
             &BindGroupLayoutEntries::single(
                 ShaderStages::VERTEX | ShaderStages::FRAGMENT,
                 uniform_buffer::<GridViewUniform>(true),
             ),
         );
-        let infinite_grid_layout = render_device.create_bind_group_layout(
+        let infinite_grid_layout_descriptor = BindGroupLayoutDescriptor::new(
             "infinite-grid-bind-group-layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
@@ -501,8 +504,18 @@ impl FromWorld for InfiniteGridPipeline {
                 ),
             ),
         );
+        let view_layout = render_device.create_bind_group_layout(
+            view_layout_descriptor.label.as_ref(),
+            &view_layout_descriptor.entries,
+        );
+        let infinite_grid_layout = render_device.create_bind_group_layout(
+            infinite_grid_layout_descriptor.label.as_ref(),
+            &infinite_grid_layout_descriptor.entries,
+        );
 
         Self {
+            view_layout_descriptor,
+            infinite_grid_layout_descriptor,
             view_layout,
             infinite_grid_layout,
         }
@@ -527,7 +540,10 @@ impl SpecializedRenderPipeline for InfiniteGridPipeline {
 
         RenderPipelineDescriptor {
             label: Some(Cow::Borrowed("grid-render-pipeline")),
-            layout: vec![self.view_layout.clone(), self.infinite_grid_layout.clone()],
+            layout: vec![
+                self.view_layout_descriptor.clone(),
+                self.infinite_grid_layout_descriptor.clone(),
+            ],
             push_constant_ranges: Vec::new(),
             vertex: VertexState {
                 shader: GRID_SHADER_HANDLE,

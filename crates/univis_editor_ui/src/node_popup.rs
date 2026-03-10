@@ -110,10 +110,10 @@ fn setup_node_popup_ui(mut commands: Commands) {
                     overflow: Overflow::scroll_y(),
                     padding: UiRect::all(Val::Px(8.0)),
                     row_gap: Val::Px(6.0),
+                    border_radius: BorderRadius::all(Val::Px(8.0)),
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.09, 0.09, 0.12, 0.96)),
-                BorderRadius::all(Val::Px(8.0)),
                 NodePopupPanel,
             ))
             .with_children(|panel| {
@@ -145,10 +145,10 @@ fn setup_node_popup_ui(mut commands: Commands) {
                                     height: Val::Px(24.0),
                                     justify_content: JustifyContent::Center,
                                     align_items: AlignItems::Center,
+                                    border_radius: BorderRadius::all(Val::Px(4.0)),
                                     ..default()
                                 },
                                 BackgroundColor(Color::srgb(0.4, 0.2, 0.2)),
-                                BorderRadius::all(Val::Px(4.0)),
                                 NodePopupCloseButton,
                             ))
                             .with_children(|btn| {
@@ -612,10 +612,10 @@ fn rebuild_popup_content(
                                 justify_content: JustifyContent::SpaceBetween,
                                 align_items: AlignItems::Center,
                                 padding: UiRect::all(Val::Px(6.0)),
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
                                 ..default()
                             },
                             BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
-                            BorderRadius::all(Val::Px(4.0)),
                         ))
                         .with_children(|row| {
                             row.spawn((
@@ -633,6 +633,7 @@ fn rebuild_popup_content(
                                     height: Val::Px(24.0),
                                     justify_content: JustifyContent::Center,
                                     align_items: AlignItems::Center,
+                                    border_radius: BorderRadius::all(Val::Px(4.0)),
                                     ..default()
                                 },
                                 BackgroundColor(if value {
@@ -640,7 +641,6 @@ fn rebuild_popup_content(
                                 } else {
                                     Color::srgb(0.45, 0.2, 0.2)
                                 }),
-                                BorderRadius::all(Val::Px(4.0)),
                                 NodePopupBoolToggleButton { input_index: index },
                             ))
                             .with_children(|btn| {
@@ -780,10 +780,10 @@ fn spawn_numeric_row(
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Center,
                 padding: UiRect::all(Val::Px(6.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
-            BorderRadius::all(Val::Px(4.0)),
         ))
         .with_children(|row| {
             row.spawn((
@@ -821,10 +821,10 @@ fn spawn_adjust_button(
                 height: Val::Px(24.0),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
             BackgroundColor(Color::srgb(0.22, 0.26, 0.34)),
-            BorderRadius::all(Val::Px(4.0)),
             marker,
         ))
         .with_children(|btn| {

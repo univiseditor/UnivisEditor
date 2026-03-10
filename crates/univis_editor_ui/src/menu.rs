@@ -128,11 +128,11 @@ pub fn draw_context_menu(
                         max_height: Val::Px(menu_height),
                         flex_direction: FlexDirection::Column,
                         padding: UiRect::all(Val::Px(5.0)),
+                        border_radius: BorderRadius::all(Val::Px(8.0)),
                         overflow: Overflow::scroll_y(), // 🎯 Scrolling!
                         ..default()
                     },
                     BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
-                    BorderRadius::all(Val::Px(8.0)),
                     BorderColor::all(Color::srgba(0.3, 0.3, 0.35, 0.8)),
                     // BorderWidth(Val::Px(1.0)),
                     ZIndex(100), // لضمان ظهورها فوق كل شيء
@@ -147,10 +147,10 @@ pub fn draw_context_menu(
                                 height: Val::Px(32.0),
                                 padding: UiRect::horizontal(Val::Px(8.0)),
                                 margin: UiRect::bottom(Val::Px(5.0)),
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
                                 ..default()
                             },
                             BackgroundColor(Color::srgb(0.18, 0.18, 0.22)),
-                            BorderRadius::all(Val::Px(4.0)),
                         ))
                         .with_children(|search_container| {
                             search_container.spawn((
@@ -174,15 +174,15 @@ pub fn draw_context_menu(
                                 Node {
                                     width: Val::Percent(100.0),
                                     height: Val::Px(25.0),
-                                    justify_content: JustifyContent::FlexStart,
-                                    align_items: AlignItems::Center,
-                                    padding: UiRect::horizontal(Val::Px(10.0)),
-                                    margin: UiRect::top(Val::Px(5.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgb(0.1, 0.1, 0.12)),
-                                BorderRadius::all(Val::Px(4.0)),
-                            ))
+                                justify_content: JustifyContent::FlexStart,
+                                align_items: AlignItems::Center,
+                                padding: UiRect::horizontal(Val::Px(10.0)),
+                                margin: UiRect::top(Val::Px(5.0)),
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.1, 0.1, 0.12)),
+                        ))
                             .with_children(|header| {
                                 header.spawn((
                                     Text::new(category.clone()),
@@ -206,10 +206,10 @@ pub fn draw_context_menu(
                                         align_items: AlignItems::Center,
                                         padding: UiRect::horizontal(Val::Px(10.0)),
                                         margin: UiRect::top(Val::Px(2.0)),
+                                        border_radius: BorderRadius::all(Val::Px(4.0)),
                                         ..default()
                                     },
                                     BackgroundColor(*color),
-                                    BorderRadius::all(Val::Px(4.0)),
                                     NodeTypeButton {
                                         definition_id: node_id.clone(),
                                     },

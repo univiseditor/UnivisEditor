@@ -175,10 +175,10 @@ fn spawn_top_bar_button(parent: &mut ChildSpawnerCommands, label: &str, action: 
                 height: Val::Px(28.0),
                 padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                 align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
             BackgroundColor(Color::srgb(0.2, 0.2, 0.25)),
-            BorderRadius::all(Val::Px(4.0)),
             TopBarActionButton { action },
         ))
         .with_children(|button| {
@@ -375,10 +375,10 @@ pub(crate) fn rebuild_inspector_panel(
                             Button,
                             Node {
                                 padding: UiRect::all(Val::Px(4.0)),
+                                border_radius: BorderRadius::all(Val::Px(3.0)),
                                 ..default()
                             },
                             BackgroundColor(Color::srgb(0.2, 0.26, 0.35)),
-                            BorderRadius::all(Val::Px(3.0)),
                             InspectorSelectButton {
                                 component_id: component.id,
                             },
@@ -410,10 +410,10 @@ pub(crate) fn rebuild_inspector_panel(
                                 Button,
                                 Node {
                                     padding: UiRect::all(Val::Px(4.0)),
+                                    border_radius: BorderRadius::all(Val::Px(3.0)),
                                     ..default()
                                 },
                                 BackgroundColor(Color::srgb(0.45, 0.15, 0.15)),
-                                BorderRadius::all(Val::Px(3.0)),
                                 InspectorRemoveButton {
                                     component_id: component.id,
                                 },
@@ -489,10 +489,10 @@ fn spawn_adjust_row(
                 Button,
                 Node {
                     padding: UiRect::all(Val::Px(3.0)),
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
                     ..default()
                 },
                 BackgroundColor(Color::srgb(0.25, 0.25, 0.3)),
-                BorderRadius::all(Val::Px(3.0)),
                 InspectorAdjustButton {
                     component_id,
                     field_key: field.key.clone(),
@@ -514,10 +514,10 @@ fn spawn_adjust_row(
                 Button,
                 Node {
                     padding: UiRect::all(Val::Px(3.0)),
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
                     ..default()
                 },
                 BackgroundColor(Color::srgb(0.2, 0.35, 0.25)),
-                BorderRadius::all(Val::Px(3.0)),
                 InspectorAdjustButton {
                     component_id,
                     field_key: field.key.clone(),
@@ -543,10 +543,10 @@ fn spawn_add_component_button(parent: &mut ChildSpawnerCommands, kind: &str, lab
             Button,
             Node {
                 padding: UiRect::all(Val::Px(4.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
             BackgroundColor(Color::srgb(0.18, 0.28, 0.2)),
-            BorderRadius::all(Val::Px(3.0)),
             AddComponentButton {
                 kind: kind.to_string(),
             },

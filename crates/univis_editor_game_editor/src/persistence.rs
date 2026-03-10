@@ -526,10 +526,10 @@ pub(crate) fn draw_game_editor_status_ui(
                 width: Val::Px(560.0),
                 min_height: Val::Px(34.0),
                 padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                border_radius: BorderRadius::all(Val::Px(6.0)),
                 ..default()
             },
             BackgroundColor(background),
-            BorderRadius::all(Val::Px(6.0)),
             ZIndex(1001),
             GameEditorStatusUi,
         ))
