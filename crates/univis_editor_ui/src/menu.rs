@@ -3,6 +3,7 @@
 
 use crate::prelude::*;
 use bevy::prelude::*;
+use bevy::ui::UiTargetCamera;
 use univis_ui::prelude::*;
 
 /// مورد لتخزين حالة القائمة
@@ -30,16 +31,19 @@ pub struct CategoryHeader {
 
 /// نظام لفتح القائمة عند الضغط بالزر الأيمن في الفراغ
 pub fn open_context_menu(
-    mut _commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     mut menu_state: ResMut<ContextMenuState>,
+    mut overlay: ResMut<GraphOverlayState>,
     activation: Option<Res<GraphEditingUiActivation>>,
     // نتحقق هل ضغطنا على منفذ؟ إذا نعم، لا تفتح القائمة (تجنب التضارب مع wire_start_system)
     ports: Query<&UInteraction, With<GraphPort>>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         menu_state.is_open = false;
+        if overlay.active_surface == GraphOverlaySurface::ContextMenu {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
         return;
     }
 
@@ -58,12 +62,25 @@ pub fn open_context_menu(
                         menu_state.is_open = true;
                         menu_state.position = pos;
                         menu_state.search_query.clear(); // مسح البحث عند الفتح
+                        overlay.active_surface = GraphOverlaySurface::ContextMenu;
                     }
                 }
             } else {
                 menu_state.is_open = false;
+                if overlay.active_surface == GraphOverlaySurface::ContextMenu {
+                    overlay.active_surface = GraphOverlaySurface::None;
+                }
             }
         }
+    }
+}
+
+pub fn sync_context_menu_overlay(
+    mut menu_state: ResMut<ContextMenuState>,
+    overlay: Res<GraphOverlayState>,
+) {
+    if menu_state.is_open && overlay.active_surface != GraphOverlaySurface::ContextMenu {
+        menu_state.is_open = false;
     }
 }
 
@@ -74,6 +91,7 @@ pub fn draw_context_menu(
     activation: Option<Res<GraphEditingUiActivation>>,
     existing_menu: Query<Entity, With<ContextMenuUI>>,
     registry: Res<NodeRegistry>,
+    graph_camera: Query<Entity, With<GraphCamera>>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         for entity in existing_menu.iter() {
@@ -108,9 +126,9 @@ pub fn draw_context_menu(
             // حساب موقع القائمة (لتجنب الخروج من الشاشة)
             let menu_width = 220.0;
             let menu_height = 600.0_f32.min(600.0); // الحد الأقصى للارتفاع
+            let target_camera = graph_camera.iter().next();
 
-            commands
-                .spawn((
+            let mut menu_commands = commands.spawn((
                     Node {
                         position_type: PositionType::Absolute,
                         left: Val::Px(menu_state.position.x.min(1280.0 - menu_width)),
@@ -128,8 +146,13 @@ pub fn draw_context_menu(
                     // BorderWidth(Val::Px(1.0)),
                     ZIndex(100), // لضمان ظهورها فوق كل شيء
                     ContextMenuUI,
-                ))
-                .with_children(|parent| {
+                ));
+
+            if let Some(target_camera) = target_camera {
+                menu_commands.insert(UiTargetCamera(target_camera));
+            }
+
+            menu_commands.with_children(|parent| {
                     // 🎯 جديد: حقل البحث
                     parent
                         .spawn((
@@ -259,16 +282,16 @@ pub struct NodeTypeButton {
 
 /// نظام للتعامل مع الضغط على أزرار القائمة
 pub fn interact_context_menu(
-    mut commands: Commands,
-    registry: Res<NodeRegistry>,
     activation: Option<Res<GraphEditingUiActivation>>,
     mut interaction_query: Query<
         (&Interaction, &NodeTypeButton),
         (Changed<Interaction>, With<Button>),
     >,
     mut menu_state: ResMut<ContextMenuState>,
+    mut overlay: ResMut<GraphOverlayState>,
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         return;
@@ -284,17 +307,41 @@ pub fn interact_context_menu(
 
             if let Some(cursor_pos) = window.cursor_position() {
                 if let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor_pos) {
-                    // 2. إنشاء العقدة باستخدام النظام الجديد
-                    commands.spawn_node_from_definition(
-                        &button_data.definition_id,
-                        world_pos,
-                        &registry,
-                    );
-                    // 3. إغلاق القائمة
+                    command_writer.write(GraphCommandRequest::SpawnNode {
+                        definition_id: button_data.definition_id.clone(),
+                        position: world_pos,
+                    });
                     menu_state.is_open = false;
+                    if overlay.active_surface == GraphOverlaySurface::ContextMenu {
+                        overlay.active_surface = GraphOverlaySurface::None;
+                    }
                 }
             }
         }
+    }
+}
+
+pub fn execute_spawn_node_commands(
+    mut commands: Commands,
+    activation: Option<Res<GraphEditingUiActivation>>,
+    registry: Res<NodeRegistry>,
+    mut command_requests: MessageReader<GraphCommandRequest>,
+) {
+    if !graph_editing_enabled(activation.as_deref()) {
+        command_requests.clear();
+        return;
+    }
+
+    for command in command_requests.read() {
+        let GraphCommandRequest::SpawnNode {
+            definition_id,
+            position,
+        } = command
+        else {
+            continue;
+        };
+
+        commands.spawn_node_from_definition(definition_id, *position, &registry);
     }
 }
 

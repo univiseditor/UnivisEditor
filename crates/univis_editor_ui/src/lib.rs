@@ -15,6 +15,9 @@ use univis_ui::{
 };
 use wire::*;
 
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct DeleteSelectedNodesRequest;
+
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct GraphEditingUiActivation {
     pub enabled: bool,
@@ -40,6 +43,7 @@ impl Plugin for NodeUiPlugin {
         app.init_resource::<univis_editor_core::pin::DragState>()
             .init_resource::<univis_editor_core::pin::Connecting>()
             .init_resource::<univis_editor_core::pin::WireConnectionState>()
+            .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
@@ -61,17 +65,29 @@ impl Plugin for NodeUiPlugin {
             )
             .add_systems(
                 Update,
-                (open_context_menu, draw_context_menu, interact_context_menu).chain(),
+                (
+                    open_context_menu,
+                    sync_context_menu_overlay,
+                    draw_context_menu,
+                    interact_context_menu,
+                    execute_spawn_node_commands,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,
                 (
                     selection_system,
+                    request_delete_selected_nodes,
                     delete_node_system,
                     reset_inputs,
                     disconnect_wire_system,
                 )
                     .chain(),
+            )
+            .add_systems(
+                PostUpdate,
+                sync_live_graph_document_state,
             );
     }
 }
@@ -89,4 +105,5 @@ pub mod prelude {
     pub use crate::node_spawn::*;
     pub use crate::widgets::prelude::*;
     pub use crate::wire::*;
+    pub use crate::DeleteSelectedNodesRequest;
 }

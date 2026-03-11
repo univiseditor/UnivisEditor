@@ -7,7 +7,6 @@ edition = "2024"
 default = ["craft", "legacy"]
 craft = []
 legacy = []
-game_editor = ["dep:univis_editor_game_editor"]
 
 [dependencies]
 bevy.workspace = true
@@ -18,7 +17,6 @@ univis_editor_runtime = { path = "../univis_editor_runtime" }
 univis_editor_ui = { path = "../univis_editor_ui" }
 univis_editor_persistence = { path = "../univis_editor_persistence" }
 univis_editor_nodes_builtin = { path = "../univis_editor_nodes_builtin" }
-univis_editor_game_editor = { path = "../univis_editor_game_editor", optional = true }
 
 [[example]]
 name = "simple_editor"

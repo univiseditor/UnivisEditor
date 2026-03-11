@@ -106,22 +106,45 @@ pub fn node_highlight_system(
 /// نظام حذف العُقد
 pub fn delete_node_system(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
     activation: Option<Res<GraphEditingUiActivation>>,
+    mut command_requests: MessageReader<GraphCommandRequest>,
+    mut delete_requests: MessageReader<DeleteSelectedNodesRequest>,
     selected_nodes: Query<Entity, With<Selected>>,
     mut connect: ResMut<Connecting>,
+) {
+    if !graph_editing_enabled(activation.as_deref()) {
+        command_requests.clear();
+        delete_requests.clear();
+        return;
+    }
+
+    let delete_requested = delete_requests.read().next().is_some()
+        || command_requests
+            .read()
+            .any(|command| matches!(command, GraphCommandRequest::DeleteSelectedNodes));
+    if !delete_requested {
+        return;
+    }
+
+    for entity in selected_nodes.iter() {
+        commands.entity(entity).despawn();
+        connect
+            .connections
+            .retain(|link| link.from_node != entity && link.to_node != entity);
+    }
+}
+
+pub fn request_delete_selected_nodes(
+    keys: Res<ButtonInput<KeyCode>>,
+    activation: Option<Res<GraphEditingUiActivation>>,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         return;
     }
 
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
-        for entity in selected_nodes.iter() {
-            commands.entity(entity).despawn();
-            connect
-                .connections
-                .retain(|link| link.from_node != entity && link.to_node != entity);
-        }
+        command_writer.write(GraphCommandRequest::DeleteSelectedNodes);
     }
 }
 
@@ -144,6 +167,104 @@ pub fn reset_inputs(mut q_nodes: Query<(Entity, &mut GraphNode)>, graph: Res<Con
             }
         }
     }
+}
+
+pub fn sync_live_graph_document_state(
+    graph: Res<Connecting>,
+    q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
+) {
+    let mut nodes_data = Vec::new();
+    for (entity, node, transform, selected) in q_nodes.iter() {
+        nodes_data.push((
+            entity,
+            node.definition_id.clone(),
+            [transform.translation.x, transform.translation.y],
+            node.values.inputs.clone(),
+            node.values.inputs.len(),
+            node.values.outputs.len(),
+            selected.is_some(),
+        ));
+    }
+    nodes_data.sort_by_key(|(entity, ..)| entity.index());
+
+    let mut next_node_id = live_document.document.next_node_id();
+    let mut document = GraphDocument {
+        version: GRAPH_DOCUMENT_VERSION,
+        ..default()
+    };
+    let mut entity_to_node_id = std::collections::HashMap::new();
+    let mut node_id_to_entity = std::collections::HashMap::new();
+    let mut selected_node_ids = Vec::new();
+
+    for (entity, definition_id, position, inputs, input_count, output_count, is_selected) in nodes_data {
+        let node_id = live_document
+            .entity_to_node_id
+            .get(&entity)
+            .copied()
+            .unwrap_or_else(|| {
+                let current = next_node_id;
+                next_node_id += 1;
+                current
+            });
+
+        entity_to_node_id.insert(entity, node_id);
+        node_id_to_entity.insert(node_id, entity);
+
+        if is_selected {
+            selected_node_ids.push(node_id);
+        }
+
+        document
+            .insert_node(GraphDocumentNode {
+                id: node_id,
+                definition_id,
+                position,
+                inputs,
+                input_count,
+                output_count,
+            })
+            .expect("sync_live_graph_document_state assigns unique node ids");
+    }
+
+    for link in &graph.connections {
+        let Some(from_node_id) = entity_to_node_id.get(&link.from_node).copied() else {
+            continue;
+        };
+        let Some(to_node_id) = entity_to_node_id.get(&link.to_node).copied() else {
+            continue;
+        };
+
+        document.edges.push(GraphDocumentEdge {
+            from_node_id,
+            from_index: link.from_index,
+            to_node_id,
+            to_index: link.to_index,
+        });
+    }
+
+    let camera = q_camera
+        .iter()
+        .next()
+        .map(|(transform, projection)| GraphDocumentCameraState {
+            translation: [
+                transform.translation.x,
+                transform.translation.y,
+                transform.translation.z,
+            ],
+            ortho_scale: match projection {
+                Projection::Orthographic(ortho) => ortho.scale,
+                _ => 1.0,
+            },
+        });
+
+    document.set_camera(camera);
+    document.set_selected_nodes(selected_node_ids);
+
+    live_document.document = document;
+    live_document.entity_to_node_id = entity_to_node_id;
+    live_document.node_id_to_entity = node_id_to_entity;
 }
 
 /// نظام فصل الوصلات

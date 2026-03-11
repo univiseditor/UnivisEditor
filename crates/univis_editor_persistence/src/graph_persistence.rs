@@ -88,27 +88,23 @@ impl Default for GraphPersistenceActivation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PersistenceStatusSeverity {
+pub enum GraphPersistenceStatusSeverity {
     Info,
     Warning,
     Error,
 }
 
 #[derive(Debug, Clone)]
-struct PersistenceStatusMessage {
-    text: String,
-    severity: PersistenceStatusSeverity,
-    expires_at_secs: f64,
+pub struct GraphPersistenceStatusMessage {
+    pub text: String,
+    pub severity: GraphPersistenceStatusSeverity,
+    pub expires_at_secs: f64,
 }
 
-#[derive(Resource, Default)]
-struct GraphPersistenceStatusState {
-    active: Option<PersistenceStatusMessage>,
-    rendered_key: Option<String>,
+#[derive(Resource, Debug, Clone, Default)]
+pub struct GraphPersistenceStatus {
+    pub active: Option<GraphPersistenceStatusMessage>,
 }
-
-#[derive(Component)]
-struct GraphPersistenceStatusUi;
 
 /// رسالة طلب حفظ الجراف في المسار الحالي
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -166,6 +162,7 @@ struct PendingGraphLoad {
     selected_node_ids: Vec<u64>,
     camera: Option<GraphDocumentCameraState>,
     placeholder_count: usize,
+    validation_issue_count: usize,
 }
 
 impl PendingGraphLoad {
@@ -178,6 +175,7 @@ impl PendingGraphLoad {
         self.selected_node_ids.clear();
         self.camera = None;
         self.placeholder_count = 0;
+        self.validation_issue_count = 0;
     }
 }
 
@@ -189,7 +187,7 @@ impl Plugin for GraphPersistencePlugin {
         app.init_resource::<GraphPersistenceSettings>()
             .init_resource::<GraphPersistenceRuntimeState>()
             .init_resource::<GraphPersistenceActivation>()
-            .init_resource::<GraphPersistenceStatusState>()
+            .init_resource::<GraphPersistenceStatus>()
             .init_resource::<PendingGraphLoad>()
             .add_message::<SaveGraphRequest>()
             .add_message::<LoadGraphRequest>()
@@ -210,7 +208,7 @@ impl Plugin for GraphPersistencePlugin {
                     finalize_pending_graph_load,
                     refresh_dirty_state,
                     autosave_dirty_graph,
-                    draw_persistence_status_ui,
+                    expire_persistence_status,
                 )
                     .chain(),
             );
@@ -224,9 +222,7 @@ impl Plugin for GraphPersistencePlugin {
 fn graph_persistence_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     activation: Option<Res<GraphPersistenceActivation>>,
-    mut save_writer: MessageWriter<SaveGraphRequest>,
-    mut save_as_writer: MessageWriter<SaveGraphToPathRequest>,
-    mut load_writer: MessageWriter<LoadGraphRequest>,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
         return;
@@ -236,29 +232,31 @@ fn graph_persistence_shortcuts(
     let shift_pressed = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
     if ctrl_pressed && !shift_pressed && keys.just_pressed(KeyCode::KeyS) {
-        save_writer.write(SaveGraphRequest);
+        command_writer.write(GraphCommandRequest::SaveGraph);
     }
 
     if ctrl_pressed && shift_pressed && keys.just_pressed(KeyCode::KeyS) {
         let stamped_path = format!("assets/graphs/graph_{}.json", unix_timestamp_millis());
-        save_as_writer.write(SaveGraphToPathRequest { path: stamped_path });
+        command_writer.write(GraphCommandRequest::SaveGraphToPath { path: stamped_path });
     }
 
     if ctrl_pressed && keys.just_pressed(KeyCode::KeyO) {
-        load_writer.write(LoadGraphRequest);
+        command_writer.write(GraphCommandRequest::LoadGraph);
     }
 }
 
 fn handle_save_graph_requests(
     mut save_requests: MessageReader<SaveGraphRequest>,
     mut save_to_path_requests: MessageReader<SaveGraphToPathRequest>,
+    mut command_requests: MessageReader<GraphCommandRequest>,
     activation: Option<Res<GraphPersistenceActivation>>,
     mut settings: ResMut<GraphPersistenceSettings>,
+    registry: Res<NodeRegistry>,
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
-    mut status: ResMut<GraphPersistenceStatusState>,
+    mut status: ResMut<GraphPersistenceStatus>,
     time: Res<Time>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
@@ -266,13 +264,26 @@ fn handle_save_graph_requests(
     }
 
     let mut target_paths = Vec::new();
+    let mut save_current = false;
 
     for request in save_to_path_requests.read() {
         settings.file_path = request.path.clone();
         target_paths.push(request.path.clone());
     }
 
-    let mut save_current = false;
+    for command in command_requests.read() {
+        match command {
+            GraphCommandRequest::SaveGraph => {
+                save_current = true;
+            }
+            GraphCommandRequest::SaveGraphToPath { path } => {
+                settings.file_path = path.clone();
+                target_paths.push(path.clone());
+            }
+            _ => {}
+        }
+    }
+
     for _ in save_requests.read() {
         save_current = true;
     }
@@ -285,27 +296,47 @@ fn handle_save_graph_requests(
     }
 
     for path in target_paths {
-        match persist_graph_to_path(&path, settings.pretty_json, &graph, &q_nodes, &q_camera) {
-            Ok((_, signature)) => {
+        match persist_graph_to_path(
+            &path,
+            settings.pretty_json,
+            &registry,
+            &graph,
+            &q_nodes,
+            &q_camera,
+        ) {
+            Ok((_, signature, validation_issue_count)) => {
                 runtime.last_saved_signature = Some(signature);
                 runtime.dirty = false;
                 runtime.initialized = true;
                 runtime.autosave_elapsed_secs = 0.0;
                 runtime.open_confirm_until_secs = None;
 
-                set_persistence_status(
-                    &mut status,
-                    PersistenceStatusSeverity::Info,
-                    format!("Graph saved to {}", path),
-                    time.elapsed_secs_f64(),
-                    settings.status_duration_secs,
-                );
+                if validation_issue_count > 0 {
+                    set_persistence_status(
+                        &mut status,
+                        GraphPersistenceStatusSeverity::Warning,
+                        format!(
+                            "Graph saved to {} with {} validation issue(s).",
+                            path, validation_issue_count
+                        ),
+                        time.elapsed_secs_f64(),
+                        settings.status_duration_secs,
+                    );
+                } else {
+                    set_persistence_status(
+                        &mut status,
+                        GraphPersistenceStatusSeverity::Info,
+                        format!("Graph saved to {}", path),
+                        time.elapsed_secs_f64(),
+                        settings.status_duration_secs,
+                    );
+                }
             }
             Err(err) => {
                 warn!("Failed to save graph to {}: {}", path, err);
                 set_persistence_status(
                     &mut status,
-                    PersistenceStatusSeverity::Error,
+                    GraphPersistenceStatusSeverity::Error,
                     format!("Save failed: {}", err),
                     time.elapsed_secs_f64(),
                     settings.status_duration_secs,
@@ -319,6 +350,7 @@ fn handle_load_graph_requests(
     mut commands: Commands,
     mut load_requests: MessageReader<LoadGraphRequest>,
     mut load_from_path_requests: MessageReader<LoadGraphFromPathRequest>,
+    mut command_requests: MessageReader<GraphCommandRequest>,
     activation: Option<Res<GraphPersistenceActivation>>,
     mut settings: ResMut<GraphPersistenceSettings>,
     registry: Res<NodeRegistry>,
@@ -326,7 +358,7 @@ fn handle_load_graph_requests(
     q_existing_nodes: Query<Entity, With<GraphNode>>,
     mut pending: ResMut<PendingGraphLoad>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
-    mut status: ResMut<GraphPersistenceStatusState>,
+    mut status: ResMut<GraphPersistenceStatus>,
     time: Res<Time>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
@@ -334,12 +366,27 @@ fn handle_load_graph_requests(
     }
 
     let mut requested: Option<(String, bool)> = None;
+    let mut load_current = false;
 
     for request in load_from_path_requests.read() {
         requested = Some((request.path.clone(), request.force_if_dirty));
     }
 
-    let mut load_current = false;
+    for command in command_requests.read() {
+        match command {
+            GraphCommandRequest::LoadGraph => {
+                load_current = true;
+            }
+            GraphCommandRequest::LoadGraphFromPath {
+                path,
+                force_if_dirty,
+            } => {
+                requested = Some((path.clone(), *force_if_dirty));
+            }
+            _ => {}
+        }
+    }
+
     for _ in load_requests.read() {
         load_current = true;
     }
@@ -363,7 +410,7 @@ fn handle_load_graph_requests(
                 Some(now + settings.confirm_reload_window_secs as f64);
             set_persistence_status(
                 &mut status,
-                PersistenceStatusSeverity::Warning,
+                GraphPersistenceStatusSeverity::Warning,
                 "Unsaved changes detected. Press Ctrl+O again to confirm reload.".to_string(),
                 now,
                 settings.status_duration_secs,
@@ -381,7 +428,7 @@ fn handle_load_graph_requests(
             warn!("Failed to read graph file {}: {}", path, err);
             set_persistence_status(
                 &mut status,
-                PersistenceStatusSeverity::Error,
+                GraphPersistenceStatusSeverity::Error,
                 format!("Open failed: cannot read {}", path),
                 now,
                 settings.status_duration_secs,
@@ -396,7 +443,7 @@ fn handle_load_graph_requests(
             warn!("Failed to parse/migrate graph JSON {}: {}", path, err);
             set_persistence_status(
                 &mut status,
-                PersistenceStatusSeverity::Error,
+                GraphPersistenceStatusSeverity::Error,
                 format!("Open failed: {}", err),
                 now,
                 settings.status_duration_secs,
@@ -404,6 +451,17 @@ fn handle_load_graph_requests(
             return;
         }
     };
+    let validation_issues = validate_graph_document(&save_file, &registry);
+    if !validation_issues.is_empty() {
+        warn!(
+            "Loaded graph document {} with {} validation issue(s)",
+            path,
+            validation_issues.len()
+        );
+        for issue in validation_issues.iter().take(5) {
+            warn!("Graph validation: {}", issue.message);
+        }
+    }
 
     pending.reset();
 
@@ -465,11 +523,12 @@ fn handle_load_graph_requests(
     pending.camera = save_file.view.camera;
     pending.source_path = Some(path.clone());
     pending.is_pending = true;
+    pending.validation_issue_count = validation_issues.len();
 
     if let Some(note) = migration_note {
         set_persistence_status(
             &mut status,
-            PersistenceStatusSeverity::Info,
+            GraphPersistenceStatusSeverity::Info,
             note,
             now,
             settings.status_duration_secs,
@@ -477,7 +536,7 @@ fn handle_load_graph_requests(
     } else {
         set_persistence_status(
             &mut status,
-            PersistenceStatusSeverity::Info,
+            GraphPersistenceStatusSeverity::Info,
             format!("Loading graph from {}", path),
             now,
             settings.status_duration_secs,
@@ -495,7 +554,7 @@ fn finalize_pending_graph_load(
     mut q_nodes: Query<&mut GraphNode>,
     mut q_camera: Query<(&mut Transform, &mut Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
-    mut status: ResMut<GraphPersistenceStatusState>,
+    mut status: ResMut<GraphPersistenceStatus>,
     settings: Res<GraphPersistenceSettings>,
     time: Res<Time>,
 ) {
@@ -631,13 +690,16 @@ fn finalize_pending_graph_load(
         .clone()
         .unwrap_or_else(|| settings.file_path.clone());
 
-    if pending.placeholder_count > 0 || skipped_link_count > 0 {
+    if pending.placeholder_count > 0 || skipped_link_count > 0 || pending.validation_issue_count > 0 {
         set_persistence_status(
             &mut status,
-            PersistenceStatusSeverity::Warning,
+            GraphPersistenceStatusSeverity::Warning,
             format!(
-                "Loaded {} with {} placeholder node(s) and {} skipped link(s).",
-                source_path, pending.placeholder_count, skipped_link_count
+                "Loaded {} with {} placeholder node(s), {} skipped link(s), and {} validation issue(s).",
+                source_path,
+                pending.placeholder_count,
+                skipped_link_count,
+                pending.validation_issue_count
             ),
             time.elapsed_secs_f64(),
             settings.status_duration_secs,
@@ -645,7 +707,7 @@ fn finalize_pending_graph_load(
     } else {
         set_persistence_status(
             &mut status,
-            PersistenceStatusSeverity::Info,
+            GraphPersistenceStatusSeverity::Info,
             format!("Graph loaded successfully from {}", source_path),
             time.elapsed_secs_f64(),
             settings.status_duration_secs,
@@ -694,11 +756,12 @@ fn autosave_dirty_graph(
     time: Res<Time>,
     settings: Res<GraphPersistenceSettings>,
     activation: Option<Res<GraphPersistenceActivation>>,
+    registry: Res<NodeRegistry>,
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
-    mut status: ResMut<GraphPersistenceStatusState>,
+    mut status: ResMut<GraphPersistenceStatus>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
         runtime.autosave_elapsed_secs = 0.0;
@@ -723,11 +786,12 @@ fn autosave_dirty_graph(
     match persist_graph_to_path(
         &settings.file_path,
         settings.pretty_json,
+        &registry,
         &graph,
         &q_nodes,
         &q_camera,
     ) {
-        Ok((save_file, signature)) => {
+        Ok((save_file, signature, validation_issue_count)) => {
             runtime.last_saved_signature = Some(signature);
             runtime.dirty = false;
 
@@ -742,8 +806,20 @@ fn autosave_dirty_graph(
                 Ok(backup_path) => {
                     set_persistence_status(
                         &mut status,
-                        PersistenceStatusSeverity::Info,
-                        format!("Autosaved graph to {}", backup_path.display()),
+                        if validation_issue_count > 0 {
+                            GraphPersistenceStatusSeverity::Warning
+                        } else {
+                            GraphPersistenceStatusSeverity::Info
+                        },
+                        if validation_issue_count > 0 {
+                            format!(
+                                "Autosaved graph to {} with {} validation issue(s).",
+                                backup_path.display(),
+                                validation_issue_count
+                            )
+                        } else {
+                            format!("Autosaved graph to {}", backup_path.display())
+                        },
                         time.elapsed_secs_f64(),
                         settings.status_duration_secs,
                     );
@@ -752,7 +828,7 @@ fn autosave_dirty_graph(
                     warn!("Autosave backup warning: {}", err);
                     set_persistence_status(
                         &mut status,
-                        PersistenceStatusSeverity::Warning,
+                        GraphPersistenceStatusSeverity::Warning,
                         format!("Autosave completed but backup failed: {}", err),
                         time.elapsed_secs_f64(),
                         settings.status_duration_secs,
@@ -764,7 +840,7 @@ fn autosave_dirty_graph(
             warn!("Autosave failed: {}", err);
             set_persistence_status(
                 &mut status,
-                PersistenceStatusSeverity::Error,
+                GraphPersistenceStatusSeverity::Error,
                 format!("Autosave failed: {}", err),
                 time.elapsed_secs_f64(),
                 settings.status_duration_secs,
@@ -773,95 +849,35 @@ fn autosave_dirty_graph(
     }
 }
 
-/// عرض رسالة حالة بصرية على الشاشة
-fn draw_persistence_status_ui(
-    mut commands: Commands,
-    mut status: ResMut<GraphPersistenceStatusState>,
+fn expire_persistence_status(
+    mut status: ResMut<GraphPersistenceStatus>,
     activation: Option<Res<GraphPersistenceActivation>>,
     time: Res<Time>,
-    existing: Query<Entity, With<GraphPersistenceStatusUi>>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
-        for entity in existing.iter() {
-            commands.entity(entity).despawn();
-        }
+        status.active = None;
         return;
     }
 
     if let Some(active) = &status.active {
         if time.elapsed_secs_f64() > active.expires_at_secs {
             status.active = None;
-            status.rendered_key = None;
         }
     }
-
-    let existing_entities: Vec<Entity> = existing.iter().collect();
-
-    let Some(active) = &status.active else {
-        for entity in existing_entities {
-            commands.entity(entity).despawn();
-        }
-        return;
-    };
-
-    let key = format!("{:?}:{}", active.severity, active.text);
-    if status.rendered_key.as_ref() == Some(&key) && !existing_entities.is_empty() {
-        return;
-    }
-
-    for entity in existing_entities {
-        commands.entity(entity).despawn();
-    }
-
-    let background = match active.severity {
-        PersistenceStatusSeverity::Info => Color::srgba(0.1, 0.35, 0.18, 0.92),
-        PersistenceStatusSeverity::Warning => Color::srgba(0.45, 0.3, 0.06, 0.92),
-        PersistenceStatusSeverity::Error => Color::srgba(0.5, 0.15, 0.15, 0.95),
-    };
-
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(14.0),
-                top: Val::Px(14.0),
-                width: Val::Px(560.0),
-                min_height: Val::Px(34.0),
-                padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
-                border_radius: BorderRadius::all(Val::Px(6.0)),
-                ..default()
-            },
-            BackgroundColor(background),
-            ZIndex(999),
-            GraphPersistenceStatusUi,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new(active.text.clone()),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-            ));
-        });
-
-    status.rendered_key = Some(key);
 }
 
 fn set_persistence_status(
-    status: &mut GraphPersistenceStatusState,
-    severity: PersistenceStatusSeverity,
+    status: &mut GraphPersistenceStatus,
+    severity: GraphPersistenceStatusSeverity,
     text: String,
     now_secs: f64,
     duration_secs: f32,
 ) {
-    status.active = Some(PersistenceStatusMessage {
+    status.active = Some(GraphPersistenceStatusMessage {
         text,
         severity,
         expires_at_secs: now_secs + duration_secs as f64,
     });
-    status.rendered_key = None;
 }
 
 fn graph_persistence_enabled(activation: Option<&GraphPersistenceActivation>) -> bool {
@@ -926,14 +942,16 @@ fn parse_and_migrate_graph(content: &str) -> Result<(GraphDocument, Option<Strin
 fn persist_graph_to_path(
     path: &str,
     pretty_json: bool,
+    registry: &NodeRegistry,
     graph: &Connecting,
     q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
-) -> Result<(GraphDocument, String), String> {
+) -> Result<(GraphDocument, String, usize), String> {
     let document = build_graph_document(graph, q_nodes, q_camera);
+    let validation_issue_count = validate_graph_document(&document, registry).len();
     let signature = graph_signature(&document)?;
     write_graph_document(path, &document, pretty_json)?;
-    Ok((document, signature))
+    Ok((document, signature, validation_issue_count))
 }
 
 fn build_graph_document(
@@ -956,8 +974,11 @@ fn build_graph_document(
     nodes_data.sort_by_key(|(entity, ..)| entity.index());
 
     let mut entity_to_saved_id: HashMap<Entity, u64> = HashMap::new();
-    let mut nodes = Vec::with_capacity(nodes_data.len());
     let mut selected_node_ids = Vec::new();
+    let mut document = GraphDocument {
+        version: GRAPH_DOCUMENT_VERSION,
+        ..default()
+    };
 
     for (idx, (entity, definition_id, position, inputs, input_count, output_count, is_selected)) in
         nodes_data.into_iter().enumerate()
@@ -969,17 +990,18 @@ fn build_graph_document(
             selected_node_ids.push(saved_id);
         }
 
-        nodes.push(GraphDocumentNode {
-            id: saved_id,
-            definition_id,
-            position,
-            inputs,
-            input_count,
-            output_count,
-        });
+        document
+            .insert_node(GraphDocumentNode {
+                id: saved_id,
+                definition_id,
+                position,
+                inputs,
+                input_count,
+                output_count,
+            })
+            .expect("build_graph_document assigns unique node ids");
     }
 
-    let mut edges = Vec::new();
     for link in &graph.connections {
         let Some(from_node_id) = entity_to_saved_id.get(&link.from_node).copied() else {
             continue;
@@ -988,7 +1010,7 @@ fn build_graph_document(
             continue;
         };
 
-        edges.push(GraphDocumentEdge {
+        document.edges.push(GraphDocumentEdge {
             from_node_id,
             from_index: link.from_index,
             to_node_id,
@@ -1011,15 +1033,9 @@ fn build_graph_document(
             },
         });
 
-    GraphDocument {
-        version: GRAPH_DOCUMENT_VERSION,
-        nodes,
-        edges,
-        view: GraphDocumentViewState {
-            camera,
-            selected_node_ids,
-        },
-    }
+    document.set_camera(camera);
+    document.set_selected_nodes(selected_node_ids);
+    document
 }
 
 fn graph_signature(document: &GraphDocument) -> Result<String, String> {

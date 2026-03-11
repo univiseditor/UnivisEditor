@@ -1,10 +1,9 @@
-//! نظام نافذة إعدادات العقدة (Popup) من داخل الكانفس
+//! نظام نافذة إعدادات العقدة (Popup) داخل world-space UI
 
 use crate::prelude::*;
-use bevy::picking::prelude::Pickable;
 use bevy::prelude::*;
 use std::fmt::Write as _;
-use univis_ui::prelude::UInteraction;
+use univis_ui::prelude::*;
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct NodePopupState {
@@ -16,9 +15,6 @@ pub struct NodePopupState {
 pub struct NodeSettingsButton {
     pub node_entity: Entity,
 }
-
-#[derive(Component)]
-struct NodePopupRoot;
 
 #[derive(Component)]
 struct NodePopupPanel;
@@ -62,6 +58,7 @@ impl Plugin for NodePopupPlugin {
                 Update,
                 (
                     close_popup_when_graph_editing_disabled,
+                    sync_popup_overlay,
                     handle_node_settings_button_clicks,
                     handle_popup_close_button,
                     handle_popup_adjust_buttons,
@@ -85,102 +82,122 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
 fn setup_node_popup_ui(mut commands: Commands) {
     commands
         .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
+            UWorldRoot {
+                size: Vec2::new(340.0, 620.0),
                 ..default()
             },
-            BackgroundColor(Color::NONE),
-            Pickable::IGNORE,
-            ZIndex(2200),
-            NodePopupRoot,
+            Transform::from_xyz(0.0, 0.0, 25.0),
+            Visibility::Hidden,
+            NodePopupPanel,
+            UNode {
+                width: UVal::Px(320.0),
+                height: UVal::Content,
+                background_color: Color::srgba(0.09, 0.09, 0.12, 0.96),
+                padding: USides::all(8.0),
+                border_radius: UCornerRadius::all(8.0),
+                ..default()
+            },
+            UBorder {
+                color: Color::srgba(1.0, 1.0, 1.0, 0.06),
+                width: 1.0,
+                radius: UCornerRadius::all(8.0),
+                ..default()
+            },
+            ULayout {
+                display: UDisplay::Flex,
+                flex_direction: UFlexDirection::Column,
+                gap: 6.0,
+                ..default()
+            },
         ))
-        .with_children(|root| {
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    width: Val::Px(320.0),
-                    max_height: Val::Px(560.0),
-                    display: Display::None,
-                    flex_direction: FlexDirection::Column,
-                    overflow: Overflow::scroll_y(),
-                    padding: UiRect::all(Val::Px(8.0)),
-                    row_gap: Val::Px(6.0),
-                    border_radius: BorderRadius::all(Val::Px(8.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.09, 0.09, 0.12, 0.96)),
-                NodePopupPanel,
-            ))
-            .with_children(|panel| {
-                panel
-                    .spawn((Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(30.0),
-                        display: Display::Flex,
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::SpaceBetween,
-                        ..default()
-                    },))
-                    .with_children(|header| {
-                        header.spawn((
-                            Text::new("Node Settings"),
-                            TextFont {
-                                font_size: 14.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                            NodePopupTitleText,
-                        ));
-
-                        header
-                            .spawn((
-                                Button,
-                                Node {
-                                    width: Val::Px(24.0),
-                                    height: Val::Px(24.0),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    border_radius: BorderRadius::all(Val::Px(4.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgb(0.4, 0.2, 0.2)),
-                                NodePopupCloseButton,
-                            ))
-                            .with_children(|btn| {
-                                btn.spawn((
-                                    Text::new("X"),
-                                    TextFont {
-                                        font_size: 12.0,
-                                        ..default()
-                                    },
-                                    TextColor(Color::WHITE),
-                                ));
-                            });
-                    });
-
-                panel.spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        display: Display::Flex,
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    UNode {
+                        width: UVal::Percent(1.0),
+                        height: UVal::Px(30.0),
                         ..default()
                     },
-                    NodePopupContent,
-                ));
-            });
+                    ULayout {
+                        display: UDisplay::Flex,
+                        justify_content: UJustifyContent::SpaceBetween,
+                        align_items: UAlignItems::Center,
+                        ..default()
+                    },
+                ))
+                .with_children(|header| {
+                    header.spawn((
+                        UTextLabel {
+                            text: "Node Settings".to_string(),
+                            font_size: 14.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                        NodePopupTitleText,
+                    ));
+
+                    header
+                        .spawn((
+                            UNode {
+                                width: UVal::Px(24.0),
+                                height: UVal::Px(24.0),
+                                background_color: Color::srgb(0.4, 0.2, 0.2),
+                                border_radius: UCornerRadius::all(4.0),
+                                ..default()
+                            },
+                            ULayout {
+                                display: UDisplay::Flex,
+                                justify_content: UJustifyContent::Center,
+                                align_items: UAlignItems::Center,
+                                ..default()
+                            },
+                            UInteraction::default(),
+                            NodePopupCloseButton,
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn(UTextLabel {
+                                text: "X".to_string(),
+                                font_size: 12.0,
+                                color: Color::WHITE,
+                                ..default()
+                            });
+                        });
+                });
+
+            panel.spawn((
+                UNode {
+                    width: UVal::Percent(1.0),
+                    ..default()
+                },
+                ULayout {
+                    display: UDisplay::Flex,
+                    flex_direction: UFlexDirection::Column,
+                    gap: 4.0,
+                    ..default()
+                },
+                NodePopupContent,
+            ));
         });
 }
 
 fn close_popup_when_graph_editing_disabled(
     activation: Option<Res<GraphEditingUiActivation>>,
     mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
+        popup.open_for = None;
+        if overlay.active_surface == GraphOverlaySurface::NodePopup {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
+    }
+}
+
+fn sync_popup_overlay(
+    mut popup: ResMut<NodePopupState>,
+    overlay: Res<GraphOverlayState>,
+) {
+    if popup.open_for.is_some() && overlay.active_surface != GraphOverlaySurface::NodePopup {
         popup.open_for = None;
     }
 }
@@ -189,11 +206,15 @@ fn handle_node_settings_button_clicks(
     mouse: Res<ButtonInput<MouseButton>>,
     activation: Option<Res<GraphEditingUiActivation>>,
     mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
     buttons: Query<(&UInteraction, &NodeSettingsButton)>,
     node_transforms: Query<&Transform, With<GraphNode>>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         popup.open_for = None;
+        if overlay.active_surface == GraphOverlaySurface::NodePopup {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
         return;
     }
 
@@ -208,10 +229,14 @@ fn handle_node_settings_button_clicks(
 
         if popup.open_for == Some(gear_button.node_entity) {
             popup.open_for = None;
+            if overlay.active_surface == GraphOverlaySurface::NodePopup {
+                overlay.active_surface = GraphOverlaySurface::None;
+            }
             return;
         }
 
         popup.open_for = Some(gear_button.node_entity);
+        overlay.active_surface = GraphOverlaySurface::NodePopup;
         if let Ok(transform) = node_transforms.get(gear_button.node_entity) {
             popup.anchor_world = transform.translation.truncate();
         }
@@ -224,28 +249,22 @@ fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool 
 }
 
 fn handle_popup_close_button(
-    mut buttons: Query<
-        &Interaction,
-        (
-            Changed<Interaction>,
-            With<Button>,
-            With<NodePopupCloseButton>,
-        ),
-    >,
+    buttons: Query<&UInteraction, (Changed<UInteraction>, With<NodePopupCloseButton>)>,
     mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
 ) {
-    for interaction in buttons.iter_mut() {
-        if *interaction == Interaction::Pressed {
+    for interaction in buttons.iter() {
+        if *interaction == UInteraction::Pressed {
             popup.open_for = None;
+            if overlay.active_surface == GraphOverlaySurface::NodePopup {
+                overlay.active_surface = GraphOverlaySurface::None;
+            }
         }
     }
 }
 
 fn handle_popup_adjust_buttons(
-    mut buttons: Query<
-        (&Interaction, &NodePopupAdjustButton),
-        (Changed<Interaction>, With<Button>),
-    >,
+    buttons: Query<(&UInteraction, &NodePopupAdjustButton), Changed<UInteraction>>,
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
     mut q_nodes: Query<&mut GraphNode>,
@@ -254,8 +273,8 @@ fn handle_popup_adjust_buttons(
         return;
     };
 
-    for (interaction, button) in buttons.iter_mut() {
-        if *interaction != Interaction::Pressed {
+    for (interaction, button) in buttons.iter() {
+        if *interaction != UInteraction::Pressed {
             continue;
         }
 
@@ -373,10 +392,7 @@ fn handle_popup_adjust_buttons(
 }
 
 fn handle_popup_bool_toggle_buttons(
-    mut buttons: Query<
-        (&Interaction, &NodePopupBoolToggleButton),
-        (Changed<Interaction>, With<Button>),
-    >,
+    buttons: Query<(&UInteraction, &NodePopupBoolToggleButton), Changed<UInteraction>>,
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
     mut q_nodes: Query<&mut GraphNode>,
@@ -385,8 +401,8 @@ fn handle_popup_bool_toggle_buttons(
         return;
     };
 
-    for (interaction, button) in buttons.iter_mut() {
-        if *interaction != Interaction::Pressed {
+    for (interaction, button) in buttons.iter() {
+        if *interaction != UInteraction::Pressed {
             continue;
         }
 
@@ -435,55 +451,33 @@ fn sync_popup_anchor_world(
 
 fn update_popup_panel_position(
     popup: Res<NodePopupState>,
-    windows: Query<&Window>,
-    q_camera: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
-    mut panel_query: Query<&mut Node, With<NodePopupPanel>>,
+    mut panel_query: Query<(&mut Transform, &mut Visibility), With<NodePopupPanel>>,
 ) {
-    let Ok(mut panel_node) = panel_query.single_mut() else {
+    let Ok((mut transform, mut visibility)) = panel_query.single_mut() else {
         return;
     };
 
     let Some(_) = popup.open_for else {
-        panel_node.display = Display::None;
+        *visibility = Visibility::Hidden;
         return;
     };
 
-    let Ok(window) = windows.single() else {
-        panel_node.display = Display::None;
-        return;
-    };
-    let Ok((camera, camera_transform)) = q_camera.single() else {
-        panel_node.display = Display::None;
-        return;
-    };
-
-    let Ok(screen_pos) = camera.world_to_viewport(camera_transform, popup.anchor_world.extend(0.0))
-    else {
-        panel_node.display = Display::None;
-        return;
-    };
-
-    let panel_width = 320.0;
-    let panel_height = 520.0;
-    let max_left = (window.width() - panel_width - 6.0).max(6.0);
-    let max_top = (window.height() - panel_height - 6.0).max(6.0);
-
-    let left = (screen_pos.x + 18.0).clamp(6.0, max_left);
-    let top = (window.height() - screen_pos.y + 18.0).clamp(6.0, max_top);
-
-    panel_node.display = Display::Flex;
-    panel_node.left = Val::Px(left);
-    panel_node.top = Val::Px(top);
+    *visibility = Visibility::Inherited;
+    transform.translation = Vec3::new(
+        popup.anchor_world.x + 210.0,
+        popup.anchor_world.y - 40.0,
+        25.0,
+    );
 }
 
 fn rebuild_popup_content(
     mut commands: Commands,
     mut popup: ResMut<NodePopupState>,
     registry: Res<NodeRegistry>,
-    q_nodes: Query<&GraphNode>,
+    q_nodes: Query<Ref<GraphNode>>,
     content_query: Query<Entity, With<NodePopupContent>>,
     title_query: Query<Entity, With<NodePopupTitleText>>,
-    mut title_text_query: Query<&mut Text>,
+    mut title_text_query: Query<&mut UTextLabel>,
     children_query: Query<&Children>,
 ) {
     let Ok(content_entity) = content_query.single() else {
@@ -493,17 +487,18 @@ fn rebuild_popup_content(
         return;
     };
 
-    if let Ok(mut title) = title_text_query.get_mut(title_entity) {
-        title.0 = "Node Settings".to_string();
-    }
-
-    if let Ok(existing_children) = children_query.get(content_entity) {
-        for child in existing_children.iter() {
-            commands.entity(child).despawn();
-        }
-    }
-
     let Some(node_entity) = popup.open_for else {
+        if !popup.is_changed() {
+            return;
+        }
+        if let Ok(mut title) = title_text_query.get_mut(title_entity) {
+            title.text = "Node Settings".to_string();
+        }
+        if let Ok(existing_children) = children_query.get(content_entity) {
+            for child in existing_children.iter() {
+                commands.entity(child).despawn();
+            }
+        }
         return;
     };
 
@@ -511,14 +506,23 @@ fn rebuild_popup_content(
         popup.open_for = None;
         return;
     };
+    if !popup.is_changed() && !graph_node.is_changed() {
+        return;
+    }
     let Some(definition) = registry.get(&graph_node.definition_id) else {
         popup.open_for = None;
         return;
     };
     let inputs = definition.inputs();
 
+    if let Ok(existing_children) = children_query.get(content_entity) {
+        for child in existing_children.iter() {
+            commands.entity(child).despawn();
+        }
+    }
+
     if let Ok(mut title) = title_text_query.get_mut(title_entity) {
-        title.0 = format!("{} Settings", definition.display_name());
+        title.text = format!("{} Settings", definition.display_name());
     }
 
     let editable_indices: Vec<usize> = inputs
@@ -529,14 +533,12 @@ fn rebuild_popup_content(
 
     if editable_indices.is_empty() {
         commands.entity(content_entity).with_children(|content| {
-            content.spawn((
-                Text::new("No editable parameters."),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.8, 0.8, 0.85)),
-            ));
+            content.spawn(UTextLabel {
+                text: "No editable parameters.".to_string(),
+                font_size: 12.0,
+                color: Color::srgb(0.8, 0.8, 0.85),
+                ..default()
+            });
         });
         return;
     }
@@ -611,52 +613,60 @@ fn rebuild_popup_content(
 
                     content
                         .spawn((
-                            Node {
-                                width: Val::Percent(100.0),
-                                display: Display::Flex,
-                                justify_content: JustifyContent::SpaceBetween,
-                                align_items: AlignItems::Center,
-                                padding: UiRect::all(Val::Px(6.0)),
-                                border_radius: BorderRadius::all(Val::Px(4.0)),
+                            UNode {
+                                width: UVal::Percent(1.0),
+                                background_color: Color::srgba(0.15, 0.15, 0.2, 0.85),
+                                padding: USides::all(6.0),
+                                border_radius: UCornerRadius::all(4.0),
                                 ..default()
                             },
-                            BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
+                            ULayout {
+                                display: UDisplay::Flex,
+                                justify_content: UJustifyContent::SpaceBetween,
+                                align_items: UAlignItems::Center,
+                                ..default()
+                            },
                         ))
                         .with_children(|row| {
+                            row.spawn(UTextLabel {
+                                text: format!("{}: {}", port_def.name, value),
+                                font_size: 12.0,
+                                color: Color::WHITE,
+                                ..default()
+                            });
+
                             row.spawn((
-                                Text::new(format!("{}: {}", port_def.name, value)),
-                                TextFont {
-                                    font_size: 12.0,
+                                UNode {
+                                    width: UVal::Px(70.0),
+                                    height: UVal::Px(24.0),
+                                    background_color: if value {
+                                        Color::srgb(0.2, 0.45, 0.22)
+                                    } else {
+                                        Color::srgb(0.45, 0.2, 0.2)
+                                    },
+                                    border_radius: UCornerRadius::all(4.0),
                                     ..default()
                                 },
-                                TextColor(Color::WHITE),
-                            ));
-                            row.spawn((
-                                Button,
-                                Node {
-                                    width: Val::Px(70.0),
-                                    height: Val::Px(24.0),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                                ULayout {
+                                    display: UDisplay::Flex,
+                                    justify_content: UJustifyContent::Center,
+                                    align_items: UAlignItems::Center,
                                     ..default()
                                 },
-                                BackgroundColor(if value {
-                                    Color::srgb(0.2, 0.45, 0.22)
-                                } else {
-                                    Color::srgb(0.45, 0.2, 0.2)
-                                }),
+                                UInteraction::default(),
                                 NodePopupBoolToggleButton { input_index: index },
                             ))
                             .with_children(|btn| {
-                                btn.spawn((
-                                    Text::new(if value { "ON" } else { "OFF" }),
-                                    TextFont {
-                                        font_size: 11.0,
-                                        ..default()
+                                btn.spawn(UTextLabel {
+                                    text: if value {
+                                        "ON".to_string()
+                                    } else {
+                                        "OFF".to_string()
                                     },
-                                    TextColor(Color::WHITE),
-                                ));
+                                    font_size: 11.0,
+                                    color: Color::WHITE,
+                                    ..default()
+                                });
                             });
                         });
                 }
@@ -675,17 +685,15 @@ fn rebuild_popup_content(
                         .unwrap_or_else(|| Color::srgba(1.0, 1.0, 1.0, 1.0))
                         .to_srgba();
 
-                    content.spawn((
-                        Text::new(format!(
+                    content.spawn(UTextLabel {
+                        text: format!(
                             "{}: ({:.2}, {:.2}, {:.2}, {:.2})",
                             port_def.name, color.red, color.green, color.blue, color.alpha
-                        )),
-                        TextFont {
-                            font_size: 12.0,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                    ));
+                        ),
+                        font_size: 12.0,
+                        color: Color::WHITE,
+                        ..default()
+                    });
 
                     spawn_numeric_row(
                         content,
@@ -756,14 +764,12 @@ fn rebuild_popup_content(
                         port_def.name,
                         port_def.value_type.display_name()
                     );
-                    content.spawn((
-                        Text::new(line),
-                        TextFont {
-                            font_size: 11.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.9, 0.7, 0.4)),
-                    ));
+                    content.spawn(UTextLabel {
+                        text: line,
+                        font_size: 11.0,
+                        color: Color::srgb(0.9, 0.7, 0.4),
+                        ..default()
+                    });
                 }
             }
         }
@@ -779,37 +785,40 @@ fn spawn_numeric_row(
 ) {
     content
         .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                display: Display::Flex,
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                padding: UiRect::all(Val::Px(6.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
+            UNode {
+                width: UVal::Percent(1.0),
+                background_color: Color::srgba(0.15, 0.15, 0.2, 0.85),
+                padding: USides::all(6.0),
+                border_radius: UCornerRadius::all(4.0),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
+            ULayout {
+                display: UDisplay::Flex,
+                justify_content: UJustifyContent::SpaceBetween,
+                align_items: UAlignItems::Center,
+                ..default()
+            },
         ))
         .with_children(|row| {
+            row.spawn(UTextLabel {
+                text: format!("{}: {}", label, value),
+                font_size: 12.0,
+                color: Color::WHITE,
+                ..default()
+            });
+
             row.spawn((
-                Text::new(format!("{}: {}", label, value)),
-                TextFont {
-                    font_size: 12.0,
+                UNode::default(),
+                ULayout {
+                    display: UDisplay::Flex,
+                    gap: 4.0,
                     ..default()
                 },
-                TextColor(Color::WHITE),
-            ));
-
-            row.spawn((Node {
-                display: Display::Flex,
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(4.0),
-                ..default()
-            },))
-                .with_children(|controls| {
-                    spawn_adjust_button(controls, "-", minus);
-                    spawn_adjust_button(controls, "+", plus);
-                });
+            ))
+            .with_children(|controls| {
+                spawn_adjust_button(controls, "-", minus);
+                spawn_adjust_button(controls, "+", plus);
+            });
         });
 }
 
@@ -820,26 +829,28 @@ fn spawn_adjust_button(
 ) {
     parent
         .spawn((
-            Button,
-            Node {
-                width: Val::Px(26.0),
-                height: Val::Px(24.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                border_radius: BorderRadius::all(Val::Px(4.0)),
+            UNode {
+                width: UVal::Px(26.0),
+                height: UVal::Px(24.0),
+                background_color: Color::srgb(0.22, 0.26, 0.34),
+                border_radius: UCornerRadius::all(4.0),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.22, 0.26, 0.34)),
+            ULayout {
+                display: UDisplay::Flex,
+                justify_content: UJustifyContent::Center,
+                align_items: UAlignItems::Center,
+                ..default()
+            },
+            UInteraction::default(),
             marker,
         ))
         .with_children(|btn| {
-            btn.spawn((
-                Text::new(text),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-            ));
+            btn.spawn(UTextLabel {
+                text: text.to_string(),
+                font_size: 13.0,
+                color: Color::WHITE,
+                ..default()
+            });
         });
 }

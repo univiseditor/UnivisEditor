@@ -1,11 +1,15 @@
+pub mod commands;
 pub mod document;
+pub mod graph_validation;
 pub mod node_definition;
 pub mod node_registry;
 pub mod pin;
 pub mod value;
 
 pub mod prelude {
+    pub use crate::commands::*;
     pub use crate::document::*;
+    pub use crate::graph_validation::*;
     pub use crate::node_definition::*;
     pub use crate::node_registry::*;
     pub use crate::pin::*;

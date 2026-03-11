@@ -5,7 +5,7 @@
 **A node-based visual editor for the Bevy Engine**
 
 [![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg)](https://www.rust-lang.org/)
-[![Bevy](https://img.shields.io/badge/Bevy-0.17.3-blue.svg)](https://bevyengine.org/)
+[![Bevy](https://img.shields.io/badge/Bevy-0.18.0-blue.svg)](https://bevyengine.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 </div>
@@ -22,14 +22,14 @@ The codebase is now organized as a Cargo workspace:
 - `univis_editor_ui`
 - `univis_editor_persistence`
 - `univis_editor_nodes_builtin`
-- `univis_editor_game_editor` (optional)
 - `univis_editor_app` (facade + prelude)
 
 ### Key Features
 
 - 🎨 **Visual Node Editor** - Create complex logic by connecting nodes visually
+- 🧭 **Canvas-Only Workflow** - The editor surface is dedicated to node graphs, with transient floating tools instead of fixed side panels
 - 🔌 **Extensible Node System** - Easy to create custom nodes with a clean trait-based API
-- 🚀 **Built on Bevy 0.17** - Leverages the latest Bevy ECS architecture
+- 🚀 **Built on Bevy 0.18** - Leverages the latest Bevy ECS architecture
 - 📦 **World-Space UI** - Custom UI system (`univis_ui`) for 3D world-space interactions
 - 🔍 **Search & Filter** - Quickly find nodes with built-in search functionality
 - 📜 **Auto-scrolling Menu** - Context menu with scrolling support for large node libraries
@@ -38,10 +38,12 @@ The codebase is now organized as a Cargo workspace:
 
 ## 🚀 Getting Started
 
+The active editor path is graph-first and canvas-only. Persistent sidebars and mode-driven scene tooling are intentionally out of the shipped app; contextual UI should appear as compact floating surfaces over the canvas.
+
 ### Prerequisites
 
 - Rust 1.75 or later
-- Bevy 0.17.3 compatible system
+- Bevy 0.18.0 compatible system
 
 ### Installation
 
@@ -50,7 +52,7 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 univis_editor_app = { path = "path/to/univis_editor/crates/univis_editor_app" }
-bevy = "0.17.3"
+bevy = "0.18.0"
 ```
 
 ### Basic Usage

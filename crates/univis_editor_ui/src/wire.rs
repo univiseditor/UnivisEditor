@@ -129,6 +129,21 @@ pub fn wire_complete_system(
                 break;
             }
 
+            if would_create_cycle(
+                connect
+                    .connections
+                    .iter()
+                    .map(|link| (link.from_node, link.to_node)),
+                from_node,
+                port.node_entity,
+            ) {
+                warn!(
+                    "Rejected link: connecting node {:?} to node {:?} would create a cycle",
+                    from_node, port.node_entity
+                );
+                break;
+            }
+
             connect.connections.push(GraphLink {
                 from_node,
                 to_node: port.node_entity,

@@ -14,4 +14,32 @@
 - Moved graph editing UI gating behind `GraphEditingUiActivation` so `univis_editor_ui` no longer depends on editor mode state.
 - Moved `EditorMode` out of `univis_editor_core` into `univis_editor_game_editor`.
 - Added a transitional `EditorScene -> EntityValue` projection in the game editor to start bridging toward a graph-native scene model.
+- Detached `univis_editor_app` from the legacy `univis_editor_game_editor` path so the shipped app stays canvas-only.
+- Removed `univis_editor_game_editor` from the workspace members to keep the active build focused on the graph-native editor path.
+- Deleted the legacy `univis_editor_game_editor` crate from the repository.
+- Clarified the active UI direction as canvas-only with floating contextual surfaces instead of fixed panels.
+- Added a floating `CanvasIsland` shell in `univis_editor_app` as the new compact top-level UI surface for file/edit actions.
+- Added an explicit `DeleteSelectedNodesRequest` in `univis_editor_ui` so floating app surfaces can trigger edit actions without keyboard-only coupling.
+- Fixed a Bevy B0001 startup panic in `CanvasIsland` by making its mutable UI queries explicitly disjoint.
+- Moved persistence status messaging into the `CanvasIsland` flow and removed the separate persistence status overlay.
+- Added a shared `GraphCommandRequest` layer so keyboard shortcuts, the island, and the context menu route through the same command path for save/open/delete/spawn actions.
+- Added a shared `GraphOverlayState` so the `CanvasIsland` menu and the context menu no longer behave as unrelated floating surfaces.
+- Reworked `CanvasIsland` to use an explicit surface state (`Compact`, `FileMenu`, `EditMenu`) instead of a bare open/closed flag.
+- Added a `Search` surface inside `CanvasIsland`, with `Ctrl+K`, keyboard query capture, filtered node results, and direct spawn commands at the graph camera center.
+- Migrated `node_popup` from `bevy_ui` widgets to `univis_ui` world-space UI so popup rendering and interaction now stay on the same UI stack as the graph surface.
+- Hooked `node_popup` into `GraphOverlayState`, so popup focus is now coordinated with the island and context menu instead of floating independently.
+- Fixed `node_popup` property rows so they are rebuilt only when the popup target or node values change, which allows `univis_ui` text/content children to initialize and remain visible.
+- Added graph validation helpers in `univis_editor_core` for topological analysis, cycle detection, and `GraphDocument` structural checks.
+- Reused the shared cycle detection in wire creation so new links that would introduce a cycle are rejected before they enter the graph.
+- Added `GraphRuntimeDiagnostics` and switched runtime ordering to the shared topology analysis so blocked nodes from cycles are tracked explicitly instead of being skipped silently.
+- Integrated `GraphDocument` validation into save/load persistence flows so invalid documents now surface as warnings during save, load, and autosave instead of passing unnoticed.
+- Expanded `GraphDocument` from a passive schema into an operation-bearing model with node spawn/insert/delete, edge connect/disconnect, selection, and camera state helpers.
+- Added a built-in `World Output` node and a runtime world-output pipeline that translates final `EntityValue` graphs into spawned Bevy entities.
+- Isolated runtime world-output entities on a dedicated render layer and kept spawned output cameras inactive so the engine can build real world projections without interfering with the editor canvas yet.
+- Added `LiveGraphDocumentState` and a `PostUpdate` sync path so the current editor world now maintains a stable, continuously updated `GraphDocument` projection instead of leaving document state only to persistence.
+- Added a floating world-preview surface backed by a dedicated camera viewport that reads the isolated `World Output` render layer without taking over the editor UI camera.
+- Retargeted floating `bevy_ui` surfaces (`CanvasIsland`, context menu, preview label) to the graph camera explicitly and moved default-UI-camera syncing to runtime updates so the preview camera no longer distorts the main interface or steals context-menu rendering.
+- Removed the temporary built-in node families `assembly`, `materials`, `output`, and `scene_components` so the active built-in registry is back to `input`, `math`, and `logic` only.
+- Removed the separate world preview surface from the shipped app so the editor is canvas-only again while keeping the generic scene/runtime infrastructure in place.
+- Kept compatibility for older graph files by relying on the existing placeholder-node load path when removed built-in node definitions are encountered.
 - Verified the project with `CARGO_BUILD_JOBS=1 cargo check`.
