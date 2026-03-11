@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use univis_editor_core::prelude::*;
+use univis_node_graph::prelude::*;
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
@@ -961,60 +961,14 @@ fn build_graph_document(
 ) -> GraphDocument {
     let mut nodes_data = Vec::new();
     for (entity, node, transform, selected) in q_nodes.iter() {
-        nodes_data.push((
+        nodes_data.push(GraphDocumentNodeSnapshot {
             entity,
-            node.definition_id.clone(),
-            [transform.translation.x, transform.translation.y],
-            node.values.inputs.clone(),
-            node.values.inputs.len(),
-            node.values.outputs.len(),
-            selected.is_some(),
-        ));
-    }
-    nodes_data.sort_by_key(|(entity, ..)| entity.index());
-
-    let mut entity_to_saved_id: HashMap<Entity, u64> = HashMap::new();
-    let mut selected_node_ids = Vec::new();
-    let mut document = GraphDocument {
-        version: GRAPH_DOCUMENT_VERSION,
-        ..default()
-    };
-
-    for (idx, (entity, definition_id, position, inputs, input_count, output_count, is_selected)) in
-        nodes_data.into_iter().enumerate()
-    {
-        let saved_id = (idx as u64) + 1;
-        entity_to_saved_id.insert(entity, saved_id);
-
-        if is_selected {
-            selected_node_ids.push(saved_id);
-        }
-
-        document
-            .insert_node(GraphDocumentNode {
-                id: saved_id,
-                definition_id,
-                position,
-                inputs,
-                input_count,
-                output_count,
-            })
-            .expect("build_graph_document assigns unique node ids");
-    }
-
-    for link in &graph.connections {
-        let Some(from_node_id) = entity_to_saved_id.get(&link.from_node).copied() else {
-            continue;
-        };
-        let Some(to_node_id) = entity_to_saved_id.get(&link.to_node).copied() else {
-            continue;
-        };
-
-        document.edges.push(GraphDocumentEdge {
-            from_node_id,
-            from_index: link.from_index,
-            to_node_id,
-            to_index: link.to_index,
+            definition_id: node.definition_id.clone(),
+            position: [transform.translation.x, transform.translation.y],
+            inputs: node.values.inputs.clone(),
+            input_count: node.values.inputs.len(),
+            output_count: node.values.outputs.len(),
+            selected: selected.is_some(),
         });
     }
 
@@ -1033,9 +987,14 @@ fn build_graph_document(
             },
         });
 
-    document.set_camera(camera);
-    document.set_selected_nodes(selected_node_ids);
-    document
+    let edge_snapshots = graph.connections.iter().map(|link| GraphDocumentEdgeSnapshot {
+        from_entity: link.from_node,
+        from_index: link.from_index,
+        to_entity: link.to_node,
+        to_index: link.to_index,
+    });
+
+    build_graph_document_from_snapshots(nodes_data, edge_snapshots, camera, None).document
 }
 
 fn graph_signature(document: &GraphDocument) -> Result<String, String> {

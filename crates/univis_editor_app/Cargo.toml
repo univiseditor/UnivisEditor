@@ -12,7 +12,8 @@ legacy = []
 bevy.workspace = true
 serde_json.workspace = true
 univis_ui.workspace = true
-univis_editor_core = { path = "../univis_editor_core" }
+univis_node_graph = { path = "../univis_node_graph" }
+univis_scene = { path = "../univis_scene" }
 univis_editor_runtime = { path = "../univis_editor_runtime" }
 univis_editor_ui = { path = "../univis_editor_ui" }
 univis_editor_persistence = { path = "../univis_editor_persistence" }
@@ -29,3 +30,7 @@ path = "../../examples/custom_nodes.rs"
 [[example]]
 name = "custom_visual_node"
 path = "../../examples/custom_visual_node.rs"
+
+[[example]]
+name = "custom_scene_node"
+path = "../../examples/custom_scene_node.rs"

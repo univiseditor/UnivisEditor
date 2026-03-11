@@ -1,11 +1,11 @@
 //! عُقد المنطق - للمقارنات والشروط
 
 use bevy::prelude::*;
-use univis_editor_core::register_node;
-use univis_editor_core::node_definition::{
+use univis_node_graph::register_node;
+use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
-use univis_editor_core::value::{NodeValue, ValueType};
+use univis_node_graph::value::{NodeValue, ValueType};
 
 // ═════════════════════════════════════════════════════
 // لون موحد لعُقد المنطق

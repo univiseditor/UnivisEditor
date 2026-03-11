@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use univis_editor_app::{NodeGraphPlugin, prelude::*};
-use univis_editor_core::register_node;
-use univis_editor_core::{
+use univis_node_graph::register_node;
+use univis_node_graph::{
     node_definition::{
         GraphNode, NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext,
         ProcessResult,
@@ -196,7 +196,7 @@ pub fn heat_preview_visual_hook(world: &mut World, node_entity: Entity) {
     }
 }
 
-register_node!(HeatPreviewNode, visual = heat_preview_visual_hook);
+register_node!(HeatPreviewNode);
 
 fn main() {
     App::new()

@@ -4,14 +4,14 @@ mod island;
 
 use bevy::prelude::*;
 use island::CanvasIslandPlugin;
-use univis_editor_core::{commands::GraphCommandsPlugin, node_registry::NodeRegistryPlugin};
+use univis_node_graph::{commands::GraphCommandsPlugin, node_registry::NodeRegistryPlugin};
 use univis_editor_persistence::graph_persistence::GraphPersistencePlugin;
 use univis_editor_runtime::NodeRuntimePlugin;
 use univis_editor_ui::NodeUiPlugin;
 use univis_editor_nodes_builtin as _;
 
 pub mod prelude {
-    pub use univis_editor_core::prelude::*;
+    pub use univis_node_graph::prelude::*;
     pub use univis_editor_persistence::prelude::*;
     pub use univis_editor_runtime::prelude::*;
     pub use univis_editor_ui::prelude::*;

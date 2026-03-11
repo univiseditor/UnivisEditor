@@ -35,6 +35,7 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
 pub fn selection_system(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
     nodes_interaction: Query<(Entity, &UInteraction), With<GraphNode>>,
     headers_interaction: Query<(Entity, &UInteraction), With<Header>>,
     ports_interaction: Query<(&UInteraction, &GraphPort)>,
@@ -70,6 +71,7 @@ pub fn selection_system(
             });
 
         if let Some(target_entity) = clicked_node {
+            live_document.select_single_entity(target_entity);
             for entity in selected_nodes.iter() {
                 if entity != target_entity {
                     commands.entity(entity).remove::<Selected>();
@@ -77,6 +79,7 @@ pub fn selection_system(
             }
             commands.entity(target_entity).insert(Selected);
         } else {
+            live_document.clear_selected_entities();
             for entity in selected_nodes.iter() {
                 commands.entity(entity).remove::<Selected>();
             }
@@ -109,7 +112,7 @@ pub fn delete_node_system(
     activation: Option<Res<GraphEditingUiActivation>>,
     mut command_requests: MessageReader<GraphCommandRequest>,
     mut delete_requests: MessageReader<DeleteSelectedNodesRequest>,
-    selected_nodes: Query<Entity, With<Selected>>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
     mut connect: ResMut<Connecting>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
@@ -126,7 +129,7 @@ pub fn delete_node_system(
         return;
     }
 
-    for entity in selected_nodes.iter() {
+    for entity in live_document.delete_selected_entities() {
         commands.entity(entity).despawn();
         connect
             .connections
@@ -177,70 +180,14 @@ pub fn sync_live_graph_document_state(
 ) {
     let mut nodes_data = Vec::new();
     for (entity, node, transform, selected) in q_nodes.iter() {
-        nodes_data.push((
+        nodes_data.push(GraphDocumentNodeSnapshot {
             entity,
-            node.definition_id.clone(),
-            [transform.translation.x, transform.translation.y],
-            node.values.inputs.clone(),
-            node.values.inputs.len(),
-            node.values.outputs.len(),
-            selected.is_some(),
-        ));
-    }
-    nodes_data.sort_by_key(|(entity, ..)| entity.index());
-
-    let mut next_node_id = live_document.document.next_node_id();
-    let mut document = GraphDocument {
-        version: GRAPH_DOCUMENT_VERSION,
-        ..default()
-    };
-    let mut entity_to_node_id = std::collections::HashMap::new();
-    let mut node_id_to_entity = std::collections::HashMap::new();
-    let mut selected_node_ids = Vec::new();
-
-    for (entity, definition_id, position, inputs, input_count, output_count, is_selected) in nodes_data {
-        let node_id = live_document
-            .entity_to_node_id
-            .get(&entity)
-            .copied()
-            .unwrap_or_else(|| {
-                let current = next_node_id;
-                next_node_id += 1;
-                current
-            });
-
-        entity_to_node_id.insert(entity, node_id);
-        node_id_to_entity.insert(node_id, entity);
-
-        if is_selected {
-            selected_node_ids.push(node_id);
-        }
-
-        document
-            .insert_node(GraphDocumentNode {
-                id: node_id,
-                definition_id,
-                position,
-                inputs,
-                input_count,
-                output_count,
-            })
-            .expect("sync_live_graph_document_state assigns unique node ids");
-    }
-
-    for link in &graph.connections {
-        let Some(from_node_id) = entity_to_node_id.get(&link.from_node).copied() else {
-            continue;
-        };
-        let Some(to_node_id) = entity_to_node_id.get(&link.to_node).copied() else {
-            continue;
-        };
-
-        document.edges.push(GraphDocumentEdge {
-            from_node_id,
-            from_index: link.from_index,
-            to_node_id,
-            to_index: link.to_index,
+            definition_id: node.definition_id.clone(),
+            position: [transform.translation.x, transform.translation.y],
+            inputs: node.values.inputs.clone(),
+            input_count: node.values.inputs.len(),
+            output_count: node.values.outputs.len(),
+            selected: selected.is_some(),
         });
     }
 
@@ -259,17 +206,20 @@ pub fn sync_live_graph_document_state(
             },
         });
 
-    document.set_camera(camera);
-    document.set_selected_nodes(selected_node_ids);
+    let edge_snapshots = graph.connections.iter().map(|link| GraphDocumentEdgeSnapshot {
+        from_entity: link.from_node,
+        from_index: link.from_index,
+        to_entity: link.to_node,
+        to_index: link.to_index,
+    });
 
-    live_document.document = document;
-    live_document.entity_to_node_id = entity_to_node_id;
-    live_document.node_id_to_entity = node_id_to_entity;
+    live_document.rebuild_from_snapshots(nodes_data, edge_snapshots, camera);
 }
 
 /// نظام فصل الوصلات
 pub fn disconnect_wire_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
     mut connect: ResMut<Connecting>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
 ) {
@@ -277,9 +227,9 @@ pub fn disconnect_wire_system(
         for (port_entity, interaction, port_data) in ports.iter() {
             if interaction_is_pointer_active(interaction) && port_data.port_type == PortType::Input
             {
-                connect
-                    .connections
-                    .retain(|link| link.to_port != port_entity);
+                if live_document.disconnect_input_for_entity(port_data.node_entity, port_data.index) {
+                    connect.connections.retain(|link| link.to_port != port_entity);
+                }
             }
         }
     }

@@ -34,12 +34,30 @@
 - Added `GraphRuntimeDiagnostics` and switched runtime ordering to the shared topology analysis so blocked nodes from cycles are tracked explicitly instead of being skipped silently.
 - Integrated `GraphDocument` validation into save/load persistence flows so invalid documents now surface as warnings during save, load, and autosave instead of passing unnoticed.
 - Expanded `GraphDocument` from a passive schema into an operation-bearing model with node spawn/insert/delete, edge connect/disconnect, selection, and camera state helpers.
-- Added a built-in `World Output` node and a runtime world-output pipeline that translates final `EntityValue` graphs into spawned Bevy entities.
-- Isolated runtime world-output entities on a dedicated render layer and kept spawned output cameras inactive so the engine can build real world projections without interfering with the editor canvas yet.
 - Added `LiveGraphDocumentState` and a `PostUpdate` sync path so the current editor world now maintains a stable, continuously updated `GraphDocument` projection instead of leaving document state only to persistence.
-- Added a floating world-preview surface backed by a dedicated camera viewport that reads the isolated `World Output` render layer without taking over the editor UI camera.
-- Retargeted floating `bevy_ui` surfaces (`CanvasIsland`, context menu, preview label) to the graph camera explicitly and moved default-UI-camera syncing to runtime updates so the preview camera no longer distorts the main interface or steals context-menu rendering.
 - Removed the temporary built-in node families `assembly`, `materials`, `output`, and `scene_components` so the active built-in registry is back to `input`, `math`, and `logic` only.
-- Removed the separate world preview surface from the shipped app so the editor is canvas-only again while keeping the generic scene/runtime infrastructure in place.
+- Removed the separate world preview surface from the shipped app so the editor is canvas-only again.
 - Kept compatibility for older graph files by relying on the existing placeholder-node load path when removed built-in node definitions are encountered.
+- Added a first graph-native `scene` family with `Transform`, `Sprite`, `Camera 2D`, `Merge Entity`, and `Add Child` nodes built directly on `EntityValue`.
+- Added optional `Entity<Component>` input requirements at the node-definition layer so scene nodes can declare typed entity dependencies without splitting `Entity` into separate runtime value kinds.
+- Restored the node popup to `bevy_ui` and replaced its internal string editing with a lightweight popup-local text field implementation instead of relying on `univis_ui` widgets.
+- Added visual differentiation for required `Entity<Component>` ports by tinting both the port marker and its label from the required component kind.
+- Expanded the graph-native `scene` family with `Name` and `Text` nodes so the rebuilt scene layer can name entities and emit typed 2D text directly from `EntityValue`.
+- Extended `EntityValue` with a typed `Text2D` component for graph-native scene composition.
+- Tightened `Entity<Component>` semantics so constrained inputs now require a pure single-component entity, with matching validation in both wire creation and document validation.
+- Removed the temporary `scene/world_output` node and its runtime consumption path so scene rebuilding stays focused on graph-native composition semantics instead of a premature output stage.
+- Moved node-specific visual synchronization into `NodeDefinition::sync_visual`, removing the separate visual-hook registry path and letting each node own its visual-to-data sync behavior directly.
+- Limited visual sync passes to node definitions that explicitly need them, so ordinary nodes no longer pay for custom-body lifecycle work they do not use.
+- Extracted shared graph-document snapshot builders into `univis_editor_core`, so live editor syncing and persistence now build documents through the same stable code path.
+- Consolidated repeated scene-node composition helpers for base entities, transform fallback ports, transform application, and final entity-result handling to keep scene semantics consistent as the graph-native family grows.
+- Moved selection, delete-selected, and input-disconnect decisions onto `LiveGraphDocumentState` helpers so core document operations now drive more of the editor behavior instead of duplicating those rules in UI systems.
+- Extracted the node-graph engine into a new standalone `univis_node_graph` crate, moved all graph infrastructure there, and reduced `univis_editor_core` to a thin compatibility facade.
+- Moved graph-native scene values into a separate `univis_scene` crate and switched scene nodes to flow through `CustomTag`/`TaggedData` contracts plus generic port requirements, so `univis_node_graph` no longer owns `EntityValue` or scene component semantics directly.
+- Removed the now-unused `univis_editor_core` compatibility crate from the workspace after all active code paths were switched to `univis_node_graph` directly.
+- Promoted scene entities from tagged payloads to a first-class `ValueType::Entity` / `NodeValue::Entity`, while making `univis_scene` a pure value crate and keeping scene-specific input constraints in the scene nodes themselves.
+- Replaced the central `EntityComponentKind` enum with open scene component keys plus shared helpers for labels, colors, and pure-input requirement tokens, so scene composition no longer bottlenecks on a single enum for extensibility.
+- Extracted reusable scene-graph helper functions into `crates/univis_editor_nodes_builtin/src/scene_support.rs`, keeping `scene` nodes thinner and avoiding premature expansion of `NodeDefinition` for scene-specific workflow helpers.
+- Added a `custom_scene_node` example that defines external `Mesh2D`-style scene nodes on top of `EntityValue::Custom` from outside the built-in scene family, and exposed `scene_support` publicly for that extension path.
+- Restored `scene/scene` as a world display sink that spawns the incoming `EntityValue` into the editor world instead of reflecting it only inside the node body.
+- Kept `Camera2D` components inert in the temporary world-display sink because `univis_ui` currently assumes a single active `Camera2d` for graph interaction and would otherwise stop responding.
 - Verified the project with `CARGO_BUILD_JOBS=1 cargo check`.

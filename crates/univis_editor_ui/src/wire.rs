@@ -70,6 +70,8 @@ pub fn wire_complete_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut wire_state: ResMut<WireConnectionState>,
     mut connect: ResMut<Connecting>,
+    registry: Res<NodeRegistry>,
+    q_nodes: Query<&GraphNode>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
 ) {
     if !wire_state.is_dragging || !mouse_button.just_released(MouseButton::Left) {
@@ -82,6 +84,20 @@ pub fn wire_complete_system(
         wire_state.node_from,
     ) {
         let Ok((_, _, from_port_data)) = ports.get(from_port_entity) else {
+            wire_state.dragging_from = None;
+            wire_state.node_from = None;
+            wire_state.index_from = None;
+            wire_state.is_dragging = false;
+            return;
+        };
+        let Ok(from_graph_node) = q_nodes.get(from_node) else {
+            wire_state.dragging_from = None;
+            wire_state.node_from = None;
+            wire_state.index_from = None;
+            wire_state.is_dragging = false;
+            return;
+        };
+        let Some(from_definition) = registry.get(&from_graph_node.definition_id) else {
             wire_state.dragging_from = None;
             wire_state.node_from = None;
             wire_state.index_from = None;
@@ -113,6 +129,45 @@ pub fn wire_complete_system(
                     "Rejected link: incompatible types {} -> {}",
                     from_port_data.value_type.display_name(),
                     port.value_type.display_name()
+                );
+                break;
+            }
+
+            let Ok(to_graph_node) = q_nodes.get(port.node_entity) else {
+                break;
+            };
+            let Some(to_definition) = registry.get(&to_graph_node.definition_id) else {
+                break;
+            };
+            let to_inputs = to_definition.inputs();
+            let Some(to_port_definition) = to_inputs.get(port.index) else {
+                break;
+            };
+            let source_connected_inputs = connected_input_mask(
+                from_graph_node.values.inputs.len(),
+                connect
+                    .connections
+                    .iter()
+                    .filter(|link| link.to_node == from_node)
+                    .map(|link| link.to_index),
+            );
+
+            if !output_satisfies_requirement(
+                &from_definition,
+                from_index,
+                &source_connected_inputs,
+                to_port_definition.requirement.as_ref(),
+            ) {
+                let requirement = to_port_definition
+                    .requirement
+                    .as_ref()
+                    .map(|requirement| requirement.label.as_str())
+                    .unwrap_or("value");
+                warn!(
+                    "Rejected link: input '{}' on node {:?} requires '{}'",
+                    to_port_definition.name,
+                    port.node_entity,
+                    requirement
                 );
                 break;
             }

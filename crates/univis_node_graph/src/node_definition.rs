@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::any::Any;
 use std::sync::Arc;
+use univis_scene::EntityValue;
 
-use super::value::{EntityValue, NodeValue, NodeValues, ValueType};
+use super::value::{NodeValue, NodeValues, ValueType};
 
 /// معرف فريد للعقدة
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -47,7 +48,30 @@ impl NodeCategory {
     pub const LOGIC: &'static str = "Logic";
     pub const INPUT: &'static str = "Input";
     pub const OUTPUT: &'static str = "Output";
+    pub const SCENE: &'static str = "Scene";
     pub const ADVANCED: &'static str = "Advanced";
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PortRequirement {
+    pub id: String,
+    pub label: String,
+    pub color: Option<Color>,
+}
+
+impl PortRequirement {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            color: None,
+        }
+    }
+
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
+    }
 }
 
 /// تعريف المنفذ (مدخل أو مخرج)
@@ -63,6 +87,9 @@ pub struct PortDefinition {
     pub default_value: Option<NodeValue>,
     /// لون مخصص للمنفذ (اختياري)
     pub color: Option<Color>,
+    /// شرط اختياري إضافي للمداخل المتخصصة.
+    #[serde(default)]
+    pub requirement: Option<PortRequirement>,
     /// هل يظهر هذا المدخل للتحرير داخل نافذة الإعدادات المنبثقة؟
     #[serde(default)]
     pub editable_in_popup: bool,
@@ -85,6 +112,7 @@ impl PortDefinition {
             description: None,
             default_value: None,
             color: None,
+            requirement: None,
             editable_in_popup: false,
             ui_step: None,
             ui_min: None,
@@ -105,6 +133,11 @@ impl PortDefinition {
     /// مع لون مخصص للمنفذ
     pub fn with_color(mut self, color: Color) -> Self {
         self.color = Some(color);
+        self
+    }
+
+    pub fn with_requirement(mut self, requirement: PortRequirement) -> Self {
+        self.requirement = Some(requirement);
         self
     }
 
@@ -136,7 +169,24 @@ impl PortDefinition {
 
     /// الحصول على لون المنفذ (مخصص أو حسب النوع)
     pub fn resolve_color(&self) -> Color {
-        self.color.unwrap_or_else(|| self.value_type.port_color())
+        self.color.unwrap_or_else(|| {
+            self.requirement
+                .as_ref()
+                .and_then(|requirement| requirement.color)
+                .unwrap_or_else(|| self.value_type.port_color())
+        })
+    }
+
+    pub fn display_label(&self) -> String {
+        if let Some(requirement) = &self.requirement {
+            if self.name == requirement.label {
+                format!("{} *", self.name)
+            } else {
+                format!("{} <{}>", self.name, requirement.label)
+            }
+        } else {
+            self.name.clone()
+        }
     }
 
     /// منفذ مدخل float
@@ -164,14 +214,14 @@ impl PortDefinition {
         Self::new(name, ValueType::Vec3)
     }
 
-    /// منفذ مدخل entity
-    pub fn input_entity(name: impl Into<String>) -> Self {
-        Self::new(name, ValueType::Entity)
-    }
-
     /// منفذ مدخل بعلامة نوع مخصصة
     pub fn input_tag(name: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::new(name, ValueType::CustomTag(tag.into()))
+    }
+
+    /// منفذ مدخل Entity
+    pub fn input_entity(name: impl Into<String>) -> Self {
+        Self::new(name, ValueType::Entity)
     }
 
     /// منفذ مخرج float
@@ -184,14 +234,14 @@ impl PortDefinition {
         Self::new(name, ValueType::Any)
     }
 
-    /// منفذ مخرج entity
-    pub fn output_entity(name: impl Into<String>) -> Self {
-        Self::new(name, ValueType::Entity)
-    }
-
     /// منفذ مخرج بعلامة نوع مخصصة
     pub fn output_tag(name: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::new(name, ValueType::CustomTag(tag.into()))
+    }
+
+    /// منفذ مخرج Entity
+    pub fn output_entity(name: impl Into<String>) -> Self {
+        Self::new(name, ValueType::Entity)
     }
 }
 
@@ -262,9 +312,9 @@ impl<'a> ProcessContext<'a> {
         self.inputs.get(index)?.as_tagged()
     }
 
-    /// قراءة EntityValue من مدخل
-    pub fn get_entity(&self, index: usize) -> Option<&EntityValue> {
-        self.inputs.get(index)?.as_entity()
+    /// قراءة Entity من مدخل
+    pub fn get_entity(&self, index: usize) -> Option<EntityValue> {
+        self.inputs.get(index)?.as_entity().cloned()
     }
 
     /// كتابة مخرج
@@ -309,10 +359,11 @@ impl<'a> ProcessContext<'a> {
         self.set(index, NodeValue::tagged(tag, payload));
     }
 
-    /// كتابة EntityValue في مخرج
+    /// كتابة Entity في مخرج
     pub fn set_entity(&mut self, index: usize, value: EntityValue) {
         self.set(index, NodeValue::entity(value));
     }
+
 }
 
 /// نتيجة المعالجة
@@ -369,6 +420,15 @@ pub trait NodeDefinition: Send + Sync {
 
     /// تعريف المخارج
     fn outputs(&self) -> Vec<PortDefinition>;
+
+    /// إذا كان هذا المخرج يحقق شرطًا مخصصًا وفق التوصيلات الحالية.
+    fn output_requirement_token(
+        &self,
+        _output_index: usize,
+        _connected_inputs: &[bool],
+    ) -> Option<String> {
+        None
+    }
 
     /// دالة المعالجة الرئيسية
     fn process(&self, context: &mut ProcessContext) -> ProcessResult;
@@ -458,6 +518,16 @@ pub trait NodeDefinition: Send + Sync {
     fn has_custom_body(&self) -> bool {
         false
     }
+
+    /// هل تحتاج هذه العقدة إلى مزامنة بصرية مخصصة بعد تغيّر حالتها؟
+    fn needs_visual_sync(&self) -> bool {
+        self.has_custom_body()
+    }
+
+    /// مزامنة الحالة البصرية المخصصة مع بيانات العقدة.
+    /// يُستدعى بعد التغييرات على العقدة بحيث تبقى أي عناصر UI مخصصة
+    /// قادرة على دفع قيمها إلى GraphNode أو سحبها منه.
+    fn sync_visual(&self, _world: &mut World, _node_entity: Entity) {}
 }
 
 /// تعريف العقدة كـ Arc للتخزين الآمن

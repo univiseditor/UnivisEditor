@@ -62,11 +62,110 @@ pub struct LiveGraphDocumentState {
     pub node_id_to_entity: HashMap<u64, Entity>,
 }
 
+#[derive(Debug, Clone)]
+pub struct GraphDocumentNodeSnapshot {
+    pub entity: Entity,
+    pub definition_id: NodeId,
+    pub position: [f32; 2],
+    pub inputs: Vec<NodeValue>,
+    pub input_count: usize,
+    pub output_count: usize,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GraphDocumentEdgeSnapshot {
+    pub from_entity: Entity,
+    pub from_index: usize,
+    pub to_entity: Entity,
+    pub to_index: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GraphDocumentBuildResult {
+    pub document: GraphDocument,
+    pub entity_to_node_id: HashMap<Entity, u64>,
+    pub node_id_to_entity: HashMap<u64, Entity>,
+}
+
 impl LiveGraphDocumentState {
     pub fn clear(&mut self) {
         self.document = GraphDocument::default();
         self.entity_to_node_id.clear();
         self.node_id_to_entity.clear();
+    }
+
+    pub fn rebuild_from_snapshots<I, J>(
+        &mut self,
+        node_snapshots: I,
+        edge_snapshots: J,
+        camera: Option<GraphDocumentCameraState>,
+    ) where
+        I: IntoIterator<Item = GraphDocumentNodeSnapshot>,
+        J: IntoIterator<Item = GraphDocumentEdgeSnapshot>,
+    {
+        let build = build_graph_document_from_snapshots(
+            node_snapshots,
+            edge_snapshots,
+            camera,
+            Some(&self.entity_to_node_id),
+        );
+
+        self.document = build.document;
+        self.entity_to_node_id = build.entity_to_node_id;
+        self.node_id_to_entity = build.node_id_to_entity;
+    }
+
+    pub fn node_id_for_entity(&self, entity: Entity) -> Option<u64> {
+        self.entity_to_node_id.get(&entity).copied()
+    }
+
+    pub fn entity_for_node_id(&self, node_id: u64) -> Option<Entity> {
+        self.node_id_to_entity.get(&node_id).copied()
+    }
+
+    pub fn selected_entities(&self) -> Vec<Entity> {
+        self.document
+            .selected_node_ids()
+            .iter()
+            .filter_map(|node_id| self.entity_for_node_id(*node_id))
+            .collect()
+    }
+
+    pub fn select_single_entity(&mut self, entity: Entity) -> bool {
+        let Some(node_id) = self.node_id_for_entity(entity) else {
+            return false;
+        };
+        self.document.select_single_node(node_id);
+        true
+    }
+
+    pub fn clear_selected_entities(&mut self) {
+        self.document.clear_selection();
+    }
+
+    pub fn set_selected_entities<I>(&mut self, entities: I)
+    where
+        I: IntoIterator<Item = Entity>,
+    {
+        let node_ids: Vec<u64> = entities
+            .into_iter()
+            .filter_map(|entity| self.node_id_for_entity(entity))
+            .collect();
+        self.document.set_selected_nodes(node_ids);
+    }
+
+    pub fn delete_selected_entities(&mut self) -> Vec<Entity> {
+        let selected_entities = self.selected_entities();
+        self.document.delete_selected_nodes();
+        selected_entities
+    }
+
+    pub fn disconnect_input_for_entity(&mut self, entity: Entity, input_index: usize) -> bool {
+        let Some(node_id) = self.node_id_for_entity(entity) else {
+            return false;
+        };
+        self.document.disconnect_input(node_id, input_index)
     }
 }
 
@@ -139,6 +238,85 @@ impl std::fmt::Display for GraphDocumentOperationError {
 }
 
 impl std::error::Error for GraphDocumentOperationError {}
+
+pub fn build_graph_document_from_snapshots<I, J>(
+    node_snapshots: I,
+    edge_snapshots: J,
+    camera: Option<GraphDocumentCameraState>,
+    existing_ids: Option<&HashMap<Entity, u64>>,
+) -> GraphDocumentBuildResult
+where
+    I: IntoIterator<Item = GraphDocumentNodeSnapshot>,
+    J: IntoIterator<Item = GraphDocumentEdgeSnapshot>,
+{
+    let mut nodes: Vec<_> = node_snapshots.into_iter().collect();
+    nodes.sort_by_key(|node| node.entity.index());
+
+    let mut entity_to_node_id = HashMap::new();
+    let mut node_id_to_entity = HashMap::new();
+    let mut selected_node_ids = Vec::new();
+    let mut next_node_id = existing_ids
+        .and_then(|ids| ids.values().copied().max())
+        .unwrap_or(0)
+        + 1;
+    let mut document = GraphDocument {
+        version: GRAPH_DOCUMENT_VERSION,
+        ..GraphDocument::default()
+    };
+
+    for node in nodes {
+        let node_id = existing_ids
+            .and_then(|ids| ids.get(&node.entity).copied())
+            .unwrap_or_else(|| {
+                let current = next_node_id;
+                next_node_id += 1;
+                current
+            });
+
+        entity_to_node_id.insert(node.entity, node_id);
+        node_id_to_entity.insert(node_id, node.entity);
+
+        if node.selected {
+            selected_node_ids.push(node_id);
+        }
+
+        document
+            .insert_node(GraphDocumentNode {
+                id: node_id,
+                definition_id: node.definition_id,
+                position: node.position,
+                inputs: node.inputs,
+                input_count: node.input_count,
+                output_count: node.output_count,
+            })
+            .expect("build_graph_document_from_snapshots assigns unique node ids");
+    }
+
+    for edge in edge_snapshots {
+        let Some(from_node_id) = entity_to_node_id.get(&edge.from_entity).copied() else {
+            continue;
+        };
+        let Some(to_node_id) = entity_to_node_id.get(&edge.to_entity).copied() else {
+            continue;
+        };
+
+        document.edges.push(GraphDocumentEdge {
+            from_node_id,
+            from_index: edge.from_index,
+            to_node_id,
+            to_index: edge.to_index,
+        });
+    }
+
+    document.set_camera(camera);
+    document.set_selected_nodes(selected_node_ids);
+
+    GraphDocumentBuildResult {
+        document,
+        entity_to_node_id,
+        node_id_to_entity,
+    }
+}
 
 impl GraphDocument {
     pub fn next_node_id(&self) -> u64 {
@@ -328,6 +506,14 @@ impl GraphDocument {
 
     pub fn clear_selection(&mut self) {
         self.view.selected_node_ids.clear();
+    }
+
+    pub fn selected_node_ids(&self) -> &[u64] {
+        &self.view.selected_node_ids
+    }
+
+    pub fn delete_selected_nodes(&mut self) -> usize {
+        self.delete_nodes(self.view.selected_node_ids.clone())
     }
 
     pub fn set_camera(&mut self, camera: Option<GraphDocumentCameraState>) {

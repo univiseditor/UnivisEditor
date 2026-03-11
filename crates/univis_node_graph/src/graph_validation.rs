@@ -3,6 +3,7 @@ use std::hash::Hash;
 
 use crate::{
     document::GraphDocument,
+    node_definition::{ArcNodeDefinition, PortRequirement},
     node_registry::NodeRegistry,
     value::NodeValue,
 };
@@ -18,6 +19,7 @@ pub enum GraphValidationIssueKind {
     InvalidInputPort,
     InputAlreadyConnected,
     IncompatiblePortTypes,
+    UnsatisfiedPortRequirement,
     CycleDetected,
 }
 
@@ -33,6 +35,32 @@ pub struct GraphValidationIssue {
 pub struct GraphTopologyAnalysis<T> {
     pub ordered_nodes: Vec<T>,
     pub blocked_nodes: Vec<T>,
+}
+
+pub fn connected_input_mask(
+    input_count: usize,
+    edges: impl IntoIterator<Item = usize>,
+) -> Vec<bool> {
+    let mut connected = vec![false; input_count];
+    for input_index in edges {
+        if let Some(slot) = connected.get_mut(input_index) {
+            *slot = true;
+        }
+    }
+    connected
+}
+
+pub fn output_satisfies_requirement(
+    definition: &ArcNodeDefinition,
+    output_index: usize,
+    connected_inputs: &[bool],
+    requirement: Option<&PortRequirement>,
+) -> bool {
+    let Some(requirement) = requirement else {
+        return true;
+    };
+
+    definition.output_requirement_token(output_index, connected_inputs) == Some(requirement.id.clone())
 }
 
 impl<T> GraphTopologyAnalysis<T> {
@@ -175,6 +203,14 @@ pub fn validate_graph_document(
 
     let mut claimed_inputs = HashSet::new();
     let mut topology_edges = Vec::new();
+    let mut incoming_inputs: HashMap<u64, Vec<usize>> = HashMap::new();
+
+    for edge in &document.edges {
+        incoming_inputs
+            .entry(edge.to_node_id)
+            .or_default()
+            .push(edge.to_index);
+    }
 
     for (edge_index, edge) in document.edges.iter().enumerate() {
         let Some(from_node) = nodes_by_id.get(&edge.from_node_id) else {
@@ -257,8 +293,10 @@ pub fn validate_graph_document(
         ) {
             let from_outputs = from_definition.outputs();
             let to_inputs = to_definition.inputs();
-            let from_type = from_outputs.get(edge.from_index).map(|port| &port.value_type);
-            let to_type = to_inputs.get(edge.to_index).map(|port| &port.value_type);
+            let from_port = from_outputs.get(edge.from_index);
+            let to_port = to_inputs.get(edge.to_index);
+            let from_type = from_port.map(|port| &port.value_type);
+            let to_type = to_port.map(|port| &port.value_type);
 
             match (from_type, to_type) {
                 (Some(from_type), Some(to_type)) => {
@@ -274,6 +312,42 @@ pub fn validate_graph_document(
                                 to_type.display_name()
                             ),
                         });
+                    } else if let Some(to_port) = to_port {
+                        let source_connected_inputs = connected_input_mask(
+                            from_node.input_count,
+                            incoming_inputs
+                                .get(&edge.from_node_id)
+                                .into_iter()
+                                .flatten()
+                                .copied(),
+                        );
+
+                        if !output_satisfies_requirement(
+                            &from_definition,
+                            edge.from_index,
+                            &source_connected_inputs,
+                            to_port.requirement.as_ref(),
+                        ) {
+                            let requirement = to_port
+                                .requirement
+                                .as_ref()
+                                .map(|requirement| requirement.label.as_str())
+                                .unwrap_or("value");
+                            issues.push(GraphValidationIssue {
+                                kind: GraphValidationIssueKind::UnsatisfiedPortRequirement,
+                                edge_index: Some(edge_index),
+                                node_ids: vec![edge.from_node_id, edge.to_node_id],
+                                message: format!(
+                                    "Edge {} connects output {} on node {} to input {} on node {}, but the source does not satisfy requirement '{}'.",
+                                    edge_index,
+                                    edge.from_index,
+                                    edge.from_node_id,
+                                    edge.to_index,
+                                    edge.to_node_id,
+                                    requirement
+                                ),
+                            });
+                        }
                     }
                 }
                 (None, _) => issues.push(GraphValidationIssue {

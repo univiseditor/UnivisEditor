@@ -40,9 +40,9 @@ impl Plugin for NodeUiPlugin {
             app.add_plugins(UnivisTextFieldPlugin);
         }
 
-        app.init_resource::<univis_editor_core::pin::DragState>()
-            .init_resource::<univis_editor_core::pin::Connecting>()
-            .init_resource::<univis_editor_core::pin::WireConnectionState>()
+        app.init_resource::<univis_node_graph::pin::DragState>()
+            .init_resource::<univis_node_graph::pin::Connecting>()
+            .init_resource::<univis_node_graph::pin::WireConnectionState>()
             .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
             .init_resource::<ContextMenuState>()
@@ -93,7 +93,7 @@ impl Plugin for NodeUiPlugin {
 }
 
 pub mod prelude {
-    pub use univis_editor_core::prelude::*;
+    pub use univis_node_graph::prelude::*;
     pub use univis_editor_runtime::prelude::*;
 
     pub use crate::NodeUiPlugin;

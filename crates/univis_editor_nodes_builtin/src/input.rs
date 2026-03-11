@@ -1,13 +1,12 @@
 //! عُقد الإدخال - لإنشاء قيم أولية
 
 use bevy::prelude::*;
-use univis_editor_core::node_definition::{
+use univis_node_graph::node_definition::{
     GraphNode, NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
-use univis_editor_core::register_node;
-use univis_editor_core::value::{NodeValue, ValueType};
+use univis_node_graph::register_node;
+use univis_node_graph::value::{NodeValue, ValueType};
 use univis_ui::prelude::*;
-
 
 const INPUT_NODE_COLOR: Color = Color::srgb(0.4, 0.8, 0.4);
 
@@ -31,72 +30,40 @@ struct TextNodeFieldWidget {
     node_entity: Entity,
 }
 
-fn number_node_visual_hook(world: &mut World, node_entity: Entity) {
-    let value = {
-        let mut query = world.query::<(&NumberNodeDragWidget, &UDragValue)>();
-        query
-            .iter(world)
-            .find_map(|(marker, drag)| (marker.node_entity == node_entity).then_some(drag.value))
-    };
-
-    if let Some(value) = value {
-        if let Some(mut graph_node) = world.get_mut::<GraphNode>(node_entity) {
-            if graph_node.values.outputs.len() == 1 {
-                graph_node.values.outputs[0] = NodeValue::float(value as f64);
-            }
+fn write_single_output(world: &mut World, node_entity: Entity, value: NodeValue) {
+    if let Some(mut graph_node) = world.get_mut::<GraphNode>(node_entity) {
+        if graph_node.values.outputs.len() == 1 {
+            graph_node.values.outputs[0] = value;
         }
     }
 }
 
-fn integer_node_visual_hook(world: &mut World, node_entity: Entity) {
-    let value = {
-        let mut query = world.query::<(&IntegerNodeDragWidget, &UDragValue)>();
-        query
-            .iter(world)
-            .find_map(|(marker, drag)| (marker.node_entity == node_entity).then_some(drag.value))
-    };
-
-    if let Some(value) = value {
-        if let Some(mut graph_node) = world.get_mut::<GraphNode>(node_entity) {
-            if graph_node.values.outputs.len() == 1 {
-                graph_node.values.outputs[0] = NodeValue::int(value.round() as i64);
-            }
-        }
-    }
+fn read_number_widget_value(world: &mut World, node_entity: Entity) -> Option<f32> {
+    let mut query = world.query::<(&NumberNodeDragWidget, &UDragValue)>();
+    query
+        .iter(world)
+        .find_map(|(marker, drag)| (marker.node_entity == node_entity).then_some(drag.value))
 }
 
-fn boolean_node_visual_hook(world: &mut World, node_entity: Entity) {
-    let checked = {
-        let mut query = world.query::<(&BooleanNodeToggleWidget, &UToggle)>();
-        query
-            .iter(world)
-            .find_map(|(marker, toggle)| (marker.node_entity == node_entity).then_some(toggle.checked))
-    };
-
-    if let Some(checked) = checked {
-        if let Some(mut graph_node) = world.get_mut::<GraphNode>(node_entity) {
-            if graph_node.values.outputs.len() == 1 {
-                graph_node.values.outputs[0] = NodeValue::bool(checked);
-            }
-        }
-    }
+fn read_integer_widget_value(world: &mut World, node_entity: Entity) -> Option<f32> {
+    let mut query = world.query::<(&IntegerNodeDragWidget, &UDragValue)>();
+    query
+        .iter(world)
+        .find_map(|(marker, drag)| (marker.node_entity == node_entity).then_some(drag.value))
 }
 
-fn text_node_visual_hook(world: &mut World, node_entity: Entity) {
-    let text = {
-        let mut query = world.query::<(&TextNodeFieldWidget, &UTextField)>();
-        query.iter(world).find_map(|(marker, field)| {
-            (marker.node_entity == node_entity).then_some(field.text.clone())
-        })
-    };
+fn read_boolean_widget_value(world: &mut World, node_entity: Entity) -> Option<bool> {
+    let mut query = world.query::<(&BooleanNodeToggleWidget, &UToggle)>();
+    query
+        .iter(world)
+        .find_map(|(marker, toggle)| (marker.node_entity == node_entity).then_some(toggle.checked))
+}
 
-    if let Some(text) = text {
-        if let Some(mut graph_node) = world.get_mut::<GraphNode>(node_entity) {
-            if graph_node.values.outputs.len() == 1 {
-                graph_node.values.outputs[0] = NodeValue::string(text);
-            }
-        }
-    }
+fn read_text_widget_value(world: &mut World, node_entity: Entity) -> Option<String> {
+    let mut query = world.query::<(&TextNodeFieldWidget, &UTextField)>();
+    query.iter(world).find_map(|(marker, field)| {
+        (marker.node_entity == node_entity).then_some(field.text.clone())
+    })
 }
 
 // ========== عقدة الرقم العشري ==========
@@ -173,6 +140,12 @@ impl NodeDefinition for NumberNode {
             ));
         });
     }
+
+    fn sync_visual(&self, world: &mut World, node_entity: Entity) {
+        if let Some(value) = read_number_widget_value(world, node_entity) {
+            write_single_output(world, node_entity, NodeValue::float(value as f64));
+        }
+    }
 }
 
 // ========== عقدة الرقم الصحيح ==========
@@ -248,6 +221,12 @@ impl NodeDefinition for IntegerNode {
             ));
         });
     }
+
+    fn sync_visual(&self, world: &mut World, node_entity: Entity) {
+        if let Some(value) = read_integer_widget_value(world, node_entity) {
+            write_single_output(world, node_entity, NodeValue::int(value.round() as i64));
+        }
+    }
 }
 
 // ========== عقدة المنطق ==========
@@ -313,6 +292,12 @@ impl NodeDefinition for BooleanNode {
                 BooleanNodeToggleWidget { node_entity },
             ));
         });
+    }
+
+    fn sync_visual(&self, world: &mut World, node_entity: Entity) {
+        if let Some(checked) = read_boolean_widget_value(world, node_entity) {
+            write_single_output(world, node_entity, NodeValue::bool(checked));
+        }
     }
 }
 
@@ -382,6 +367,12 @@ impl NodeDefinition for TextNode {
                 TextNodeFieldWidget { node_entity },
             ));
         });
+    }
+
+    fn sync_visual(&self, world: &mut World, node_entity: Entity) {
+        if let Some(text) = read_text_widget_value(world, node_entity) {
+            write_single_output(world, node_entity, NodeValue::string(text));
+        }
     }
 }
 
@@ -526,10 +517,10 @@ impl NodeDefinition for ColorNode {
     }
 }
 
-register_node!(NumberNode, visual = number_node_visual_hook);
-register_node!(IntegerNode, visual = integer_node_visual_hook);
-register_node!(BooleanNode, visual = boolean_node_visual_hook);
-register_node!(TextNode, visual = text_node_visual_hook);
+register_node!(NumberNode);
+register_node!(IntegerNode);
+register_node!(BooleanNode);
+register_node!(TextNode);
 register_node!(Vector2Node);
 register_node!(Vector3Node);
 register_node!(ColorNode);

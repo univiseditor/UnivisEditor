@@ -9,35 +9,12 @@ use super::node_definition::{ArcNodeDefinition, GraphNode, NodeDefinition, NodeI
 
 pub use inventory;
 
-/// دالة تحديث بصري مرتبطة بنوع عقدة محدد.
-pub type NodeVisualHookFn = fn(&mut World, Entity);
-
-/// تسجيل تلقائي لعقدة (مع hook بصري اختياري).
+/// تسجيل تلقائي لعقدة.
 pub struct NodeAutoRegistration {
     pub ctor: fn() -> ArcNodeDefinition,
-    pub visual_hook: Option<NodeVisualHookFn>,
 }
 
 inventory::collect!(NodeAutoRegistration);
-
-/// سجل hooks البصرية حسب NodeId.
-#[derive(Resource, Default)]
-pub struct NodeVisualHookRegistry {
-    hooks_by_node_id: HashMap<NodeId, Vec<NodeVisualHookFn>>,
-}
-
-impl NodeVisualHookRegistry {
-    pub fn add_hook(&mut self, id: NodeId, hook: NodeVisualHookFn) {
-        let hooks = self.hooks_by_node_id.entry(id).or_default();
-        if !hooks.contains(&hook) {
-            hooks.push(hook);
-        }
-    }
-
-    pub fn hooks_for(&self, id: &NodeId) -> Option<&[NodeVisualHookFn]> {
-        self.hooks_by_node_id.get(id).map(Vec::as_slice)
-    }
-}
 
 /// سجل العُقد - Resource
 #[derive(Resource, Default)]
@@ -203,52 +180,38 @@ pub struct NodeRegistryPlugin;
 impl Plugin for NodeRegistryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NodeRegistry>()
-            .init_resource::<NodeVisualHookRegistry>()
             .add_systems(Startup, auto_register_nodes)
-            .add_systems(PostUpdate, run_node_visual_hooks_changed_only);
+            .add_systems(PostUpdate, sync_changed_node_visuals);
     }
 }
 
-fn auto_register_nodes(
-    mut registry: ResMut<NodeRegistry>,
-    mut visual_hooks: ResMut<NodeVisualHookRegistry>,
-) {
+fn auto_register_nodes(mut registry: ResMut<NodeRegistry>) {
     for registration in inventory::iter::<NodeAutoRegistration> {
         let definition = (registration.ctor)();
-        let id = definition.id();
         registry.register_arc(definition);
-
-        if let Some(hook) = registration.visual_hook {
-            visual_hooks.add_hook(id, hook);
-        }
     }
 }
 
-fn run_node_visual_hooks_changed_only(world: &mut World) {
-    let changed_nodes: Vec<(Entity, NodeId)> = {
+fn sync_changed_node_visuals(world: &mut World) {
+    let changed_nodes: Vec<(Entity, ArcNodeDefinition)> = {
         let mut query = world
             .query_filtered::<(Entity, &GraphNode), Or<(Added<GraphNode>, Changed<GraphNode>)>>();
+        let Some(registry) = world.get_resource::<NodeRegistry>() else {
+            return;
+        };
         query
             .iter(world)
-            .map(|(entity, node)| (entity, node.definition_id.clone()))
+            .filter_map(|(entity, node)| {
+                registry
+                    .get(&node.definition_id)
+                    .filter(|definition| definition.needs_visual_sync())
+                    .map(|definition| (entity, definition))
+            })
             .collect()
     };
 
-    for (entity, definition_id) in changed_nodes {
-        let hooks = {
-            let Some(hooks_registry) = world.get_resource::<NodeVisualHookRegistry>() else {
-                continue;
-            };
-            hooks_registry.hooks_for(&definition_id).map(|hooks| hooks.to_vec())
-        };
-
-        let Some(hooks) = hooks else {
-            continue;
-        };
-
-        for hook in hooks {
-            hook(world, entity);
-        }
+    for (entity, definition) in changed_nodes {
+        definition.sync_visual(world, entity);
     }
 }
 
@@ -257,9 +220,6 @@ macro_rules! register_node {
     ($node:path $(,)?) => {
         $crate::register_node!($node, ctor = || $node);
     };
-    ($node:path, visual = $visual_hook:path $(,)?) => {
-        $crate::register_node!($node, ctor = || $node, visual = $visual_hook);
-    };
     ($node:path, ctor = $ctor:expr $(,)?) => {
         $crate::node_registry::inventory::submit! {
             $crate::node_registry::NodeAutoRegistration {
@@ -267,22 +227,7 @@ macro_rules! register_node {
                     let node = ($ctor)();
                     std::sync::Arc::new(node)
                 },
-                visual_hook: None,
             }
         }
-    };
-    ($node:path, ctor = $ctor:expr, visual = $visual_hook:path $(,)?) => {
-        $crate::node_registry::inventory::submit! {
-            $crate::node_registry::NodeAutoRegistration {
-                ctor: || -> $crate::node_definition::ArcNodeDefinition {
-                    let node = ($ctor)();
-                    std::sync::Arc::new(node)
-                },
-                visual_hook: Some($visual_hook),
-            }
-        }
-    };
-    ($node:path, visual = $visual_hook:path, ctor = $ctor:expr $(,)?) => {
-        $crate::register_node!($node, ctor = $ctor, visual = $visual_hook);
     };
 }

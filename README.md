@@ -17,7 +17,8 @@
 UnivisEditor is a **node-based visual editor** built on top of the [Bevy Engine](https://bevyengine.org/). It follows the philosophy that **"everything is a node"** - similar to Unreal Engine's Blueprint system or Blender's Node Editor.
 
 The codebase is now organized as a Cargo workspace:
-- `univis_editor_core`
+- `univis_node_graph`
+- `univis_scene`
 - `univis_editor_runtime`
 - `univis_editor_ui`
 - `univis_editor_persistence`
@@ -76,11 +77,11 @@ fn main() {
 UnivisEditor uses a trait-based system for defining nodes. Simply implement `NodeDefinition`:
 
 ```rust
-use univis_editor_core::node_definition::{
+use univis_node_graph::node_definition::{
     NodeDefinition, NodeId, NodeCategory, PortDefinition, 
     ProcessContext, ProcessResult
 };
-use univis_editor_core::value::NodeValue;
+use univis_node_graph::value::NodeValue;
 use bevy::prelude::*;
 
 pub struct MyCustomNode;
@@ -147,7 +148,7 @@ impl NodeDefinition for MyCustomNode {
 ### Registering Nodes
 
 ```rust
-use univis_editor_core::node_registry::NodeRegistry;
+use univis_node_graph::node_registry::NodeRegistry;
 
 fn register_my_nodes(registry: &mut NodeRegistry) {
     registry.register(MyCustomNode);

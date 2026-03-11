@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use serde_json::json;
 use univis_editor_app::{NodeGraphPlugin, prelude::*};
-use univis_editor_core::register_node;
-use univis_editor_core::{
+use univis_node_graph::register_node;
+use univis_node_graph::{
     node_definition::{
         NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
     },

@@ -612,7 +612,7 @@ fn spawn_port_ui_new(
 ) {
     let port_color = port_def.resolve_color();
     let is_input = port_type == PortType::Input;
-    let port_name = port_def.name.clone();
+    let port_name = port_def.display_label();
 
     parent
         .spawn((
@@ -652,7 +652,11 @@ fn spawn_port_ui_new(
             row.spawn(UTextLabel {
                 text: port_name,
                 font_size: 15.0,
-                color: Color::srgb(0.7, 0.7, 0.7),
+                color: if port_def.requirement.is_some() {
+                    port_color
+                } else {
+                    Color::srgb(0.7, 0.7, 0.7)
+                },
                 ..default()
             });
         });
