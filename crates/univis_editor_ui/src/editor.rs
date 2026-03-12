@@ -1,21 +1,14 @@
-//! إعدادات المحرر والمكونات الإضافية
-
+//! Editor settings shared by the graph UI.
 use bevy::prelude::*;
 
-/// مكون للكاميرا المستخدمة في المحرر
 #[derive(Component)]
 pub struct GraphCamera;
 
-/// إعدادات المحرر
 #[derive(Resource, Debug, Clone)]
 pub struct EditorSettings {
-    /// عرض العقدة الافتراضي
     pub default_node_width: f32,
-    /// مسافة الشبكة
     pub grid_size: f32,
-    /// سرعة الكاميرا
     pub camera_speed: f32,
-    /// سرعة التكبير
     pub zoom_speed: f32,
 }
 
@@ -30,7 +23,6 @@ impl Default for EditorSettings {
     }
 }
 
-/// Plugin لإعدادات المحرر
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {

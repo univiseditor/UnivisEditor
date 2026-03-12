@@ -60,7 +60,8 @@ pub fn output_satisfies_requirement(
         return true;
     };
 
-    definition.output_requirement_token(output_index, connected_inputs) == Some(requirement.id.clone())
+    definition.output_requirement_token(output_index, connected_inputs)
+        == Some(requirement.id.clone())
 }
 
 impl<T> GraphTopologyAnalysis<T> {
@@ -182,7 +183,10 @@ pub fn validate_graph_document(
                 kind: GraphValidationIssueKind::DuplicateNodeId,
                 edge_index: None,
                 node_ids: vec![node.id],
-                message: format!("Node id {} appears more than once in the document.", node.id),
+                message: format!(
+                    "Node id {} appears more than once in the document.",
+                    node.id
+                ),
             });
         }
 
@@ -244,7 +248,10 @@ pub fn validate_graph_document(
                 kind: GraphValidationIssueKind::SelfConnection,
                 edge_index: Some(edge_index),
                 node_ids: vec![edge.from_node_id],
-                message: format!("Edge {} creates a self-connection on node {}.", edge_index, edge.from_node_id),
+                message: format!(
+                    "Edge {} creates a self-connection on node {}.",
+                    edge_index, edge.from_node_id
+                ),
             });
             continue;
         }
@@ -374,10 +381,8 @@ pub fn validate_graph_document(
         topology_edges.push((edge.from_node_id, edge.to_node_id));
     }
 
-    let topology = analyze_graph_topology(
-        document.nodes.iter().map(|node| node.id),
-        topology_edges,
-    );
+    let topology =
+        analyze_graph_topology(document.nodes.iter().map(|node| node.id), topology_edges);
 
     if topology.has_cycle_or_blocked_nodes() {
         let blocked = topology

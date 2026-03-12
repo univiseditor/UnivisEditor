@@ -11,7 +11,7 @@ fn default_graph_document_version() -> u32 {
     GRAPH_DOCUMENT_VERSION
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphDocument {
     #[serde(default = "default_graph_document_version")]
     pub version: u32,
@@ -21,6 +21,17 @@ pub struct GraphDocument {
     pub edges: Vec<GraphDocumentEdge>,
     #[serde(default)]
     pub view: GraphDocumentViewState,
+}
+
+impl Default for GraphDocument {
+    fn default() -> Self {
+        Self {
+            version: GRAPH_DOCUMENT_VERSION,
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            view: GraphDocumentViewState::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -370,7 +381,9 @@ impl GraphDocument {
 
         self.edges
             .retain(|edge| edge.from_node_id != node_id && edge.to_node_id != node_id);
-        self.view.selected_node_ids.retain(|selected| *selected != node_id);
+        self.view
+            .selected_node_ids
+            .retain(|selected| *selected != node_id);
         true
     }
 
@@ -448,7 +461,9 @@ impl GraphDocument {
         }
 
         if would_create_cycle(
-            self.edges.iter().map(|edge| (edge.from_node_id, edge.to_node_id)),
+            self.edges
+                .iter()
+                .map(|edge| (edge.from_node_id, edge.to_node_id)),
             from_node_id,
             to_node_id,
         ) {

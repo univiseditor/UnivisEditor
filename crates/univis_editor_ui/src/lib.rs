@@ -82,7 +82,7 @@ impl Plugin for NodeUiPlugin {
                     delete_node_system,
                     reset_inputs,
                     disconnect_wire_system,
-                )
+            )
                     .chain(),
             )
             .add_systems(

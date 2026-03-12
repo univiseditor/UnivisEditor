@@ -1,5 +1,4 @@
-//! نظام إنشاء العُقد - النظام الجديد القابل للتوسع
-
+//! Helpers for spawning graph nodes from registered definitions.
 use crate::prelude::*;
 use bevy::prelude::*;
 use std::sync::Arc;
@@ -11,15 +10,13 @@ pub struct Header;
 #[derive(Component)]
 pub struct NodeBody(pub Entity);
 
-/// مكون للعُقد البديلة عند فقدان التعريف الأصلي وقت التحميل
 #[derive(Component, Debug, Clone)]
 pub struct MissingNodePlaceholder {
     pub original_definition_id: NodeId,
 }
 
-/// Trait لإنشاء العُقد من Registry
+/// Extension trait for spawning nodes from the registry.
 pub trait SpawnNodeExt<'w, 's> {
-    /// إنشاء عقدة من معرف التعريف
     fn spawn_node_from_definition(
         &mut self,
         definition_id: &NodeId,
@@ -27,7 +24,6 @@ pub trait SpawnNodeExt<'w, 's> {
         registry: &NodeRegistry,
     );
 
-    /// إنشاء عقدة من ArcNodeDefinition مباشرة
     fn spawn_node_with_definition(&mut self, definition: &ArcNodeDefinition, position: Vec2);
 }
 
@@ -50,7 +46,6 @@ impl<'w, 's> SpawnNodeExt<'w, 's> for Commands<'w, 's> {
     }
 }
 
-/// إنشاء عقدة معروفة من تعريف موجود وإرجاع الكيان الناتج
 pub fn spawn_node_from_definition_entity<'w, 's>(
     commands: &mut Commands<'w, 's>,
     definition: &ArcNodeDefinition,
@@ -66,11 +61,9 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
     let has_custom_body = definition.has_custom_body();
     let has_popup_inputs = inputs.iter().any(|port| port.editable_in_popup);
 
-    // استنساخ الـ Arc لاستخدامه داخل الـ closure
     let definition_clone = Arc::clone(definition);
     let node_width = 270.0;
 
-    // إنشاء العقدة مع المكونات الجديدة
     let root_entity = commands
         .spawn((
             UWorldRoot {
@@ -94,7 +87,6 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
         ))
         .id();
 
-    // بناء الهيكل الداخلي
     commands.entity(root_entity).with_children(|parent| {
         parent
             .spawn((
@@ -212,11 +204,9 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                             },
                         ))
                         .with_children(|center| {
-                            // استدعاء build_body إذا كانت العقدة تحتاج محتوى مخصص
                             if has_custom_body {
                                 definition_clone.build_body(center, root_entity);
                             } else {
-                                // العقدة الافتراضية - body فارغ
                                 center.spawn((
                                     NodeBody(root_entity),
                                     UNode::default(),
@@ -245,7 +235,6 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
     root_entity
 }
 
-/// إنشاء عقدة بديلة عند فقدان تعريف العقدة الأصلي وقت التحميل
 pub fn spawn_placeholder_node_entity<'w, 's>(
     commands: &mut Commands<'w, 's>,
     original_definition_id: &NodeId,
@@ -406,7 +395,6 @@ pub fn spawn_placeholder_node_entity<'w, 's>(
     root_entity
 }
 
-/// إنشاء عقدة Component Mode (بدون أسلاك منطقية في MVP)
 pub fn spawn_component_mode_node_entity<'w, 's>(
     commands: &mut Commands<'w, 's>,
     component_kind: &str,
@@ -585,7 +573,6 @@ pub fn spawn_component_mode_node_entity<'w, 's>(
     root_entity
 }
 
-/// إنشاء Placeholder لعقدة Component مفقودة
 pub fn spawn_missing_component_mode_node_entity<'w, 's>(
     commands: &mut Commands<'w, 's>,
     component_kind: &str,
@@ -602,7 +589,6 @@ pub fn spawn_missing_component_mode_node_entity<'w, 's>(
     )
 }
 
-/// إنشاء منفذ العقدة (النظام الجديد)
 fn spawn_port_ui_new(
     parent: &mut ChildSpawnerCommands,
     node_entity: Entity,
@@ -630,7 +616,6 @@ fn spawn_port_ui_new(
             },
         ))
         .with_children(|row| {
-            // المنفذ (الدائرة)
             row.spawn((
                 GraphPort {
                     node_entity,
@@ -648,7 +633,6 @@ fn spawn_port_ui_new(
                 UInteraction::default(),
             ));
 
-            // اسم المنفذ
             row.spawn(UTextLabel {
                 text: port_name,
                 font_size: 15.0,

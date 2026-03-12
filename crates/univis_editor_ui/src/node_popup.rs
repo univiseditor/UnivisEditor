@@ -1,5 +1,4 @@
-//! نظام نافذة إعدادات العقدة (Popup) من داخل الكانفس باستخدام bevy_ui.
-
+//! Node settings popup rendered over the graph canvas.
 use crate::prelude::*;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
@@ -281,11 +280,20 @@ fn handle_node_settings_button_clicks(
 }
 
 fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
-    activation.map(|activation| activation.enabled).unwrap_or(true)
+    activation
+        .map(|activation| activation.enabled)
+        .unwrap_or(true)
 }
 
 fn handle_popup_close_button(
-    buttons: Query<&Interaction, (Changed<Interaction>, With<Button>, With<NodePopupCloseButton>)>,
+    buttons: Query<
+        &Interaction,
+        (
+            Changed<Interaction>,
+            With<Button>,
+            With<NodePopupCloseButton>,
+        ),
+    >,
     mut popup: ResMut<NodePopupState>,
     mut overlay: ResMut<GraphOverlayState>,
 ) {
@@ -428,7 +436,10 @@ fn handle_popup_adjust_buttons(
 }
 
 fn handle_popup_bool_toggle_buttons(
-    buttons: Query<(&Interaction, &NodePopupBoolToggleButton), (Changed<Interaction>, With<Button>)>,
+    buttons: Query<
+        (&Interaction, &NodePopupBoolToggleButton),
+        (Changed<Interaction>, With<Button>),
+    >,
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
     mut q_nodes: Query<&mut GraphNode>,
@@ -471,12 +482,19 @@ fn handle_popup_bool_toggle_buttons(
 }
 
 fn handle_popup_text_field_focus(
-    buttons: Query<(Entity, &Interaction), (Changed<Interaction>, With<Button>, With<NodePopupTextFieldInput>)>,
+    buttons: Query<
+        (Entity, &Interaction),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            With<NodePopupTextFieldInput>,
+        ),
+    >,
     mut fields: Query<(Entity, &mut NodePopupTextFieldState)>,
 ) {
-    let focused_entity = buttons.iter().find_map(|(entity, interaction)| {
-        (*interaction == Interaction::Pressed).then_some(entity)
-    });
+    let focused_entity = buttons
+        .iter()
+        .find_map(|(entity, interaction)| (*interaction == Interaction::Pressed).then_some(entity));
 
     let Some(focused_entity) = focused_entity else {
         return;
@@ -502,7 +520,9 @@ fn clear_popup_text_field_focus_on_other_clicks(
     >,
     mut fields: Query<&mut NodePopupTextFieldState>,
 ) {
-    let should_clear = buttons.iter().any(|interaction| *interaction == Interaction::Pressed);
+    let should_clear = buttons
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed);
     if !should_clear {
         return;
     }
@@ -522,7 +542,8 @@ fn handle_popup_text_field_keyboard_input(
         return;
     };
 
-    let Some((field_input, mut field_state)) = fields.iter_mut().find(|(_, field)| field.focused) else {
+    let Some((field_input, mut field_state)) = fields.iter_mut().find(|(_, field)| field.focused)
+    else {
         return;
     };
 
@@ -568,12 +589,15 @@ fn handle_popup_text_field_keyboard_input(
 }
 
 fn sync_popup_text_field_visuals(
-    mut fields: Query<(
-        &NodePopupTextFieldState,
-        &Children,
-        &mut BackgroundColor,
-        &mut BorderColor,
-    ), Changed<NodePopupTextFieldState>>,
+    mut fields: Query<
+        (
+            &NodePopupTextFieldState,
+            &Children,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        Changed<NodePopupTextFieldState>,
+    >,
     mut texts: Query<&mut Text, With<NodePopupTextFieldDisplay>>,
     mut text_colors: Query<&mut TextColor, With<NodePopupTextFieldDisplay>>,
 ) {
@@ -1021,17 +1045,15 @@ fn spawn_numeric_row(
                 TextColor(Color::WHITE),
             ));
 
-            row.spawn((
-                Node {
-                    display: Display::Flex,
-                    column_gap: Val::Px(4.0),
-                    ..default()
-                },
-            ))
-            .with_children(|controls| {
-                spawn_adjust_button(controls, "-", minus);
-                spawn_adjust_button(controls, "+", plus);
-            });
+            row.spawn((Node {
+                display: Display::Flex,
+                column_gap: Val::Px(4.0),
+                ..default()
+            },))
+                .with_children(|controls| {
+                    spawn_adjust_button(controls, "-", minus);
+                    spawn_adjust_button(controls, "+", plus);
+                });
         });
 }
 
@@ -1116,7 +1138,11 @@ fn spawn_text_row(
             ))
             .with_children(|field| {
                 field.spawn((
-                    Text::new(if value.is_empty() { "type value" } else { value }),
+                    Text::new(if value.is_empty() {
+                        "type value"
+                    } else {
+                        value
+                    }),
                     TextFont {
                         font_size: 12.0,
                         ..default()

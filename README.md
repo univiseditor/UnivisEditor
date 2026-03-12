@@ -70,6 +70,34 @@ fn main() {
 }
 ```
 
+### Lightweight Verification
+
+If your machine struggles with running the full workspace test suite in one go, use the sequential verification script:
+
+```bash
+bash scripts/verify_workspace.sh
+```
+
+The script also supports focused suites:
+
+```bash
+bash scripts/verify_workspace.sh core
+bash scripts/verify_workspace.sh builtin
+bash scripts/verify_workspace.sh persistence
+```
+
+The maintained crate-local test commands are:
+
+- `cargo test -p univis_node_graph --test core_api`
+- `cargo test -p univis_node_graph --test document_ops`
+- `cargo test -p univis_node_graph --test graph_validation`
+- `cargo test -p univis_editor_nodes_builtin --test input_nodes`
+- `cargo test -p univis_editor_nodes_builtin --test math_nodes`
+- `cargo test -p univis_editor_nodes_builtin --test logic_nodes`
+- `cargo test -p univis_editor_nodes_builtin --test scene_nodes`
+- `cargo test -p univis_editor_persistence --test persistence_defaults`
+- `cargo test -p univis_editor_persistence --test persistence_format`
+
 ---
 
 ## 📚 Creating Custom Nodes

@@ -1,10 +1,8 @@
-//! أنظمة الوصلات والأسلاك
-
+//! Wire interaction and rendering systems.
 use crate::prelude::*;
 use bevy::prelude::*;
 use univis_ui::prelude::*;
 
-// تعريف Sets لترتيب تنفيذ الأنظمة
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum WireSystemsSet {
     Start,
@@ -19,6 +17,7 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
     )
 }
 
+/// Starts a new wire drag from the currently hovered output port.
 pub fn wire_start_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut wire_state: ResMut<WireConnectionState>,
@@ -27,7 +26,6 @@ pub fn wire_start_system(
     if mouse_button.just_pressed(MouseButton::Left) {
         for (entity, interaction, port) in ports.iter() {
             if interaction_is_pointer_active(interaction) {
-                // نتأكد أننا نبدأ من منفذ خروج (Output) فقط
                 if port.port_type == PortType::Output {
                     wire_state.dragging_from = Some(entity);
                     wire_state.node_from = Some(port.node_entity);
@@ -41,7 +39,7 @@ pub fn wire_start_system(
     }
 }
 
-/// نظام تحديث موقع الفأرة
+/// Updates the preview wire endpoint from the current cursor position.
 pub fn wire_update_system(
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
@@ -65,7 +63,7 @@ pub fn wire_update_system(
     }
 }
 
-/// نظام إنهاء الوصلة
+/// Finalizes a wire drag when the hovered input port accepts the pending connection.
 pub fn wire_complete_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut wire_state: ResMut<WireConnectionState>,
@@ -165,9 +163,7 @@ pub fn wire_complete_system(
                     .unwrap_or("value");
                 warn!(
                     "Rejected link: input '{}' on node {:?} requires '{}'",
-                    to_port_definition.name,
-                    port.node_entity,
-                    requirement
+                    to_port_definition.name, port.node_entity, requirement
                 );
                 break;
             }
@@ -217,7 +213,6 @@ pub fn wire_complete_system(
     wire_state.is_dragging = false;
 }
 
-/// رسم الخط المؤقت أثناء السحب
 pub fn wire_preview_system(
     mut gizmos: Gizmos,
     wire_state: ResMut<WireConnectionState>,
@@ -238,7 +233,6 @@ pub fn wire_preview_system(
     }
 }
 
-/// دالة رسم خط Bezier
 fn draw_bezier_wire(gizmos: &mut Gizmos, start: Vec2, end: Vec2, z: f32, color: Color) {
     let dist = (end.x - start.x).abs().max(50.0);
     let control_offset = dist * 0.5;
@@ -254,7 +248,6 @@ fn draw_bezier_wire(gizmos: &mut Gizmos, start: Vec2, end: Vec2, z: f32, color: 
     }
 }
 
-/// نظام رسم جميع الوصلات المكتملة
 pub fn wire_render_system(
     mut gizmos: Gizmos,
     links: Res<Connecting>,

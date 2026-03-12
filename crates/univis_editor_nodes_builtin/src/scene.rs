@@ -1,23 +1,20 @@
-//! عقد المشهد graph-native المبنية فوق EntityValue.
-
+//! Graph-native scene nodes built on top of `EntityValue`.
 use crate::scene_support::{
-    apply_resolved_transform, base_entity_or_empty, entity_extension_input,
-    fallback_transform, finish_entity_process, missing_entity_input, popup_color, popup_float,
-    pure_entity_requirement_token,
-    popup_string, resolve_transform, scene_entity_input, scene_entity_output,
+    apply_resolved_transform, base_entity_or_empty, entity_extension_input, fallback_transform,
+    finish_entity_process, missing_entity_input, popup_color, popup_float, popup_string,
+    pure_entity_requirement_token, resolve_transform, scene_entity_input, scene_entity_output,
     transform_fallback_inputs, transform_override_input,
 };
+use bevy::prelude::*;
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
 use univis_node_graph::register_node;
 use univis_node_graph::value::NodeValue;
 use univis_scene::{
-    Camera2DComponentValue, EntityComponentValue, SpriteComponentValue, Text2DComponentValue,
-    CAMERA2D_COMPONENT_KEY,
-    SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY,
+    CAMERA2D_COMPONENT_KEY, Camera2DComponentValue, EntityComponentValue, SPRITE_COMPONENT_KEY,
+    SpriteComponentValue, TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY, Text2DComponentValue,
 };
-use bevy::prelude::*;
 
 const SCENE_NODE_COLOR: Color = Color::srgb(0.72, 0.55, 0.24);
 
@@ -77,7 +74,6 @@ impl NodeDefinition for TransformNode {
             None
         }
     }
-
 
     fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
         let mut entity = base_entity_or_empty(ctx, 0);
@@ -151,9 +147,15 @@ impl NodeDefinition for SpriteNode {
         apply_resolved_transform(&mut entity, &transform);
 
         if entity.component(SPRITE_COMPONENT_KEY).is_none() {
-            let sprite_id = ctx.get_string(5).map(str::trim).filter(|value| !value.is_empty());
+            let sprite_id = ctx
+                .get_string(5)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
             entity.set_component(EntityComponentValue::Sprite(SpriteComponentValue {
-                size: Vec2::new(ctx.get_float_or(2, 1.0) as f32, ctx.get_float_or(3, 1.0) as f32),
+                size: Vec2::new(
+                    ctx.get_float_or(2, 1.0) as f32,
+                    ctx.get_float_or(3, 1.0) as f32,
+                ),
                 color: ctx
                     .inputs
                     .get(4)
@@ -488,10 +490,7 @@ impl NodeDefinition for SceneNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![
-            scene_entity_input("Entity")
-                .with_description("EntityValue to display in the world"),
-        ]
+        vec![scene_entity_input("Entity").with_description("EntityValue to display in the world")]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {

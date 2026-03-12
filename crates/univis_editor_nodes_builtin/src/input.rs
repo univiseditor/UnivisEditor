@@ -1,5 +1,4 @@
-//! عُقد الإدخال - لإنشاء قيم أولية
-
+//! Built-in input nodes.
 use bevy::prelude::*;
 use univis_node_graph::node_definition::{
     GraphNode, NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
@@ -66,8 +65,6 @@ fn read_text_widget_value(world: &mut World, node_entity: Entity) -> Option<Stri
     })
 }
 
-// ========== عقدة الرقم العشري ==========
-
 pub struct NumberNode;
 
 impl NodeDefinition for NumberNode {
@@ -100,7 +97,6 @@ impl NodeDefinition for NumberNode {
     }
 
     fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
-        // القيمة الافتراضية - يمكن تغييرها من خلال واجهة المستخدم
         if ctx.outputs.get(0).map(|v| v.is_none()).unwrap_or(true) {
             ctx.set_float(0, 1.0);
         }
@@ -147,8 +143,6 @@ impl NodeDefinition for NumberNode {
         }
     }
 }
-
-// ========== عقدة الرقم الصحيح ==========
 
 pub struct IntegerNode;
 
@@ -229,8 +223,6 @@ impl NodeDefinition for IntegerNode {
     }
 }
 
-// ========== عقدة المنطق ==========
-
 pub struct BooleanNode;
 
 impl NodeDefinition for BooleanNode {
@@ -300,8 +292,6 @@ impl NodeDefinition for BooleanNode {
         }
     }
 }
-
-// ========== عقدة النص ==========
 
 pub struct TextNode;
 
@@ -376,8 +366,6 @@ impl NodeDefinition for TextNode {
     }
 }
 
-// ========== عقدة المتجه الثنائي ==========
-
 pub struct Vector2Node;
 
 impl NodeDefinition for Vector2Node {
@@ -420,8 +408,6 @@ impl NodeDefinition for Vector2Node {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة المتجه الثلاثي ==========
 
 pub struct Vector3Node;
 
@@ -467,8 +453,6 @@ impl NodeDefinition for Vector3Node {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة اللون ==========
 
 pub struct ColorNode;
 

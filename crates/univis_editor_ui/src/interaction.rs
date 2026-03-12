@@ -1,5 +1,4 @@
-//! أنظمة التفاعل مع المستخدم
-
+//! Graph interaction systems.
 use crate::prelude::*;
 use bevy::ecs::relationship::Relationship;
 use bevy::{input::mouse::MouseWheel, platform::collections::HashSet, prelude::*};
@@ -31,7 +30,7 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
     )
 }
 
-/// نظام تحديد العُقد
+/// Selects the node under the pointer and mirrors that selection into the live document.
 pub fn selection_system(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
@@ -87,7 +86,7 @@ pub fn selection_system(
     }
 }
 
-/// نظام إبراز العُقد المحددة
+/// Styles node borders to reflect drag and selection state.
 pub fn node_highlight_system(
     drag_state: Res<DragState>,
     mut nodes: Query<(Entity, &mut UBorder, Option<&Selected>), With<GraphNode>>,
@@ -106,7 +105,7 @@ pub fn node_highlight_system(
     }
 }
 
-/// نظام حذف العُقد
+/// Deletes the current selection and removes attached wires from the live graph.
 pub fn delete_node_system(
     mut commands: Commands,
     activation: Option<Res<GraphEditingUiActivation>>,
@@ -152,10 +151,12 @@ pub fn request_delete_selected_nodes(
 }
 
 fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
-    activation.map(|activation| activation.enabled).unwrap_or(true)
+    activation
+        .map(|activation| activation.enabled)
+        .unwrap_or(true)
 }
 
-/// نظام إعادة ضبط المداخل غير المتصلة
+/// Clears transient input values for ports that are no longer connected by a wire.
 pub fn reset_inputs(mut q_nodes: Query<(Entity, &mut GraphNode)>, graph: Res<Connecting>) {
     let mut connected_pins: HashSet<(Entity, usize)> = HashSet::new();
 
@@ -172,6 +173,7 @@ pub fn reset_inputs(mut q_nodes: Query<(Entity, &mut GraphNode)>, graph: Res<Con
     }
 }
 
+/// Rebuilds the live graph document snapshot from the current editor world.
 pub fn sync_live_graph_document_state(
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
@@ -206,17 +208,19 @@ pub fn sync_live_graph_document_state(
             },
         });
 
-    let edge_snapshots = graph.connections.iter().map(|link| GraphDocumentEdgeSnapshot {
-        from_entity: link.from_node,
-        from_index: link.from_index,
-        to_entity: link.to_node,
-        to_index: link.to_index,
-    });
+    let edge_snapshots = graph
+        .connections
+        .iter()
+        .map(|link| GraphDocumentEdgeSnapshot {
+            from_entity: link.from_node,
+            from_index: link.from_index,
+            to_entity: link.to_node,
+            to_index: link.to_index,
+        });
 
     live_document.rebuild_from_snapshots(nodes_data, edge_snapshots, camera);
 }
 
-/// نظام فصل الوصلات
 pub fn disconnect_wire_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut live_document: ResMut<LiveGraphDocumentState>,
@@ -227,15 +231,17 @@ pub fn disconnect_wire_system(
         for (port_entity, interaction, port_data) in ports.iter() {
             if interaction_is_pointer_active(interaction) && port_data.port_type == PortType::Input
             {
-                if live_document.disconnect_input_for_entity(port_data.node_entity, port_data.index) {
-                    connect.connections.retain(|link| link.to_port != port_entity);
+                if live_document.disconnect_input_for_entity(port_data.node_entity, port_data.index)
+                {
+                    connect
+                        .connections
+                        .retain(|link| link.to_port != port_entity);
                 }
             }
         }
     }
 }
 
-/// نظام سحب العُقد
 pub fn node_drag_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -301,7 +307,6 @@ pub fn node_drag_system(
     }
 }
 
-/// نظام تحكم الكاميرا
 pub fn camera_controller(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -371,7 +376,4 @@ pub fn camera_controller(
     }
 }
 
-/// نظام القيم القابلة للسحب (placeholder)
-pub fn draggable_value_system(_query: Query<Entity>) {
-    // TODO: تنفيذ نظام السحب للقيم
-}
+pub fn draggable_value_system(_query: Query<Entity>) {}

@@ -1,39 +1,32 @@
-//! نظام حفظ/تحميل الجراف إلى JSON
-
+//! Graph persistence resources and systems.
 use bevy::prelude::*;
-use serde::Deserialize;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use univis_node_graph::prelude::*;
+use crate::format::{
+    ParsedGraphDocument, PreparedGraphWrite, graph_document_signature,
+    parse_graph_document_payload, prepare_graph_document_write, serialize_graph_document,
+};
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
 use univis_editor_ui::prelude::GraphCamera;
+use univis_node_graph::prelude::*;
 
 const DEFAULT_SAVE_FILE_PATH: &str = "assets/graphs/current_graph.json";
 const DEFAULT_BACKUP_DIRECTORY: &str = "assets/graphs/backups";
 
-/// إعدادات الحفظ/التحميل
+/// Persistence configuration for save/load and autosave flows.
 #[derive(Resource, Debug, Clone)]
 pub struct GraphPersistenceSettings {
-    /// مسار ملف الجراف الحالي
     pub file_path: String,
-    /// تنسيق JSON بشكل مقروء
     pub pretty_json: bool,
-    /// تفعيل الحفظ التلقائي
     pub autosave_enabled: bool,
-    /// فترة الحفظ التلقائي بالثواني
     pub autosave_interval_secs: f32,
-    /// مجلد النسخ الاحتياطية
     pub backup_directory: String,
-    /// عدد النسخ الاحتياطية القصوى
     pub max_backup_files: usize,
-    /// مدة عرض رسائل الحالة في الواجهة
     pub status_duration_secs: f32,
-    /// نافذة تأكيد التحميل عند وجود تغييرات غير محفوظة
     pub confirm_reload_window_secs: f32,
 }
 
@@ -52,7 +45,7 @@ impl Default for GraphPersistenceSettings {
     }
 }
 
-/// حالة runtime لنظام الحفظ/التحميل
+/// Runtime state tracked by the persistence plugin.
 #[derive(Resource, Debug, Clone)]
 pub struct GraphPersistenceRuntimeState {
     pub dirty: bool,
@@ -76,6 +69,7 @@ impl Default for GraphPersistenceRuntimeState {
     }
 }
 
+/// Feature flag that enables or disables persistence systems.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct GraphPersistenceActivation {
     pub enabled: bool,
@@ -101,57 +95,29 @@ pub struct GraphPersistenceStatusMessage {
     pub expires_at_secs: f64,
 }
 
+/// Current status message shown by persistence UI.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct GraphPersistenceStatus {
     pub active: Option<GraphPersistenceStatusMessage>,
 }
 
-/// رسالة طلب حفظ الجراف في المسار الحالي
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct SaveGraphRequest;
 
-/// رسالة طلب تحميل الجراف من المسار الحالي
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct LoadGraphRequest;
 
-/// رسالة طلب حفظ الجراف في مسار معين (Save As)
 #[derive(Message, Debug, Clone)]
 pub struct SaveGraphToPathRequest {
     pub path: String,
 }
 
-/// رسالة طلب تحميل الجراف من مسار معين (Open Path)
 #[derive(Message, Debug, Clone)]
 pub struct LoadGraphFromPathRequest {
     pub path: String,
     pub force_if_dirty: bool,
 }
 
-/// schema v0 (بدون version، وعدادات منافذ اختيارية)
-#[derive(Debug, Clone, Deserialize, Default)]
-struct GraphSaveFileV0 {
-    #[serde(default)]
-    nodes: Vec<SavedNodeV0>,
-    #[serde(default)]
-    links: Vec<GraphDocumentEdge>,
-    #[serde(default)]
-    ui: GraphDocumentViewState,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct SavedNodeV0 {
-    id: u64,
-    definition_id: NodeId,
-    position: [f32; 2],
-    #[serde(default)]
-    inputs: Vec<NodeValue>,
-    #[serde(default)]
-    input_count: Option<usize>,
-    #[serde(default)]
-    output_count: Option<usize>,
-}
-
-/// حالة تحميل مرحلية لإعادة بناء الوصلات بعد Spawn
 #[derive(Resource, Default)]
 struct PendingGraphLoad {
     is_pending: bool,
@@ -179,7 +145,7 @@ impl PendingGraphLoad {
     }
 }
 
-/// Plugin الحفظ/التحميل
+/// Plugin that wires save/load and autosave systems into the app.
 pub struct GraphPersistencePlugin;
 
 impl Plugin for GraphPersistencePlugin {
@@ -215,10 +181,6 @@ impl Plugin for GraphPersistencePlugin {
     }
 }
 
-/// اختصارات لوحة المفاتيح
-/// - Ctrl+S: حفظ المسار الحالي
-/// - Ctrl+Shift+S: Save As (مسار timestamped)
-/// - Ctrl+O: تحميل المسار الحالي (مع تأكيد إذا dirty)
 fn graph_persistence_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     activation: Option<Res<GraphPersistenceActivation>>,
@@ -304,20 +266,20 @@ fn handle_save_graph_requests(
             &q_nodes,
             &q_camera,
         ) {
-            Ok((_, signature, validation_issue_count)) => {
-                runtime.last_saved_signature = Some(signature);
+            Ok(prepared) => {
+                runtime.last_saved_signature = Some(prepared.signature);
                 runtime.dirty = false;
                 runtime.initialized = true;
                 runtime.autosave_elapsed_secs = 0.0;
                 runtime.open_confirm_until_secs = None;
 
-                if validation_issue_count > 0 {
+                if prepared.validation_issue_count > 0 {
                     set_persistence_status(
                         &mut status,
                         GraphPersistenceStatusSeverity::Warning,
                         format!(
                             "Graph saved to {} with {} validation issue(s).",
-                            path, validation_issue_count
+                            path, prepared.validation_issue_count
                         ),
                         time.elapsed_secs_f64(),
                         settings.status_duration_secs,
@@ -437,7 +399,10 @@ fn handle_load_graph_requests(
         }
     };
 
-    let (save_file, migration_note) = match parse_and_migrate_graph(&content) {
+    let ParsedGraphDocument {
+        document: save_file,
+        migration_note,
+    } = match parse_graph_document_payload(&content) {
         Ok(result) => result,
         Err(err) => {
             warn!("Failed to parse/migrate graph JSON {}: {}", path, err);
@@ -544,7 +509,6 @@ fn handle_load_graph_requests(
     }
 }
 
-/// مرحلة ثانية بعد Spawn لإعادة الوصلات وحالة UI
 fn finalize_pending_graph_load(
     mut commands: Commands,
     mut pending: ResMut<PendingGraphLoad>,
@@ -690,7 +654,8 @@ fn finalize_pending_graph_load(
         .clone()
         .unwrap_or_else(|| settings.file_path.clone());
 
-    if pending.placeholder_count > 0 || skipped_link_count > 0 || pending.validation_issue_count > 0 {
+    if pending.placeholder_count > 0 || skipped_link_count > 0 || pending.validation_issue_count > 0
+    {
         set_persistence_status(
             &mut status,
             GraphPersistenceStatusSeverity::Warning,
@@ -717,7 +682,6 @@ fn finalize_pending_graph_load(
     pending.reset();
 }
 
-/// تحديث dirty state عبر مقارنة توقيع المشهد الحالي مع آخر نسخة محفوظة
 fn refresh_dirty_state(
     graph: Res<Connecting>,
     activation: Option<Res<GraphPersistenceActivation>>,
@@ -732,7 +696,7 @@ fn refresh_dirty_state(
     }
 
     let current_document = build_graph_document(&graph, &q_nodes, &q_camera);
-    let Ok(current_signature) = graph_signature(&current_document) else {
+    let Ok(current_signature) = graph_document_signature(&current_document) else {
         return;
     };
 
@@ -751,7 +715,6 @@ fn refresh_dirty_state(
         .unwrap_or(false);
 }
 
-/// حفظ تلقائي عند وجود تغييرات غير محفوظة
 fn autosave_dirty_graph(
     time: Res<Time>,
     settings: Res<GraphPersistenceSettings>,
@@ -791,12 +754,12 @@ fn autosave_dirty_graph(
         &q_nodes,
         &q_camera,
     ) {
-        Ok((save_file, signature, validation_issue_count)) => {
-            runtime.last_saved_signature = Some(signature);
+        Ok(prepared) => {
+            runtime.last_saved_signature = Some(prepared.signature.clone());
             runtime.dirty = false;
 
             let backup_result = write_backup_file(
-                &save_file,
+                &prepared.document,
                 settings.pretty_json,
                 &settings.backup_directory,
                 settings.max_backup_files,
@@ -806,16 +769,16 @@ fn autosave_dirty_graph(
                 Ok(backup_path) => {
                     set_persistence_status(
                         &mut status,
-                        if validation_issue_count > 0 {
+                        if prepared.validation_issue_count > 0 {
                             GraphPersistenceStatusSeverity::Warning
                         } else {
                             GraphPersistenceStatusSeverity::Info
                         },
-                        if validation_issue_count > 0 {
+                        if prepared.validation_issue_count > 0 {
                             format!(
                                 "Autosaved graph to {} with {} validation issue(s).",
                                 backup_path.display(),
-                                validation_issue_count
+                                prepared.validation_issue_count
                             )
                         } else {
                             format!("Autosaved graph to {}", backup_path.display())
@@ -881,62 +844,9 @@ fn set_persistence_status(
 }
 
 fn graph_persistence_enabled(activation: Option<&GraphPersistenceActivation>) -> bool {
-    activation.map(|activation| activation.enabled).unwrap_or(true)
-}
-
-fn parse_and_migrate_graph(content: &str) -> Result<(GraphDocument, Option<String>), String> {
-    let value: Value =
-        serde_json::from_str(content).map_err(|err| format!("invalid JSON: {}", err))?;
-
-    let version = value
-        .get("version")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .unwrap_or(0);
-
-    match version {
-        0 => {
-            let legacy: GraphSaveFileV0 = serde_json::from_value(value)
-                .map_err(|err| format!("invalid schema v0 payload: {}", err))?;
-
-            let nodes = legacy
-                .nodes
-                .into_iter()
-                .map(|node| {
-                    let inferred_input_count = node.input_count.unwrap_or(node.inputs.len());
-                    let inferred_output_count = node.output_count.unwrap_or(0);
-
-                    GraphDocumentNode {
-                        id: node.id,
-                        definition_id: node.definition_id,
-                        position: node.position,
-                        inputs: node.inputs,
-                        input_count: inferred_input_count,
-                        output_count: inferred_output_count,
-                    }
-                })
-                .collect();
-
-            Ok((
-                GraphDocument {
-                    version: GRAPH_DOCUMENT_VERSION,
-                    nodes,
-                    edges: legacy.links,
-                    view: legacy.ui,
-                },
-                Some("Migrated graph document schema from v0 to v1.".to_string()),
-            ))
-        }
-        GRAPH_DOCUMENT_VERSION => {
-            let current: GraphDocument = serde_json::from_value(value)
-                .map_err(|err| format!("invalid schema v1 payload: {}", err))?;
-            Ok((current, None))
-        }
-        other => Err(format!(
-            "unsupported schema version {} (latest supported {})",
-            other, GRAPH_DOCUMENT_VERSION
-        )),
-    }
+    activation
+        .map(|activation| activation.enabled)
+        .unwrap_or(true)
 }
 
 fn persist_graph_to_path(
@@ -946,12 +856,11 @@ fn persist_graph_to_path(
     graph: &Connecting,
     q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
-) -> Result<(GraphDocument, String, usize), String> {
+) -> Result<PreparedGraphWrite, String> {
     let document = build_graph_document(graph, q_nodes, q_camera);
-    let validation_issue_count = validate_graph_document(&document, registry).len();
-    let signature = graph_signature(&document)?;
-    write_graph_document(path, &document, pretty_json)?;
-    Ok((document, signature, validation_issue_count))
+    let prepared = prepare_graph_document_write(document, pretty_json, registry)?;
+    write_graph_payload(path, &prepared.payload)?;
+    Ok(prepared)
 }
 
 fn build_graph_document(
@@ -987,39 +896,25 @@ fn build_graph_document(
             },
         });
 
-    let edge_snapshots = graph.connections.iter().map(|link| GraphDocumentEdgeSnapshot {
-        from_entity: link.from_node,
-        from_index: link.from_index,
-        to_entity: link.to_node,
-        to_index: link.to_index,
-    });
+    let edge_snapshots = graph
+        .connections
+        .iter()
+        .map(|link| GraphDocumentEdgeSnapshot {
+            from_entity: link.from_node,
+            from_index: link.from_index,
+            to_entity: link.to_node,
+            to_index: link.to_index,
+        });
 
     build_graph_document_from_snapshots(nodes_data, edge_snapshots, camera, None).document
 }
 
-fn graph_signature(document: &GraphDocument) -> Result<String, String> {
-    serde_json::to_string(document)
-        .map_err(|err| format!("signature serialization failed: {}", err))
-}
-
-fn write_graph_document(
-    path: &str,
-    document: &GraphDocument,
-    pretty_json: bool,
-) -> Result<(), String> {
+fn write_graph_payload(path: &str, payload: &str) -> Result<(), String> {
     let target = Path::new(path);
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("cannot create save directory {}: {}", parent.display(), err))?;
     }
-
-    let payload = if pretty_json {
-        serde_json::to_string_pretty(document)
-            .map_err(|err| format!("cannot serialize JSON payload: {}", err))?
-    } else {
-        serde_json::to_string(document)
-            .map_err(|err| format!("cannot serialize JSON payload: {}", err))?
-    };
 
     fs::write(target, payload)
         .map_err(|err| format!("cannot write graph file {}: {}", target.display(), err))
@@ -1042,13 +937,13 @@ fn write_backup_file(
 
     let backup_name = format!("autosave_{}.json", unix_timestamp_millis());
     let backup_path = backup_dir.join(backup_name);
+    let payload = serialize_graph_document(document, pretty_json)?;
 
-    write_graph_document(
+    write_graph_payload(
         backup_path
             .to_str()
             .ok_or_else(|| "backup path is not valid UTF-8".to_string())?,
-        document,
-        pretty_json,
+        &payload,
     )?;
 
     prune_backup_files(backup_dir, max_backup_files)?;

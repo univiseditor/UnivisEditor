@@ -135,49 +135,49 @@ fn setup_canvas_island_ui(mut commands: Commands) {
             ))
             .with_children(|shell| {
                 shell.spawn((
-                    Node {
-                        min_width: Val::Px(180.0),
-                        height: Val::Px(32.0),
-                        padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(8.0),
-                        border_radius: BorderRadius::all(Val::Px(999.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
-                ))
-                .with_children(|status| {
-                    status.spawn((
                         Node {
-                            width: Val::Px(8.0),
-                            height: Val::Px(8.0),
+                            min_width: Val::Px(180.0),
+                            height: Val::Px(32.0),
+                            padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(8.0),
                             border_radius: BorderRadius::all(Val::Px(999.0)),
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.35, 0.85, 0.45)),
-                        CanvasIslandStatusDot,
-                    ));
+                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                    ))
+                    .with_children(|status| {
+                        status.spawn((
+                            Node {
+                                width: Val::Px(8.0),
+                                height: Val::Px(8.0),
+                                border_radius: BorderRadius::all(Val::Px(999.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.35, 0.85, 0.45)),
+                            CanvasIslandStatusDot,
+                        ));
 
-                    status.spawn((
-                        Text::new("current_graph.json"),
-                        TextFont {
-                            font_size: 13.0,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                        CanvasIslandFileNameText,
-                    ));
+                        status.spawn((
+                            Text::new("current_graph.json"),
+                            TextFont {
+                                font_size: 13.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                            CanvasIslandFileNameText,
+                        ));
 
-                    status.spawn((
-                        Text::new("Saved"),
-                        TextFont {
-                            font_size: 11.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
-                        CanvasIslandStatusText,
-                    ));
-                });
+                        status.spawn((
+                            Text::new("Saved"),
+                            TextFont {
+                                font_size: 11.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                            CanvasIslandStatusText,
+                        ));
+                    });
 
                 shell
                     .spawn((
@@ -340,39 +340,39 @@ fn spawn_canvas_island_menu_panel(
 
         for (label, shortcut, action) in items {
             panel.spawn((
-                Button,
-                Node {
-                    width: Val::Percent(100.0),
-                    min_height: Val::Px(34.0),
-                    padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center,
-                    border_radius: BorderRadius::all(Val::Px(14.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
-                CanvasIslandInteractive,
-                CanvasIslandMenuActionButton { action: *action },
-            ))
-            .with_children(|button| {
-                button.spawn((
-                    Text::new(*label),
-                    TextFont {
-                        font_size: 12.5,
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(34.0),
+                        padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                        justify_content: JustifyContent::SpaceBetween,
+                        align_items: AlignItems::Center,
+                        border_radius: BorderRadius::all(Val::Px(14.0)),
                         ..default()
                     },
-                    TextColor(Color::WHITE),
-                ));
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                    CanvasIslandInteractive,
+                    CanvasIslandMenuActionButton { action: *action },
+                ))
+                .with_children(|button| {
+                    button.spawn((
+                        Text::new(*label),
+                        TextFont {
+                            font_size: 12.5,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                    ));
 
-                button.spawn((
-                    Text::new(*shortcut),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
-                ));
-            });
+                    button.spawn((
+                        Text::new(*shortcut),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
+                    ));
+                });
         }
     });
 }
@@ -405,27 +405,27 @@ fn spawn_canvas_island_search_panel(root: &mut ChildSpawnerCommands) {
         ));
 
         panel.spawn((
-            Node {
-                width: Val::Percent(100.0),
-                min_height: Val::Px(34.0),
-                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                align_items: AlignItems::Center,
-                border_radius: BorderRadius::all(Val::Px(14.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
-        ))
-        .with_children(|query| {
-            query.spawn((
-                Text::new("Type to search nodes..."),
-                TextFont {
-                    font_size: 12.5,
+                Node {
+                    width: Val::Percent(100.0),
+                    min_height: Val::Px(34.0),
+                    padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                    align_items: AlignItems::Center,
+                    border_radius: BorderRadius::all(Val::Px(14.0)),
                     ..default()
                 },
-                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.75)),
-                CanvasIslandSearchQueryText,
-            ));
-        });
+                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+            ))
+            .with_children(|query| {
+                query.spawn((
+                    Text::new("Type to search nodes..."),
+                    TextFont {
+                        font_size: 12.5,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.75)),
+                    CanvasIslandSearchQueryText,
+                ));
+            });
 
         panel.spawn((
             Node {

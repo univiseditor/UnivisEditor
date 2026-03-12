@@ -1,15 +1,12 @@
-//! المكونات الأساسية للعُقد والمنافذ
-
+//! Basic pin, drag, and connection state types.
 use bevy::prelude::*;
 
-// علامة لتمييز المنافذ القديمة (للتوافق)
 #[derive(Clone, PartialEq, Eq)]
 pub enum Pin {
     Output,
     Input,
 }
 
-// لتخزين حالة السحب
 #[derive(Resource, Default)]
 pub struct DragState {
     pub active_entity: Option<Entity>,
@@ -18,7 +15,6 @@ pub struct DragState {
     pub last_mouse_pos: Vec2,
 }
 
-// تعريف وصلة بين منفذين (للخطوط)
 #[derive(Debug, Clone)]
 pub struct GraphLink {
     pub from_node: Entity,
@@ -29,7 +25,6 @@ pub struct GraphLink {
     pub to_port: Entity,
 }
 
-/// حالة الوصلة أثناء السحب
 #[derive(Resource, Default)]
 pub struct WireConnectionState {
     pub dragging_from: Option<Entity>,
@@ -39,7 +34,6 @@ pub struct WireConnectionState {
     pub is_dragging: bool,
 }
 
-/// قائمة الوصلات
 #[derive(Resource, Debug, Default)]
 pub struct Connecting {
     pub connections: Vec<GraphLink>,

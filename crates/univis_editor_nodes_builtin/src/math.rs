@@ -1,19 +1,15 @@
-//! عُقد الرياضيات الأساسية
-
+//! Built-in math nodes.
 use bevy::prelude::*;
-use univis_node_graph::register_node;
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
+use univis_node_graph::register_node;
 use univis_node_graph::value::NodeValue;
 
 // ═════════════════════════════════════════════════════
-// لون موحد لعُقد الرياضيات
 // ═════════════════════════════════════════════════════
 
 const MATH_NODE_COLOR: Color = Color::srgb(0.2, 0.5, 0.8);
-
-// ========== عقدة الجمع ==========
 
 pub struct AddNode;
 
@@ -62,8 +58,6 @@ impl NodeDefinition for AddNode {
     }
 }
 
-// ========== عقدة الطرح ==========
-
 pub struct SubtractNode;
 
 impl NodeDefinition for SubtractNode {
@@ -110,8 +104,6 @@ impl NodeDefinition for SubtractNode {
     }
 }
 
-// ========== عقدة الضرب ==========
-
 pub struct MultiplyNode;
 
 impl NodeDefinition for MultiplyNode {
@@ -157,8 +149,6 @@ impl NodeDefinition for MultiplyNode {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة القسمة ==========
 
 pub struct DivideNode;
 
@@ -211,8 +201,6 @@ impl NodeDefinition for DivideNode {
     }
 }
 
-// ========== عقدة التقييد ==========
-
 pub struct ClampNode;
 
 impl NodeDefinition for ClampNode {
@@ -257,8 +245,6 @@ impl NodeDefinition for ClampNode {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة الاستيفاء ==========
 
 pub struct LerpNode;
 
@@ -305,8 +291,6 @@ impl NodeDefinition for LerpNode {
     }
 }
 
-// ========== عقدة الحد الأدنى ==========
-
 pub struct MinNode;
 
 impl NodeDefinition for MinNode {
@@ -348,8 +332,6 @@ impl NodeDefinition for MinNode {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة الحد الأقصى ==========
 
 pub struct MaxNode;
 
@@ -393,8 +375,6 @@ impl NodeDefinition for MaxNode {
     }
 }
 
-// ========== عقدة القيمة المطلقة ==========
-
 pub struct AbsNode;
 
 impl NodeDefinition for AbsNode {
@@ -433,8 +413,6 @@ impl NodeDefinition for AbsNode {
     }
 }
 
-// ========== عقدة الجيب ==========
-
 pub struct SinNode;
 
 impl NodeDefinition for SinNode {
@@ -472,8 +450,6 @@ impl NodeDefinition for SinNode {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة جيب التمام ==========
 
 pub struct CosNode;
 

@@ -1,6 +1,4 @@
-//! تعريف العُقد - النظام القابل للتوسع
-//! كل عقدة هي تنفيذ لـ NodeDefinition trait
-
+//! Core node-definition types and runtime traits.
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -10,7 +8,7 @@ use univis_scene::EntityValue;
 
 use super::value::{NodeValue, NodeValues, ValueType};
 
-/// معرف فريد للعقدة
+/// Stable identifier for a node definition.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub String);
 
@@ -30,7 +28,7 @@ impl std::fmt::Display for NodeId {
     }
 }
 
-/// تصنيف العُقد
+/// Display category used for grouping nodes in menus.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeCategory(pub String);
 
@@ -43,7 +41,6 @@ impl NodeCategory {
         &self.0
     }
 
-    /// تصنيفات مدمجة
     pub const MATH: &'static str = "Math";
     pub const LOGIC: &'static str = "Logic";
     pub const INPUT: &'static str = "Input";
@@ -52,6 +49,7 @@ impl NodeCategory {
     pub const ADVANCED: &'static str = "Advanced";
 }
 
+/// Optional semantic requirement for a specialized port.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PortRequirement {
     pub id: String,
@@ -74,32 +72,22 @@ impl PortRequirement {
     }
 }
 
-/// تعريف المنفذ (مدخل أو مخرج)
+/// Definition of a node input or output port.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortDefinition {
-    /// اسم المنفذ للعرض
     pub name: String,
-    /// نوع البيانات المتوقع
     pub value_type: ValueType,
-    /// وصف اختياري
     pub description: Option<String>,
-    /// قيمة افتراضية (للمداخل)
     pub default_value: Option<NodeValue>,
-    /// لون مخصص للمنفذ (اختياري)
     pub color: Option<Color>,
-    /// شرط اختياري إضافي للمداخل المتخصصة.
     #[serde(default)]
     pub requirement: Option<PortRequirement>,
-    /// هل يظهر هذا المدخل للتحرير داخل نافذة الإعدادات المنبثقة؟
     #[serde(default)]
     pub editable_in_popup: bool,
-    /// خطوة التعديل في UI (للأرقام)
     #[serde(default)]
     pub ui_step: Option<f64>,
-    /// الحد الأدنى في UI
     #[serde(default)]
     pub ui_min: Option<f64>,
-    /// الحد الأقصى في UI
     #[serde(default)]
     pub ui_max: Option<f64>,
 }
@@ -130,7 +118,6 @@ impl PortDefinition {
         self
     }
 
-    /// مع لون مخصص للمنفذ
     pub fn with_color(mut self, color: Color) -> Self {
         self.color = Some(color);
         self
@@ -167,7 +154,6 @@ impl PortDefinition {
         self
     }
 
-    /// الحصول على لون المنفذ (مخصص أو حسب النوع)
     pub fn resolve_color(&self) -> Color {
         self.color.unwrap_or_else(|| {
             self.requirement
@@ -189,239 +175,188 @@ impl PortDefinition {
         }
     }
 
-    /// منفذ مدخل float
     pub fn input_float(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Float)
     }
 
-    /// منفذ مدخل int
     pub fn input_int(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Int)
     }
 
-    /// منفذ مدخل bool
     pub fn input_bool(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Bool)
     }
 
-    /// منفذ مدخل string
     pub fn input_string(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::String)
     }
 
-    /// منفذ مدخل vec3
     pub fn input_vec3(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Vec3)
     }
 
-    /// منفذ مدخل بعلامة نوع مخصصة
     pub fn input_tag(name: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::new(name, ValueType::CustomTag(tag.into()))
     }
 
-    /// منفذ مدخل Entity
     pub fn input_entity(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Entity)
     }
 
-    /// منفذ مخرج float
     pub fn output_float(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Float)
     }
 
-    /// منفذ مخرج any
     pub fn output_any(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Any)
     }
 
-    /// منفذ مخرج بعلامة نوع مخصصة
     pub fn output_tag(name: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::new(name, ValueType::CustomTag(tag.into()))
     }
 
-    /// منفذ مخرج Entity
     pub fn output_entity(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Entity)
     }
 }
 
-/// سياق المعالجة للعقدة
+/// Runtime context passed to a node during processing.
 pub struct ProcessContext<'a> {
-    /// قيم المداخل
     pub inputs: &'a [NodeValue],
-    /// قيم المخارج (للكتابة)
     pub outputs: &'a mut [NodeValue],
-    /// وقت الإطار
     pub delta_time: f32,
-    /// بيانات مخصصة للعقدة
     pub custom_data: &'a mut Option<Box<dyn Any + Send + Sync>>,
 }
 
 impl<'a> ProcessContext<'a> {
     // ═════════════════════════════════════════════════════
-    // Helper Methods - لتبسيط الوصول للقيم
     // ═════════════════════════════════════════════════════
 
-    /// قراءة float من مدخل
     pub fn get_float(&self, index: usize) -> Option<f64> {
         self.inputs.get(index)?.as_float()
     }
 
-    /// قراءة float مع قيمة افتراضية
     pub fn get_float_or(&self, index: usize, default: f64) -> f64 {
         self.get_float(index).unwrap_or(default)
     }
 
-    /// قراءة int من مدخل
     pub fn get_int(&self, index: usize) -> Option<i64> {
         self.inputs.get(index)?.as_int()
     }
 
-    /// قراءة int مع قيمة افتراضية
     pub fn get_int_or(&self, index: usize, default: i64) -> i64 {
         self.get_int(index).unwrap_or(default)
     }
 
-    /// قراءة bool من مدخل
     pub fn get_bool(&self, index: usize) -> Option<bool> {
         self.inputs.get(index)?.as_bool()
     }
 
-    /// قراءة bool مع قيمة افتراضية
     pub fn get_bool_or(&self, index: usize, default: bool) -> bool {
         self.get_bool(index).unwrap_or(default)
     }
 
-    /// قراءة Vec2 من مدخل
     pub fn get_vec2(&self, index: usize) -> Option<Vec2> {
         self.inputs.get(index)?.as_vec2()
     }
 
-    /// قراءة Vec3 من مدخل
     pub fn get_vec3(&self, index: usize) -> Option<Vec3> {
         self.inputs.get(index)?.as_vec3()
     }
 
-    /// قراءة String من مدخل
     pub fn get_string(&self, index: usize) -> Option<&str> {
         self.inputs.get(index)?.as_string()
     }
 
-    /// قراءة قيمة TaggedData من مدخل
     pub fn get_tagged(&self, index: usize) -> Option<(&str, &JsonValue)> {
         self.inputs.get(index)?.as_tagged()
     }
 
-    /// قراءة Entity من مدخل
     pub fn get_entity(&self, index: usize) -> Option<EntityValue> {
         self.inputs.get(index)?.as_entity().cloned()
     }
 
-    /// كتابة مخرج
     pub fn set(&mut self, index: usize, value: NodeValue) {
         if let Some(out) = self.outputs.get_mut(index) {
             *out = value;
         }
     }
 
-    /// كتابة float في مخرج
     pub fn set_float(&mut self, index: usize, value: f64) {
         self.set(index, NodeValue::float(value));
     }
 
-    /// كتابة int في مخرج
     pub fn set_int(&mut self, index: usize, value: i64) {
         self.set(index, NodeValue::int(value));
     }
 
-    /// كتابة bool في مخرج
     pub fn set_bool(&mut self, index: usize, value: bool) {
         self.set(index, NodeValue::bool(value));
     }
 
-    /// كتابة Vec2 في مخرج
     pub fn set_vec2(&mut self, index: usize, value: Vec2) {
         self.set(index, NodeValue::Vec2(value));
     }
 
-    /// كتابة Vec3 في مخرج
     pub fn set_vec3(&mut self, index: usize, value: Vec3) {
         self.set(index, NodeValue::Vec3(value));
     }
 
-    /// كتابة String في مخرج
     pub fn set_string(&mut self, index: usize, value: impl Into<String>) {
         self.set(index, NodeValue::string(value));
     }
 
-    /// كتابة TaggedData في مخرج
     pub fn set_tagged(&mut self, index: usize, tag: impl Into<String>, payload: JsonValue) {
         self.set(index, NodeValue::tagged(tag, payload));
     }
 
-    /// كتابة Entity في مخرج
     pub fn set_entity(&mut self, index: usize, value: EntityValue) {
         self.set(index, NodeValue::entity(value));
     }
-
 }
 
-/// نتيجة المعالجة
+/// Result of a node processing pass.
 #[derive(Debug)]
 pub enum ProcessResult {
-    /// تمت المعالجة بنجاح
     Success,
-    /// خطأ مع رسالة
     Error(String),
-    /// العقدة تحتاج لمزيد من المداخل
     MissingInput(usize),
 }
 
-/// الـ trait الرئيسي لتعريف العُقد
+/// Trait implemented by every node definition.
 pub trait NodeDefinition: Send + Sync {
-    /// المعرف الفريد للعقدة (مثل "math/add")
     fn id(&self) -> NodeId;
 
-    /// اسم العرض للعقدة
     fn display_name(&self) -> &str;
 
-    /// التصنيف
     fn category(&self) -> NodeCategory {
         NodeCategory::new(NodeCategory::ADVANCED)
     }
 
-    /// وصف العقدة
     fn description(&self) -> Option<&str> {
         None
     }
 
-    /// لون العقدة
     fn color(&self) -> Color {
         Color::srgb(0.2, 0.2, 0.25)
     }
 
-    /// لون العنوان (اختياري)
     fn title_color(&self) -> Color {
         Color::WHITE
     }
 
-    /// لون الأسلاك المتصلة بالعقدة (اختياري)
     fn wire_color(&self) -> Color {
         self.color()
     }
 
-    /// أيقونة العقدة (اختياري)
     fn icon(&self) -> Option<&str> {
         None
     }
 
-    /// تعريف المداخل
     fn inputs(&self) -> Vec<PortDefinition>;
 
-    /// تعريف المخارج
     fn outputs(&self) -> Vec<PortDefinition>;
 
-    /// إذا كان هذا المخرج يحقق شرطًا مخصصًا وفق التوصيلات الحالية.
     fn output_requirement_token(
         &self,
         _output_index: usize,
@@ -430,38 +365,29 @@ pub trait NodeDefinition: Send + Sync {
         None
     }
 
-    /// دالة المعالجة الرئيسية
     fn process(&self, context: &mut ProcessContext) -> ProcessResult;
 
     /// ═══════════════════════════════════════════════════════════
-    /// 🎯 جديد: التسجيل التلقائي
     /// ═══════════════════════════════════════════════════════════
 
-    /// هل تريد تسجيل هذه العقدة تلقائياً في القائمة؟
-    /// ابحث عن true افتراضياً - معظم العُقد تظهر في القائمة
     fn show_in_menu(&self) -> bool {
         true
     }
 
-    /// ترتيب العرض في القائمة (أقل = أولاً)
-    /// مفيد لترتيب العُقد داخل التصنيف
     fn menu_order(&self) -> i32 {
         0
     }
 
-    /// كلمات مفتاحية للبحث
     fn keywords(&self) -> Vec<&str> {
         vec![]
     }
 
     /// ═══════════════════════════════════════════════════════════
 
-    /// هل يمكن للعقدة أن يكون لها أطفال؟
     fn can_have_children(&self) -> bool {
         false
     }
 
-    /// الحصول على القيم الافتراضية للمداخل
     fn default_input_values(&self) -> Vec<NodeValue> {
         self.inputs()
             .iter()
@@ -469,7 +395,6 @@ pub trait NodeDefinition: Send + Sync {
             .collect()
     }
 
-    /// الحصول على ألوان المنافذ (باستخدام resolve_color)
     fn input_port_colors(&self) -> Vec<Color> {
         self.inputs().iter().map(|p| p.resolve_color()).collect()
     }
@@ -478,26 +403,18 @@ pub trait NodeDefinition: Send + Sync {
         self.outputs().iter().map(|p| p.resolve_color()).collect()
     }
 
-    /// عرض الـ body (اختياري - للتخصيص)
     fn body_width(&self) -> f32 {
         150.0
     }
 
-    /// ارتفاع الـ body (اختياري - للتخصيص)
     fn body_height(&self) -> f32 {
         let ins = self.inputs().len();
         let outs = self.outputs().len();
         50.0 + (ins.max(outs) as f32 * 22.0)
     }
 
-    /// بناء محتوى جسم العقدة المخصص
-    /// هذه الدالة تُستدعى بعد إنشاء الهيكل الأساسي للعقدة
     ///
-    /// # المعاملات
-    /// - `body`: أوامر إنشاء العناصر الأبناء للـ body
-    /// - `node_entity`: كيان العقدة الرئيسي (للرجوع إليه)
     ///
-    /// # مثال
     /// ```ignore
     /// fn build_body(&self, body: &mut ChildSpawnerCommands, node_entity: Entity) {
     ///     body.spawn(UTextLabel {
@@ -508,39 +425,25 @@ pub trait NodeDefinition: Send + Sync {
     ///     });
     /// }
     /// ```
-    fn build_body(&self, _body: &mut ChildSpawnerCommands, _node_entity: Entity) {
-        // التنفيذ الافتراضي: لا يفعل شيئاً
-        // العُقد يمكنها تجاوز هذه الدالة لإضافة محتوى مخصص
-    }
+    fn build_body(&self, _body: &mut ChildSpawnerCommands, _node_entity: Entity) {}
 
-    /// هل تحتاج العقدة لـ body مخصص؟
-    /// إذا كانت true، سيتم استدعاء build_body
     fn has_custom_body(&self) -> bool {
         false
     }
 
-    /// هل تحتاج هذه العقدة إلى مزامنة بصرية مخصصة بعد تغيّر حالتها؟
     fn needs_visual_sync(&self) -> bool {
         self.has_custom_body()
     }
 
-    /// مزامنة الحالة البصرية المخصصة مع بيانات العقدة.
-    /// يُستدعى بعد التغييرات على العقدة بحيث تبقى أي عناصر UI مخصصة
-    /// قادرة على دفع قيمها إلى GraphNode أو سحبها منه.
     fn sync_visual(&self, _world: &mut World, _node_entity: Entity) {}
 }
 
-/// تعريف العقدة كـ Arc للتخزين الآمن
 pub type ArcNodeDefinition = Arc<dyn NodeDefinition>;
 
-/// مكون لعقدة في المشهد
 #[derive(Component)]
 pub struct GraphNode {
-    /// معرف تعريف العقدة
     pub definition_id: NodeId,
-    /// قيم المداخل والمخارج
     pub values: NodeValues,
-    /// بيانات مخصصة
     pub custom_data: Option<Box<dyn Any + Send + Sync>>,
 }
 
@@ -554,16 +457,11 @@ impl GraphNode {
     }
 }
 
-/// مكون لمنفذ العقدة
 #[derive(Component)]
 pub struct GraphPort {
-    /// الكيان الأب (العقدة)
     pub node_entity: Entity,
-    /// نوع المنفذ (مدخل/مخرج)
     pub port_type: PortType,
-    /// فهرس المنفذ
     pub index: usize,
-    /// نوع البيانات
     pub value_type: ValueType,
 }
 
@@ -573,19 +471,14 @@ pub enum PortType {
     Output,
 }
 
-/// ✨ جديد: اتصال محلي للمدخل (يعرف مصدره مباشرة)
 #[derive(Component, Default)]
 pub struct InputConnection {
-    /// الكيان المصدر (العقدة المُرسلة)
     pub source_node: Option<Entity>,
-    /// فهرس المخرج في العقدة المصدر
     pub source_port_index: Option<usize>,
 }
 
-/// ✨ جديد: اتصالات محلية للمخرج (يعرف المستقبلين مباشرة)
 #[derive(Component, Default)]
 pub struct OutputConnections {
-    /// قائمة المستقبلين (العقدة المستقبلة + فهرس المدخل)
     pub targets: Vec<OutputTarget>,
 }
 
@@ -596,55 +489,33 @@ pub struct OutputTarget {
 }
 
 /// ═══════════════════════════════════════════════════════════════
-/// 🎯 تصميم على طريقة Blender
 /// ═══════════════════════════════════════════════════════════════
 ///
-/// في Blender، كل Socket (منفذ) له:
-/// 1. مؤشر مباشر للقيمة (value)
-/// 2. مؤشر مباشر للاتصال (link)
 ///
-/// هذا يسمح بـ O(1) للوصول للبيانات - لا بحث!
 ///
-/// هنا نطبق نفس المبدأ:
-/// - InputPort يعرف مصدره مباشرة (مثل Blender link)
-/// - OutputPort يعرف مستقبليه مباشرة
-/// - لا حاجة للبحث في Connecting Resource
 ///
 /// ═══════════════════════════════════════════════════════════════
 
-/// منفذ مدخل - مثل bNodeSocket في Blender
 #[derive(Component)]
 pub struct InputPort {
-    /// العقدة الأب
     pub node_entity: Entity,
-    /// فهرس المنفذ
     pub index: usize,
-    /// نوع البيانات
     pub value_type: ValueType,
 
-    /// 🎯 المؤشر المباشر للمصدر (مثل Blender link)
-    /// إذا كان Some، القيمة تأتي من هنا مباشرة
     pub source: Option<PortRef>,
 }
 
-/// منفذ مخرج - مثل bNodeSocket في Blender
 #[derive(Component)]
 pub struct OutputPort {
-    /// العقدة الأب
     pub node_entity: Entity,
-    /// فهرس المنفذ
     pub index: usize,
-    /// نوع البيانات
     pub value_type: ValueType,
 
-    /// 🎯 القيمة الحالية (مخزنة هنا مباشرة)
     pub value: NodeValue,
 
-    /// المستقبلون (للنشر السريع)
     pub targets: Vec<PortRef>,
 }
 
-/// مرجع لمنفذ (مثل المؤشر في C)
 #[derive(Debug, Clone, Copy)]
 pub struct PortRef {
     pub node: Entity,
@@ -652,13 +523,11 @@ pub struct PortRef {
 }
 
 impl InputPort {
-    /// الحصول على القيمة - O(1) مثل Blender!
     pub fn get_value(
         &self,
         outputs: &std::collections::HashMap<Entity, Vec<NodeValue>>,
     ) -> NodeValue {
         if let Some(ref source) = self.source {
-            // وصول مباشر - لا بحث!
             if let Some(node_outputs) = outputs.get(&source.node) {
                 if source.port_index < node_outputs.len() {
                     return node_outputs[source.port_index].clone();
@@ -669,16 +538,13 @@ impl InputPort {
     }
 }
 
-/// مكون لتتبع العُقد المحددة
 #[derive(Component)]
 pub struct Selected;
 
-/// مكون لربط نص العرض داخل عقدة Output/View بالعقدة الأم
 #[derive(Component)]
 pub struct ValueDisplayLabel {
     pub node_entity: Entity,
 }
 
-/// مكون لتتبع حالة السحب
 #[derive(Component)]
 pub struct Dragging;

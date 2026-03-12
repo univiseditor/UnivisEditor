@@ -1,19 +1,15 @@
-//! عُقد المنطق - للمقارنات والشروط
-
+//! Built-in logic nodes.
 use bevy::prelude::*;
-use univis_node_graph::register_node;
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
+use univis_node_graph::register_node;
 use univis_node_graph::value::{NodeValue, ValueType};
 
 // ═════════════════════════════════════════════════════
-// لون موحد لعُقد المنطق
 // ═════════════════════════════════════════════════════
 
 const LOGIC_NODE_COLOR: Color = Color::srgb(0.8, 0.5, 0.3);
-
-// ========== عقدة المقارنة ==========
 
 pub struct CompareNode;
 
@@ -67,8 +63,6 @@ impl NodeDefinition for CompareNode {
     }
 }
 
-// ========== عقدة التفرع ==========
-
 pub struct BranchNode;
 
 impl NodeDefinition for BranchNode {
@@ -118,8 +112,6 @@ impl NodeDefinition for BranchNode {
     }
 }
 
-// ========== عقدة And ==========
-
 pub struct AndNode;
 
 impl NodeDefinition for AndNode {
@@ -166,8 +158,6 @@ impl NodeDefinition for AndNode {
     }
 }
 
-// ========== عقدة Or ==========
-
 pub struct OrNode;
 
 impl NodeDefinition for OrNode {
@@ -213,8 +203,6 @@ impl NodeDefinition for OrNode {
         ProcessResult::Success
     }
 }
-
-// ========== عقدة Not ==========
 
 pub struct NotNode;
 
