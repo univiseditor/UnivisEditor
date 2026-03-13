@@ -10,6 +10,8 @@ struct InfiniteGridSettings {
     // 1 / fadeout_distance
     dist_fadeout_const: f32,
     dot_fadeout_const: f32,
+    display_mode: f32,
+    point_size: f32,
     x_axis_col: vec3<f32>,
     z_axis_col: vec3<f32>,
     minor_line_col: vec4<f32>,
@@ -149,14 +151,11 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     // Choose different scaling methods for perspective and orthographic projections
     let scaling = mix(perspective_scaling, orthographic_scaling, is_orthographic);
 
-    let scale = grid_settings.scale * scaling;
-    let coord = plane_coords / scale; // use the scale variable to set the distance between the lines
+    let line_scale = grid_settings.scale * scaling;
+    let coord = plane_coords / line_scale; // use the scale variable to set the distance between the lines
     let derivative = fwidth(coord);
     let grid = abs(fract(coord - 0.5) - 0.5) / derivative;
     let lne = min(grid.x, grid.y);
-
-    let minimumz = min(derivative.y, 1.) * scale;
-    let minimumx = min(derivative.x, 1.) * scale;
 
     let derivative2 = fwidth(coord * 0.1);
     let grid2 = abs(fract((coord * 0.1) - 0.5) - 0.5) / derivative2;
@@ -164,14 +163,19 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
 
     let grid_alpha = 1.0 - min(lne, 1.0);
     let base_grid_color = mix(grid_settings.major_line_col, grid_settings.minor_line_col, step(1., mg_line));
-    var grid_color = vec4(base_grid_color.rgb, base_grid_color.a * grid_alpha);
+    let line_grid_color = vec4(base_grid_color.rgb, base_grid_color.a * grid_alpha);
 
-    let main_axes_half_width = 0.8;
-    let z_axis_cond = plane_coords.x > -main_axes_half_width * minimumx && plane_coords.x < main_axes_half_width * minimumx;
-    let x_axis_cond = plane_coords.y > -main_axes_half_width * minimumz && plane_coords.y < main_axes_half_width * minimumz;
-
-    grid_color = mix(grid_color, vec4(grid_settings.z_axis_col, grid_color.a), f32(z_axis_cond));
-    grid_color = mix(grid_color, vec4(grid_settings.x_axis_col, grid_color.a), f32(x_axis_cond));
+    let use_dots = step(0.5, grid_settings.display_mode);
+    let point_scale = max(line_scale, 1.0);
+    let point_coord = plane_coords / point_scale;
+    let point_local = fract(point_coord) - vec2<f32>(0.5, 0.5);
+    let point_derivative = max(fwidth(point_coord), vec2<f32>(0.0001, 0.0001));
+    let point_distance = length(point_local / point_derivative);
+    let point_size = max(grid_settings.point_size, 0.35);
+    let point_alpha = 1.0 - smoothstep(0.9 * point_size, 1.95 * point_size, point_distance);
+    let point_color = mix(grid_settings.minor_line_col, grid_settings.major_line_col, 0.62);
+    let dot_grid_color = vec4(point_color.rgb, point_color.a * point_alpha);
+    var grid_color = mix(line_grid_color, dot_grid_color, use_dots);
 
     let dist_fadeout = min(1., 1. - grid_settings.dist_fadeout_const / max(1., camera_distance_from_plane / 10.) * real_depth);
     let dot_fadeout = abs(dot(grid_position.normal, normalize(view.world_position - frag_pos_3d)));

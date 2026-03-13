@@ -5,7 +5,12 @@ use univis_node_graph::document::{
 use univis_node_graph::node_definition::NodeId;
 use univis_node_graph::value::NodeValue;
 
-fn node(id: u64, definition_id: &str, input_count: usize, output_count: usize) -> GraphDocumentNode {
+fn node(
+    id: u64,
+    definition_id: &str,
+    input_count: usize,
+    output_count: usize,
+) -> GraphDocumentNode {
     GraphDocumentNode {
         id,
         definition_id: NodeId::new(definition_id),
@@ -112,7 +117,10 @@ fn spawn_node_and_camera_state_round_trip_through_document_helpers() {
     let node_id = document.spawn_node(NodeId::new("tests/spawned"), [4.0, 8.0], 2, 1);
 
     assert_eq!(node_id, 1);
-    assert_eq!(document.node(node_id).expect("spawned node").position, [4.0, 8.0]);
+    assert_eq!(
+        document.node(node_id).expect("spawned node").position,
+        [4.0, 8.0]
+    );
 
     document.set_camera(Some(GraphDocumentCameraState {
         translation: [1.0, 2.0, 3.0],
@@ -123,5 +131,8 @@ fn spawn_node_and_camera_state_round_trip_through_document_helpers() {
         document.view.camera.as_ref().expect("camera").translation,
         [1.0, 2.0, 3.0]
     );
-    assert_eq!(document.view.camera.as_ref().expect("camera").ortho_scale, 0.75);
+    assert_eq!(
+        document.view.camera.as_ref().expect("camera").ortho_scale,
+        0.75
+    );
 }

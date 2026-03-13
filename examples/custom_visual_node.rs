@@ -61,11 +61,13 @@ impl NodeDefinition for HeatPreviewNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::input_float("Temperature C")
-            .with_default(NodeValue::float(22.0))
-            .editable_in_popup()
-            .with_ui_step(1.0)
-            .with_ui_range(-20.0, 100.0)]
+        vec![
+            PortDefinition::input_float("Temperature C")
+                .with_default(NodeValue::float(22.0))
+                .editable_in_popup()
+                .with_ui_step(1.0)
+                .with_ui_range(-20.0, 100.0),
+        ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {

@@ -10,7 +10,12 @@ use univis_node_graph::node_definition::{
 use univis_node_graph::node_registry::NodeRegistry;
 use univis_node_graph::value::{NodeValue, ValueType};
 
-fn node(id: u64, definition_id: &str, input_count: usize, output_count: usize) -> GraphDocumentNode {
+fn node(
+    id: u64,
+    definition_id: &str,
+    input_count: usize,
+    output_count: usize,
+) -> GraphDocumentNode {
     GraphDocumentNode {
         id,
         definition_id: NodeId::new(definition_id),
@@ -220,5 +225,9 @@ fn validate_graph_document_flags_unsatisfied_requirements_and_cycles() {
         issue.kind == GraphValidationIssueKind::UnsatisfiedPortRequirement
             && issue.node_ids == vec![1, 3]
     }));
-    assert!(issues.iter().any(|issue| issue.kind == GraphValidationIssueKind::CycleDetected));
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.kind == GraphValidationIssueKind::CycleDetected)
+    );
 }

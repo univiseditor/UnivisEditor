@@ -1,96 +1,160 @@
 # UnivisEditor
 
-<div align="center">
+UnivisEditor is a graph-native scene editor for Bevy.
 
-**A node-based visual editor for the Bevy Engine**
+The project is built around one core idea: scenes should be authored as composable node networks. The graph is responsible for scene content and scene composition. The editor, persistence layer, validation, and runtime orchestration remain regular systems around that graph.
 
-[![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg)](https://www.rust-lang.org/)
-[![Bevy](https://img.shields.io/badge/Bevy-0.18.0-blue.svg)](https://bevyengine.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+## What The Project Is
 
-</div>
+UnivisEditor is not trying to turn every internal editor behavior into a node.
 
----
+Its current direction is:
 
-## 📖 Overview
+- nodes describe scene data and scene composition
+- the graph produces pure authoring data
+- runtime systems materialize that data into Bevy entities
+- editor systems handle UI, persistence, validation, commands, and workflow
 
-UnivisEditor is a **node-based visual editor** built on top of the [Bevy Engine](https://bevyengine.org/). It follows the philosophy that **"everything is a node"** - similar to Unreal Engine's Blueprint system or Blender's Node Editor.
+In practice, that means nodes are used for things like values, transforms, sprites, text, cameras, entity merging, child composition, and final scene output.
 
-The codebase is now organized as a Cargo workspace:
+## Current Scope
+
+The repository currently provides:
+
+- a canvas-first node editor built on Bevy
+- a node graph core with registry, port definitions, validation, and document operations
+- a pure scene data model centered on `EntityValue`
+- built-in input, math, logic, and scene nodes
+- runtime systems that evaluate graphs and sync scene output into the world
+- graph save/load and autosave support
+- crate-local tests and a sequential verification script for lower-spec machines
+
+This is best described today as:
+
+`A graph-native scene editor where scenes are authored as composable node networks and materialized into runtime entities.`
+
+## Architectural Model
+
+The project is organized around four layers:
+
+1. Graph authoring
+   - users build a graph from nodes and edges
+2. Pure scene data
+   - the graph resolves into scene-facing values such as `EntityValue`
+3. Runtime materialization
+   - systems turn graph output into Bevy ECS entities
+4. Editor infrastructure
+   - UI, persistence, validation, commands, overlay state, and editor workflow
+
+This boundary is intentional. Scene authoring belongs in the graph. Editor infrastructure does not.
+
+## Workspace Layout
+
+The workspace is split into focused crates:
+
 - `univis_node_graph`
+  - graph types, node definitions, registry, values, commands, validation, document helpers
 - `univis_scene`
+  - pure scene data types such as `EntityValue` and component payloads
 - `univis_editor_runtime`
+  - graph execution and scene-to-world synchronization
 - `univis_editor_ui`
+  - editor canvas, interaction systems, node spawning, popup editing, wire UI
 - `univis_editor_persistence`
+  - save/load, autosave, serialization helpers, and graph format handling
 - `univis_editor_nodes_builtin`
-- `univis_editor_app` (facade + prelude)
+  - built-in input, math, logic, and scene nodes
+- `univis_editor_app`
+  - facade crate that assembles the editor plugins
 
-### Key Features
+## Scene Authoring Model
 
-- 🎨 **Visual Node Editor** - Create complex logic by connecting nodes visually
-- 🧭 **Canvas-Only Workflow** - The editor surface is dedicated to node graphs, with transient floating tools instead of fixed side panels
-- 🔌 **Extensible Node System** - Easy to create custom nodes with a clean trait-based API
-- 🚀 **Built on Bevy 0.18** - Leverages the latest Bevy ECS architecture
-- 📦 **World-Space UI** - Custom UI system (`univis_ui`) for 3D world-space interactions
-- 🔍 **Search & Filter** - Quickly find nodes with built-in search functionality
-- 📜 **Auto-scrolling Menu** - Context menu with scrolling support for large node libraries
+The graph is intended to cover:
 
----
+- input values
+- graph-side math and logic
+- entity construction
+- transform and component application
+- composition by merge and parent-child relationships
+- final scene sinks
 
-## 🚀 Getting Started
+The graph is not intended to cover:
 
-The active editor path is graph-first and canvas-only. Persistent sidebars and mode-driven scene tooling are intentionally out of the shipped app; contextual UI should appear as compact floating surfaces over the canvas.
+- save/open commands
+- editor camera behavior
+- context-menu state
+- autosave timers
+- overlay focus management
+- validation scheduling
 
-### Prerequisites
+Those remain normal systems because they are editor infrastructure, not authored scene content.
 
-- Rust 1.75 or later
-- Bevy 0.18.0 compatible system
+## Built-In Node Families
 
-### Installation
+Current built-in nodes include:
 
-Add to your `Cargo.toml`:
+- input nodes
+  - number, integer, boolean, text, vec2, vec3, color
+- math nodes
+  - add, subtract, multiply, divide, clamp, lerp, min, max, abs, sin, cos
+- logic nodes
+  - compare, branch, and, or, not
+- scene nodes
+  - transform, sprite, camera2d, text, name, merge entity, add child, scene
 
-```toml
-[dependencies]
-univis_editor_app = { path = "path/to/univis_editor/crates/univis_editor_app" }
-bevy = "0.18.0"
+## Quick Start
+
+Run the shipped example:
+
+```bash
+cargo run -p univis_editor_app --example simple_editor
 ```
 
-### Basic Usage
+Or add the facade plugin to your own Bevy app:
 
 ```rust
 use bevy::prelude::*;
-use univis_editor_app::prelude::*;
+use univis_editor_app::{NodeGraphPlugin, prelude::*};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(NodeGraphPlugin)  // Add the editor plugin
+        .add_plugins(NodeGraphPlugin)
         .run();
 }
 ```
 
-### Lightweight Verification
+The example at [examples/simple_editor.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/simple_editor.rs) also adds the infinite grid plugin and a graph camera setup.
 
-If your machine struggles with running the full workspace test suite in one go, use the sequential verification script:
+## Verification
+
+The repository now uses crate-local tests and a sequential verification script so the workspace can be checked without running everything at once.
+
+Run the full maintained sequence:
 
 ```bash
-bash scripts/verify_workspace.sh
+bash scripts/verify_workspace.sh all
 ```
 
-The script also supports focused suites:
+Run only one area:
 
 ```bash
 bash scripts/verify_workspace.sh core
 bash scripts/verify_workspace.sh builtin
 bash scripts/verify_workspace.sh persistence
+bash scripts/verify_workspace.sh app
 ```
 
-The maintained crate-local test commands are:
+The script forces sequential execution with `CARGO_BUILD_JOBS=1` unless you override it.
+
+## Main Test Targets
+
+Focused test targets currently maintained in the workspace:
 
 - `cargo test -p univis_node_graph --test core_api`
 - `cargo test -p univis_node_graph --test document_ops`
 - `cargo test -p univis_node_graph --test graph_validation`
+- `cargo test -p univis_editor_runtime --lib`
 - `cargo test -p univis_editor_nodes_builtin --test input_nodes`
 - `cargo test -p univis_editor_nodes_builtin --test math_nodes`
 - `cargo test -p univis_editor_nodes_builtin --test logic_nodes`
@@ -98,311 +162,41 @@ The maintained crate-local test commands are:
 - `cargo test -p univis_editor_persistence --test persistence_defaults`
 - `cargo test -p univis_editor_persistence --test persistence_format`
 
----
+## Extending The Graph
 
-## 📚 Creating Custom Nodes
+Custom nodes are added by implementing `NodeDefinition` and registering them in the node registry.
 
-UnivisEditor uses a trait-based system for defining nodes. Simply implement `NodeDefinition`:
+Relevant examples:
 
-```rust
-use univis_node_graph::node_definition::{
-    NodeDefinition, NodeId, NodeCategory, PortDefinition, 
-    ProcessContext, ProcessResult
-};
-use univis_node_graph::value::NodeValue;
-use bevy::prelude::*;
+- [examples/custom_nodes.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_nodes.rs)
+- [examples/custom_visual_node.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_visual_node.rs)
+- [examples/custom_scene_node.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_scene_node.rs)
 
-pub struct MyCustomNode;
+The core extension points live in:
 
-impl NodeDefinition for MyCustomNode {
-    // === Required Methods ===
-    
-    fn id(&self) -> NodeId {
-        NodeId::new("custom/my_node")
-    }
-    
-    fn display_name(&self) -> &str {
-        "My Custom Node"
-    }
-    
-    fn inputs(&self) -> Vec<PortDefinition> {
-        vec![
-            PortDefinition::input_float("Input A")
-                .with_default(NodeValue::float(0.0)),
-            PortDefinition::input_float("Input B")
-                .with_default(NodeValue::float(0.0)),
-        ]
-    }
-    
-    fn outputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::output_float("Result")]
-    }
-    
-    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
-        let a = ctx.get_float_or(0, 0.0);
-        let b = ctx.get_float_or(1, 0.0);
-        ctx.set_float(0, a + b);  // Simple addition
-        ProcessResult::Success
-    }
-    
-    // === Optional Methods ===
-    
-    fn category(&self) -> NodeCategory {
-        NodeCategory::new("Custom")
-    }
-    
-    fn description(&self) -> Option<&str> {
-        Some("Adds two numbers together")
-    }
-    
-    fn color(&self) -> Color {
-        Color::srgb(0.3, 0.5, 0.7)
-    }
-    
-    fn icon(&self) -> Option<&str> {
-        Some("+")
-    }
-    
-    fn keywords(&self) -> Vec<&str> {
-        vec!["add", "sum", "plus"]
-    }
-    
-    fn menu_order(&self) -> i32 {
-        1  // Display order in menu
-    }
-}
-```
+- [node_definition.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_node_graph/src/node_definition.rs)
+- [node_registry.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_node_graph/src/node_registry.rs)
+- [document.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_node_graph/src/document.rs)
 
-### Registering Nodes
+## Project Status
 
-```rust
-use univis_node_graph::node_registry::NodeRegistry;
+The project is already beyond a throwaway prototype, but it is still an evolving editor architecture rather than a finished product.
 
-fn register_my_nodes(registry: &mut NodeRegistry) {
-    registry.register(MyCustomNode);
-    // Add more nodes...
-}
-```
+What is already clear:
 
----
+- the scene-authoring direction is intentional
+- the workspace boundaries are real and useful
+- the graph model is the center of the product
 
-## 🎯 Node API Reference
+What is still evolving:
 
-### ProcessContext Helpers
+- editor polish
+- deeper runtime smoke coverage
+- CI automation
+- further modularization of large editor and persistence modules
 
-The `ProcessContext` provides convenient methods for reading and writing values:
+## Guiding Principle
 
-```rust
-// Reading values
-let value = ctx.get_float(0);           // Option<f64>
-let value = ctx.get_float_or(0, 0.0);   // f64 with default
-let value = ctx.get_int(0);
-let value = ctx.get_bool(0);
-let value = ctx.get_vec2(0);
-let value = ctx.get_vec3(0);
-let value = ctx.get_string(0);
+If a feature helps author scene content, it is a good candidate for the graph.
 
-// Writing values
-ctx.set_float(0, 42.0);
-ctx.set_int(0, 42);
-ctx.set_bool(0, true);
-ctx.set_vec2(0, Vec2::new(1.0, 2.0));
-ctx.set_vec3(0, Vec3::new(1.0, 2.0, 3.0));
-ctx.set_string(0, "Hello");
-```
-
-### PortDefinition Builders
-
-```rust
-PortDefinition::input_float("Value")
-    .with_description("A float input")
-    .with_default(NodeValue::float(1.0))
-    .with_color(Color::srgb(1.0, 0.5, 0.0));
-
-PortDefinition::output_float("Result");
-PortDefinition::output_any("Pass Through");
-```
-
-### NodeDefinition Trait Methods
-
-| Method | Required | Description |
-|--------|----------|-------------|
-| `id()` | ✅ | Unique identifier (e.g., "math/add") |
-| `display_name()` | ✅ | Human-readable name |
-| `inputs()` | ✅ | Input port definitions |
-| `outputs()` | ✅ | Output port definitions |
-| `process()` | ✅ | Processing logic |
-| `category()` | ❌ | Node category for menu |
-| `description()` | ❌ | Tooltip/description |
-| `color()` | ❌ | Node header color |
-| `icon()` | ❌ | Unicode icon |
-| `show_in_menu()` | ❌ | Show in context menu (default: true) |
-| `menu_order()` | ❌ | Sort order in menu |
-| `keywords()` | ❌ | Search keywords |
-| `has_custom_body()` | ❌ | Custom UI body |
-| `build_body()` | ❌ | Build custom UI |
-
----
-
-## 📦 Built-in Nodes
-
-### Math Nodes
-| Node | Description |
-|------|-------------|
-| Add | Addition of two numbers |
-| Subtract | Subtraction |
-| Multiply | Multiplication |
-| Divide | Division (with zero check) |
-| Clamp | Clamp value to range |
-| Lerp | Linear interpolation |
-| Min / Max | Minimum / Maximum |
-| Abs | Absolute value |
-| Sin / Cos | Trigonometric functions |
-
-### Input Nodes
-| Node | Description |
-|------|-------------|
-| Number | Float value input |
-| Integer | Integer value input |
-| Boolean | True/false toggle |
-| Text | String input |
-| Vector2 | 2D vector |
-| Vector3 | 3D vector |
-| Color | RGBA color |
-
-### Logic Nodes
-| Node | Description |
-|------|-------------|
-| Compare | Compare two values |
-| Branch | If/else conditional |
-| And / Or / Not | Boolean operations |
-
-### Output Nodes
-| Node | Description |
-|------|-------------|
-| View | Display value in node |
-| Watch | Named value display |
-| Debug | Print to console |
-
----
-
-## 🏗️ Project Structure
-
-```
-src/
-├── core/
-│   ├── node_definition.rs   # Node trait and types
-│   ├── node_registry.rs     # Node registration system
-│   ├── value.rs             # Dynamic value types
-│   ├── menu.rs              # Context menu system
-│   ├── wire.rs              # Wire/connection logic
-│   └── interaction.rs       # User interaction
-├── nodes/
-│   ├── math.rs              # Math nodes
-│   ├── input.rs             # Input nodes
-│   ├── output.rs            # Output nodes
-│   └── logic.rs             # Logic nodes
-├── data/
-│   └── node_spawn.rs        # Node spawning system
-├── widgets/
-│   └── infinity_grid.rs     # Background grid
-├── editor/
-│   └── editor.rs            # Editor camera & controls
-└── lib.rs                   # Main plugin
-```
-
----
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-# Run all tests
-cargo test
-
-# Run specific test file
-cargo test --test math_node_tests
-
-# Run with verbose output
-cargo test -- --nocapture
-```
-
-### Test Categories
-
-- `value_tests.rs` - NodeValue type tests
-- `process_context_tests.rs` - Context helper tests
-- `port_definition_tests.rs` - Port builder tests
-- `math_node_tests.rs` - Math node functionality
-- `input_node_tests.rs` - Input node tests
-- `output_node_tests.rs` - Output node tests
-- `logic_node_tests.rs` - Logic node tests
-- `integration_tests.rs` - End-to-end tests
-
----
-
-## 🔧 Architecture
-
-### Data Flow
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Input Node │────▶│  Math Node  │────▶│ Output Node │
-│   (Value)   │     │  (Process)  │     │   (View)    │
-└─────────────┘     └─────────────┘     └─────────────┘
-       │                   │                   │
-       └───────────────────┴───────────────────┘
-                           │
-                    Topological Sort
-                    (Kahn's Algorithm)
-```
-
-### Node Processing Pipeline
-
-1. **Initialize** - Set default values for new nodes
-2. **Sort** - Topological ordering for correct execution
-3. **Propagate** - Transfer values through connections
-4. **Process** - Execute each node's logic
-5. **Output** - Results available for next frame
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/univiseditor/univis_editor
-cd univis_editor
-
-# Run tests
-cargo test
-
-# Run the example
-cargo run --example simple_editor
-```
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- [Bevy Engine](https://bevyengine.org/) - The game engine this is built on
-- [Blender](https://www.blender.org/) - Inspiration for the node system architecture
-- [Unreal Engine Blueprints](https://docs.unrealengine.com/) - Design philosophy reference
-
----
-
-<div align="center">
-
-**Built with ❤️ using Bevy Engine**
-
-</div>
+If a feature exists to operate the editor itself, it should probably stay a normal system.

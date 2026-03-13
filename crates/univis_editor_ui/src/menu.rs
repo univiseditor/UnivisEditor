@@ -87,7 +87,7 @@ pub fn draw_context_menu(
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         for entity in existing_menu.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
         }
         return;
     }
@@ -251,7 +251,7 @@ pub fn draw_context_menu(
 
     if !menu_state.is_open {
         for entity in existing_menu.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).try_despawn();
         }
     }
 }
@@ -305,6 +305,7 @@ pub fn execute_spawn_node_commands(
     activation: Option<Res<GraphEditingUiActivation>>,
     registry: Res<NodeRegistry>,
     mut command_requests: MessageReader<GraphCommandRequest>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         command_requests.clear();
@@ -321,6 +322,7 @@ pub fn execute_spawn_node_commands(
         };
 
         commands.spawn_node_from_definition(definition_id, *position, &registry);
+        mutations.mark_changed();
     }
 }
 

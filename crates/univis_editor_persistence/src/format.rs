@@ -82,6 +82,7 @@ pub fn parse_graph_document_payload(content: &str) -> Result<ParsedGraphDocument
                     nodes,
                     edges: legacy.links,
                     view: legacy.ui,
+                    ..GraphDocument::default()
                 },
                 migration_note: Some("Migrated graph document schema from v0 to v1.".to_string()),
             })
@@ -109,7 +110,8 @@ pub fn serialize_graph_document(
         serde_json::to_string_pretty(document)
             .map_err(|err| format!("cannot serialize JSON payload: {}", err))
     } else {
-        serde_json::to_string(document).map_err(|err| format!("cannot serialize JSON payload: {}", err))
+        serde_json::to_string(document)
+            .map_err(|err| format!("cannot serialize JSON payload: {}", err))
     }
 }
 

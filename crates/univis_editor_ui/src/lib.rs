@@ -10,9 +10,7 @@ use bevy::prelude::*;
 use interaction::*;
 use menu::*;
 use node_popup::NodePopupPlugin;
-use univis_ui::{
-    prelude::{UnivisTextFieldPlugin, UnivisUiPlugin},
-};
+use univis_ui::prelude::{UnivisTextFieldPlugin, UnivisUiPlugin};
 use wire::*;
 
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -58,8 +56,7 @@ impl Plugin for NodeUiPlugin {
                     wire_start_system.in_set(WireSystemsSet::Start),
                     wire_update_system.in_set(WireSystemsSet::Update),
                     wire_complete_system.in_set(WireSystemsSet::Complete),
-                    wire_preview_system.in_set(WireSystemsSet::Update),
-                    wire_render_system,
+                    wire_visuals_system,
                 )
                     .chain(),
             )
@@ -82,22 +79,20 @@ impl Plugin for NodeUiPlugin {
                     delete_node_system,
                     reset_inputs,
                     disconnect_wire_system,
-            )
+                )
                     .chain(),
             )
-            .add_systems(
-                PostUpdate,
-                sync_live_graph_document_state,
-            );
+            .add_systems(PostUpdate, sync_live_graph_document_state);
     }
 }
 
 pub mod prelude {
-    pub use univis_node_graph::prelude::*;
     pub use univis_editor_runtime::prelude::*;
+    pub use univis_node_graph::prelude::*;
 
-    pub use crate::NodeUiPlugin;
+    pub use crate::DeleteSelectedNodesRequest;
     pub use crate::GraphEditingUiActivation;
+    pub use crate::NodeUiPlugin;
     pub use crate::editor::*;
     pub use crate::interaction::*;
     pub use crate::menu::*;
@@ -105,5 +100,4 @@ pub mod prelude {
     pub use crate::node_spawn::*;
     pub use crate::widgets::prelude::*;
     pub use crate::wire::*;
-    pub use crate::DeleteSelectedNodesRequest;
 }

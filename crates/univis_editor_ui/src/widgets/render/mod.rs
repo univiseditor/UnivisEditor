@@ -26,10 +26,10 @@ use bevy::{
             BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
             BindGroupLayoutEntries, BlendState, ColorTargetState, ColorWrites, CompareFunction,
             DepthBiasState, DepthStencilState, DynamicUniformBuffer, FragmentState,
-            MultisampleState, PipelineCache, PolygonMode, PrimitiveState,
-            RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
-            SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat,
-            VertexState, binding_types::uniform_buffer,
+            MultisampleState, PipelineCache, PolygonMode, PrimitiveState, RenderPipelineDescriptor,
+            ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines,
+            StencilFaceState, StencilState, TextureFormat, VertexState,
+            binding_types::uniform_buffer,
         },
         renderer::{RenderDevice, RenderQueue},
         sync_world::RenderEntity,
@@ -94,6 +94,8 @@ pub struct GridDisplaySettingsUniform {
     // 1 / fadeout_distance
     dist_fadeout_const: f32,
     dot_fadeout_const: f32,
+    display_mode: f32,
+    point_size: f32,
     x_axis_color: Vec3,
     z_axis_color: Vec3,
     minor_line_color: Vec4,
@@ -106,6 +108,8 @@ impl GridDisplaySettingsUniform {
             scale: settings.scale,
             dist_fadeout_const: 1. / settings.fadeout_distance,
             dot_fadeout_const: 1. / settings.dot_fadeout_strength,
+            display_mode: settings.display_mode.as_shader_value(),
+            point_size: settings.point_size,
             x_axis_color: settings.x_axis_color.to_linear().to_vec3(),
             z_axis_color: settings.z_axis_color.to_linear().to_vec3(),
             minor_line_color: settings.minor_line_color.to_linear().to_vec4(),
@@ -250,7 +254,7 @@ fn prepare_grid_view_uniforms(
         let projection = camera.clip_from_view;
         let view = camera.world_from_view.to_matrix();
         let inverse_view = view.inverse();
-        commands.entity(entity).insert(GridViewUniformOffset {
+        commands.entity(entity).try_insert(GridViewUniformOffset {
             offset: view_uniforms.uniforms.push(&GridViewUniform {
                 projection,
                 view,
@@ -282,7 +286,7 @@ fn prepare_grid_view_bind_groups(
             );
             commands
                 .entity(entity)
-                .insert(GridViewBindGroup { value: bind_group });
+                .try_insert(GridViewBindGroup { value: bind_group });
         }
     }
 }
@@ -343,22 +347,24 @@ fn prepare_infinite_grids(
         let offset = transform.translation();
         let normal = transform.up();
         let rot_matrix = Mat3::from_quat(t.rotation.inverse());
-        commands.entity(entity).insert(InfiniteGridUniformOffsets {
-            position_offset: position_uniforms.uniforms.push(&InfiniteGridUniform {
-                rot_matrix,
-                offset,
-                normal: *normal,
-            }),
-            settings_offset: settings_uniforms
-                .uniforms
-                .push(&GridDisplaySettingsUniform::from_settings(&extracted.grid)),
-        });
+        commands
+            .entity(entity)
+            .try_insert(InfiniteGridUniformOffsets {
+                position_offset: position_uniforms.uniforms.push(&InfiniteGridUniform {
+                    rot_matrix,
+                    offset,
+                    normal: *normal,
+                }),
+                settings_offset: settings_uniforms
+                    .uniforms
+                    .push(&GridDisplaySettingsUniform::from_settings(&extracted.grid)),
+            });
     }
 
     for (entity, settings) in cameras.iter() {
         commands
             .entity(entity)
-            .insert(PerCameraSettingsUniformOffset {
+            .try_insert(PerCameraSettingsUniformOffset {
                 offset: settings_uniforms
                     .uniforms
                     .push(&GridDisplaySettingsUniform::from_settings(settings)),

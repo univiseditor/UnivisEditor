@@ -1,34 +1,47 @@
 use bevy::prelude::*;
 use univis_node_graph::prelude::{
-    analyze_graph_topology, Connecting, GraphNode, NodeRegistry, NodeValue, ProcessContext,
-    ProcessResult,
+    Connecting, GraphNode, NodeRegistry, NodeValue, ProcessContext, ProcessResult,
+    analyze_graph_topology,
 };
 use univis_scene::{
-    EntityComponentValue, EntityValue, TransformComponentValue, CAMERA2D_COMPONENT_KEY,
-    SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY,
+    EntitySpawnOptions, SceneDocument, scene_document_signature, spawn_scene_document_recursive,
 };
 
 pub struct NodeRuntimePlugin;
 
 impl Plugin for NodeRuntimePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GraphRuntimeDiagnostics>()
-            .add_systems(
-                Update,
-                (
-                    initialize_node_defaults,
-                    propagate_and_process_nodes,
-                    sync_scene_nodes_to_world,
-                    cleanup_orphaned_scene_roots,
-                )
-                    .chain(),
-            );
+        app.init_resource::<GraphRuntimeDiagnostics>().add_systems(
+            Update,
+            (
+                initialize_node_defaults,
+                propagate_and_process_nodes,
+                sync_scene_nodes_to_world,
+                cleanup_orphaned_scene_roots,
+            )
+                .chain(),
+        );
     }
 }
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct GraphRuntimeDiagnostics {
     pub blocked_nodes: Vec<Entity>,
+    pub node_issues: Vec<GraphRuntimeNodeIssue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphRuntimeIssueSeverity {
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphRuntimeNodeIssue {
+    pub node: Entity,
+    pub definition_id: String,
+    pub severity: GraphRuntimeIssueSeverity,
+    pub message: String,
 }
 
 #[derive(Component, Clone, Default)]
@@ -42,66 +55,21 @@ struct SceneWorldRoot {
     node_entity: Entity,
 }
 
-fn is_scene_sink(node: &GraphNode) -> bool {
-    node.definition_id.as_str() == "scene/scene"
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneSinkMode {
+    None,
+    World,
 }
 
-fn entity_signature(entity: Option<&EntityValue>) -> Option<String> {
-    entity.map(|entity| format!("{entity:?}"))
-}
-
-fn transform_to_bevy(transform: &TransformComponentValue) -> Transform {
-    Transform {
-        translation: transform.translation,
-        rotation: Quat::from_rotation_z(transform.rotation_deg.to_radians()),
-        scale: transform.scale,
+fn scene_sink_mode(definition_id: &str) -> SceneSinkMode {
+    match definition_id {
+        "scene/scene" => SceneSinkMode::World,
+        _ => SceneSinkMode::None,
     }
 }
 
-fn spawn_scene_entity_recursive(parent: &mut ChildSpawnerCommands, entity_value: &EntityValue) {
-    let transform = entity_value
-        .component(TRANSFORM_COMPONENT_KEY)
-        .and_then(EntityComponentValue::as_transform)
-        .map(transform_to_bevy)
-        .unwrap_or_default();
-    let sprite = entity_value
-        .component(SPRITE_COMPONENT_KEY)
-        .and_then(EntityComponentValue::as_sprite)
-        .cloned();
-    let text = entity_value
-        .component(TEXT2D_COMPONENT_KEY)
-        .and_then(EntityComponentValue::as_text_2d)
-        .cloned();
-    let _has_camera = entity_value.component(CAMERA2D_COMPONENT_KEY).is_some();
-
-    let mut entity_commands = parent.spawn((transform, Visibility::Visible));
-
-    if let Some(name) = entity_value.name.as_deref().filter(|name| !name.is_empty()) {
-        entity_commands.insert(Name::new(name.to_string()));
-    }
-
-    if let Some(sprite) = sprite {
-        entity_commands.insert(Sprite::from_color(sprite.color, sprite.size));
-    }
-
-    if let Some(text) = text {
-        entity_commands.insert((
-            Text2d::new(text.content),
-            TextFont::from_font_size(text.font_size),
-            TextColor(text.color),
-        ));
-    }
-
-    // `univis_ui` currently assumes there is exactly one `Camera2d` in the world
-    // for picking and panel interaction. Spawning scene cameras here breaks editor input,
-    // so the world-display sink keeps camera data inert for now.
-
-    let children = entity_value.children.clone();
-    entity_commands.with_children(|next_parent| {
-        for child in &children {
-            spawn_scene_entity_recursive(next_parent, child);
-        }
-    });
+fn is_scene_world_sink(node: &GraphNode) -> bool {
+    scene_sink_mode(node.definition_id.as_str()) == SceneSinkMode::World
 }
 
 fn initialize_node_defaults(
@@ -136,7 +104,10 @@ fn propagate_and_process_nodes(
     let all_entities: Vec<Entity> = q_nodes.iter().map(|(e, _)| e).collect();
     let topology = analyze_graph_topology(
         all_entities.iter().copied(),
-        graph.connections.iter().map(|conn| (conn.from_node, conn.to_node)),
+        graph
+            .connections
+            .iter()
+            .map(|conn| (conn.from_node, conn.to_node)),
     );
     let sorted_nodes = topology.ordered_nodes;
     let blocked_nodes = topology.blocked_nodes;
@@ -152,6 +123,7 @@ fn propagate_and_process_nodes(
             );
         }
     }
+    diagnostics.node_issues.clear();
 
     let mut processed_outputs = std::collections::HashMap::<Entity, Vec<NodeValue>>::new();
     for (entity, node) in q_nodes.iter() {
@@ -194,9 +166,21 @@ fn propagate_and_process_nodes(
             ProcessResult::Success => {}
             ProcessResult::Error(msg) => {
                 warn!("Node {} error: {}", definition_id, msg);
+                diagnostics.node_issues.push(GraphRuntimeNodeIssue {
+                    node: entity,
+                    definition_id: definition_id.to_string(),
+                    severity: GraphRuntimeIssueSeverity::Error,
+                    message: msg,
+                });
             }
             ProcessResult::MissingInput(index) => {
                 debug!("Node {} missing input at index {}", definition_id, index);
+                diagnostics.node_issues.push(GraphRuntimeNodeIssue {
+                    node: entity,
+                    definition_id: definition_id.to_string(),
+                    severity: GraphRuntimeIssueSeverity::Warning,
+                    message: format!("Missing input at index {}", index),
+                });
             }
         }
 
@@ -210,17 +194,24 @@ fn sync_scene_nodes_to_world(
     q_nodes: Query<(Entity, &GraphNode, Option<&SceneWorldDisplayState>)>,
 ) {
     for (node_entity, node, state) in q_nodes.iter() {
-        if !is_scene_sink(node) {
+        if !is_scene_world_sink(node) {
             continue;
         }
 
-        let input_entity = node.values.inputs.first().and_then(NodeValue::as_entity).cloned();
-        let next_signature = entity_signature(input_entity.as_ref());
+        let input_entity = node
+            .values
+            .inputs
+            .first()
+            .and_then(NodeValue::as_entity)
+            .cloned();
+        let next_scene = input_entity.map(SceneDocument::from_entity_value);
+        let next_signature = scene_document_signature(next_scene.as_ref());
         let mut next_state = state.cloned().unwrap_or_default();
         let unchanged = next_state.last_signature == next_signature
-            && match input_entity {
-                Some(_) => next_state.root.is_some(),
-                None => next_state.root.is_none(),
+            && if next_scene.is_some() {
+                next_state.root.is_some()
+            } else {
+                next_state.root.is_none()
             };
 
         if unchanged {
@@ -228,10 +219,11 @@ fn sync_scene_nodes_to_world(
         }
 
         if let Some(root) = next_state.root.take() {
-            commands.entity(root).despawn();
+            commands.entity(root).try_despawn();
         }
 
-        if let Some(entity_value) = input_entity.as_ref() {
+        if let Some(scene) = next_scene.as_ref() {
+            let spawn_options = EntitySpawnOptions::default();
             let root = commands
                 .spawn((
                     SceneWorldRoot { node_entity },
@@ -241,13 +233,13 @@ fn sync_scene_nodes_to_world(
                 ))
                 .id();
             commands.entity(root).with_children(|parent| {
-                spawn_scene_entity_recursive(parent, entity_value);
+                spawn_scene_document_recursive(parent, scene, &spawn_options);
             });
             next_state.root = Some(root);
         }
 
         next_state.last_signature = next_signature;
-        commands.entity(node_entity).insert(next_state);
+        commands.entity(node_entity).try_insert(next_state);
     }
 }
 
@@ -258,11 +250,22 @@ fn cleanup_orphaned_scene_roots(
 ) {
     for (root, marker) in q_roots.iter() {
         if q_nodes.get(marker.node_entity).is_err() {
-            commands.entity(root).despawn();
+            commands.entity(root).try_despawn();
         }
     }
 }
 
 pub mod prelude {
     pub use crate::{GraphRuntimeDiagnostics, NodeRuntimePlugin};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SceneSinkMode, scene_sink_mode};
+
+    #[test]
+    fn scene_sinks_are_treated_as_world_sinks() {
+        assert_eq!(scene_sink_mode("scene/scene"), SceneSinkMode::World);
+        assert_eq!(scene_sink_mode("scene/transform"), SceneSinkMode::None);
+    }
 }

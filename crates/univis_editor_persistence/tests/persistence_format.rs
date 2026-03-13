@@ -78,11 +78,17 @@ fn prepare_graph_document_write_generates_payload_signature_and_validation_count
         .expect("document should serialize");
 
     assert!(prepared.payload.contains('\n'));
-    assert_eq!(prepared.signature, graph_document_signature(&document).unwrap());
+    assert_eq!(
+        prepared.signature,
+        graph_document_signature(&document).unwrap()
+    );
     assert_eq!(prepared.validation_issue_count, 0);
     assert_eq!(prepared.document.nodes.len(), document.nodes.len());
     assert_eq!(prepared.document.edges.len(), document.edges.len());
-    assert_eq!(prepared.document.nodes[0].definition_id.as_str(), "tests/value");
+    assert_eq!(
+        prepared.document.nodes[0].definition_id.as_str(),
+        "tests/value"
+    );
 }
 
 #[test]

@@ -42,6 +42,36 @@ enum ColorChannel {
     A,
 }
 
+#[derive(Debug, Clone)]
+enum NodePopupContentRow {
+    Float {
+        label: String,
+        index: usize,
+        value: f64,
+    },
+    Int {
+        label: String,
+        index: usize,
+        value: i64,
+    },
+    Bool {
+        label: String,
+        index: usize,
+        value: bool,
+    },
+    Color {
+        label: String,
+        index: usize,
+        rgba: [f32; 4],
+    },
+    String {
+        label: String,
+        index: usize,
+        value: String,
+    },
+    Unsupported(String),
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 struct NodePopupAdjustButton {
     input_index: usize,
@@ -214,7 +244,9 @@ fn sync_popup_ui_target(
             continue;
         }
 
-        commands.entity(entity).insert(UiTargetCamera(graph_camera));
+        commands
+            .entity(entity)
+            .try_insert(UiTargetCamera(graph_camera));
     }
 }
 
@@ -312,6 +344,7 @@ fn handle_popup_adjust_buttons(
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
     mut q_nodes: Query<&mut GraphNode>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let Some(node_entity) = popup.open_for else {
         return;
@@ -375,6 +408,7 @@ fn handle_popup_adjust_buttons(
                     srgba.blue,
                     srgba.alpha,
                 ));
+                mutations.mark_changed();
             }
             continue;
         }
@@ -405,6 +439,7 @@ fn handle_popup_adjust_buttons(
 
                 if button.input_index < graph_node.values.inputs.len() {
                     graph_node.values.inputs[button.input_index] = NodeValue::Float(next);
+                    mutations.mark_changed();
                 }
             }
             ValueType::Int => {
@@ -428,6 +463,7 @@ fn handle_popup_adjust_buttons(
                 if button.input_index < graph_node.values.inputs.len() {
                     graph_node.values.inputs[button.input_index] =
                         NodeValue::Int(next.round() as i64);
+                    mutations.mark_changed();
                 }
             }
             _ => {}
@@ -443,6 +479,7 @@ fn handle_popup_bool_toggle_buttons(
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
     mut q_nodes: Query<&mut GraphNode>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let Some(node_entity) = popup.open_for else {
         return;
@@ -477,6 +514,7 @@ fn handle_popup_bool_toggle_buttons(
 
         if button.input_index < graph_node.values.inputs.len() {
             graph_node.values.inputs[button.input_index] = NodeValue::Bool(!current);
+            mutations.mark_changed();
         }
     }
 }
@@ -537,6 +575,7 @@ fn handle_popup_text_field_keyboard_input(
     popup: Res<NodePopupState>,
     mut fields: Query<(&NodePopupTextFieldInput, &mut NodePopupTextFieldState)>,
     mut q_nodes: Query<&mut GraphNode>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let Some(node_entity) = popup.open_for else {
         return;
@@ -585,6 +624,7 @@ fn handle_popup_text_field_keyboard_input(
     if changed && field_input.input_index < graph_node.values.inputs.len() {
         graph_node.values.inputs[field_input.input_index] =
             NodeValue::string(field_state.text.clone());
+        mutations.mark_changed();
     }
 }
 
@@ -720,7 +760,7 @@ fn rebuild_popup_content(
         }
         if let Ok(existing_children) = children_query.get(content_entity) {
             for child in existing_children.iter() {
-                commands.entity(child).despawn();
+                commands.entity(child).try_despawn();
             }
         }
         return;
@@ -742,7 +782,7 @@ fn rebuild_popup_content(
 
     if let Ok(existing_children) = children_query.get(content_entity) {
         for child in existing_children.iter() {
-            commands.entity(child).despawn();
+            commands.entity(child).try_despawn();
         }
     }
 
@@ -750,34 +790,35 @@ fn rebuild_popup_content(
         title.0 = format!("{} Settings", definition.display_name());
     }
 
-    let editable_indices: Vec<usize> = inputs
+    let popup_rows = collect_popup_content_rows(&graph_node, &inputs);
+    commands.queue(move |world: &mut World| {
+        let Ok(mut content_entity_mut) = world.get_entity_mut(content_entity) else {
+            return;
+        };
+
+        content_entity_mut.with_children(|content| {
+            populate_popup_content(content, &popup_rows);
+        });
+    });
+}
+
+fn collect_popup_content_rows(
+    graph_node: &GraphNode,
+    inputs: &[PortDefinition],
+) -> Vec<NodePopupContentRow> {
+    inputs
         .iter()
         .enumerate()
-        .filter_map(|(idx, port)| port.editable_in_popup.then_some(idx))
-        .collect();
+        .filter_map(|(index, port_def)| {
+            if !port_def.editable_in_popup {
+                return None;
+            }
 
-    if editable_indices.is_empty() {
-        commands.entity(content_entity).with_children(|content| {
-            content.spawn((
-                Text::new("No editable parameters."),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.8, 0.8, 0.85)),
-            ));
-        });
-        return;
-    }
-
-    commands.entity(content_entity).with_children(|content| {
-        for index in editable_indices {
-            let Some(port_def) = inputs.get(index) else {
-                continue;
-            };
-            match port_def.value_type {
-                ValueType::Float => {
-                    let value = graph_node
+            Some(match port_def.value_type {
+                ValueType::Float => NodePopupContentRow::Float {
+                    label: port_def.name.clone(),
+                    index,
+                    value: graph_node
                         .values
                         .inputs
                         .get(index)
@@ -788,108 +829,30 @@ fn rebuild_popup_content(
                                 .as_ref()
                                 .and_then(NodeValue::as_float)
                         })
-                        .unwrap_or(0.0);
-                    spawn_numeric_row(
-                        content,
-                        &port_def.name,
-                        &format!("{:.3}", value),
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: -1.0,
-                            channel: None,
-                        },
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: 1.0,
-                            channel: None,
-                        },
-                    );
-                }
-                ValueType::Int => {
-                    let value = graph_node
+                        .unwrap_or(0.0),
+                },
+                ValueType::Int => NodePopupContentRow::Int {
+                    label: port_def.name.clone(),
+                    index,
+                    value: graph_node
                         .values
                         .inputs
                         .get(index)
                         .and_then(NodeValue::as_int)
                         .or_else(|| port_def.default_value.as_ref().and_then(NodeValue::as_int))
-                        .unwrap_or(0);
-                    spawn_numeric_row(
-                        content,
-                        &port_def.name,
-                        &value.to_string(),
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: -1.0,
-                            channel: None,
-                        },
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: 1.0,
-                            channel: None,
-                        },
-                    );
-                }
-                ValueType::Bool => {
-                    let value = graph_node
+                        .unwrap_or(0),
+                },
+                ValueType::Bool => NodePopupContentRow::Bool {
+                    label: port_def.name.clone(),
+                    index,
+                    value: graph_node
                         .values
                         .inputs
                         .get(index)
                         .and_then(NodeValue::as_bool)
                         .or_else(|| port_def.default_value.as_ref().and_then(NodeValue::as_bool))
-                        .unwrap_or(false);
-
-                    content
-                        .spawn((
-                            Node {
-                                width: Val::Percent(100.0),
-                                display: Display::Flex,
-                                justify_content: JustifyContent::SpaceBetween,
-                                align_items: AlignItems::Center,
-                                padding: UiRect::all(Val::Px(6.0)),
-                                border_radius: BorderRadius::all(Val::Px(4.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
-                        ))
-                        .with_children(|row| {
-                            row.spawn((
-                                Text::new(format!("{}: {}", port_def.name, value)),
-                                TextFont {
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                                TextColor(Color::WHITE),
-                            ));
-
-                            row.spawn((
-                                Button,
-                                Node {
-                                    width: Val::Px(70.0),
-                                    height: Val::Px(24.0),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    border_radius: BorderRadius::all(Val::Px(4.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(if value {
-                                    Color::srgb(0.2, 0.45, 0.22)
-                                } else {
-                                    Color::srgb(0.45, 0.2, 0.2)
-                                }),
-                                NodePopupBoolToggleButton { input_index: index },
-                            ))
-                            .with_children(|btn| {
-                                btn.spawn((
-                                    Text::new(if value { "ON" } else { "OFF" }),
-                                    TextFont {
-                                        font_size: 11.0,
-                                        ..default()
-                                    },
-                                    TextColor(Color::WHITE),
-                                ));
-                            });
-                        });
-                }
+                        .unwrap_or(false),
+                },
                 ValueType::Color => {
                     let color = graph_node
                         .values
@@ -905,81 +868,16 @@ fn rebuild_popup_content(
                         .unwrap_or_else(|| Color::srgba(1.0, 1.0, 1.0, 1.0))
                         .to_srgba();
 
-                    content.spawn((
-                        Text::new(format!(
-                            "{}: ({:.2}, {:.2}, {:.2}, {:.2})",
-                            port_def.name, color.red, color.green, color.blue, color.alpha
-                        )),
-                        TextFont {
-                            font_size: 12.0,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                    ));
-
-                    spawn_numeric_row(
-                        content,
-                        "R",
-                        &format!("{:.2}", color.red),
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: -1.0,
-                            channel: Some(ColorChannel::R),
-                        },
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: 1.0,
-                            channel: Some(ColorChannel::R),
-                        },
-                    );
-                    spawn_numeric_row(
-                        content,
-                        "G",
-                        &format!("{:.2}", color.green),
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: -1.0,
-                            channel: Some(ColorChannel::G),
-                        },
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: 1.0,
-                            channel: Some(ColorChannel::G),
-                        },
-                    );
-                    spawn_numeric_row(
-                        content,
-                        "B",
-                        &format!("{:.2}", color.blue),
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: -1.0,
-                            channel: Some(ColorChannel::B),
-                        },
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: 1.0,
-                            channel: Some(ColorChannel::B),
-                        },
-                    );
-                    spawn_numeric_row(
-                        content,
-                        "A",
-                        &format!("{:.2}", color.alpha),
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: -1.0,
-                            channel: Some(ColorChannel::A),
-                        },
-                        NodePopupAdjustButton {
-                            input_index: index,
-                            delta: 1.0,
-                            channel: Some(ColorChannel::A),
-                        },
-                    );
+                    NodePopupContentRow::Color {
+                        label: port_def.name.clone(),
+                        index,
+                        rgba: [color.red, color.green, color.blue, color.alpha],
+                    }
                 }
-                ValueType::String => {
-                    let value = graph_node
+                ValueType::String => NodePopupContentRow::String {
+                    label: port_def.name.clone(),
+                    index,
+                    value: graph_node
                         .values
                         .inputs
                         .get(index)
@@ -990,9 +888,9 @@ fn rebuild_popup_content(
                                 .as_ref()
                                 .and_then(NodeValue::as_string)
                         })
-                        .unwrap_or("");
-                    spawn_text_row(content, &port_def.name, index, value);
-                }
+                        .unwrap_or("")
+                        .to_string(),
+                },
                 _ => {
                     let mut line = String::new();
                     let _ = write!(
@@ -1001,22 +899,226 @@ fn rebuild_popup_content(
                         port_def.name,
                         port_def.value_type.display_name()
                     );
-                    content.spawn((
-                        Text::new(line),
-                        TextFont {
-                            font_size: 11.0,
+                    NodePopupContentRow::Unsupported(line)
+                }
+            })
+        })
+        .collect()
+}
+
+fn populate_popup_content(content: &mut ChildSpawner, rows: &[NodePopupContentRow]) {
+    if rows.is_empty() {
+        content.spawn((
+            Text::new("No editable parameters."),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.8, 0.8, 0.85)),
+        ));
+        return;
+    }
+
+    for row in rows {
+        match row {
+            NodePopupContentRow::Float {
+                label,
+                index,
+                value,
+            } => {
+                spawn_numeric_row(
+                    content,
+                    label,
+                    &format!("{:.3}", value),
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: -1.0,
+                        channel: None,
+                    },
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: 1.0,
+                        channel: None,
+                    },
+                );
+            }
+            NodePopupContentRow::Int {
+                label,
+                index,
+                value,
+            } => {
+                spawn_numeric_row(
+                    content,
+                    label,
+                    &value.to_string(),
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: -1.0,
+                        channel: None,
+                    },
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: 1.0,
+                        channel: None,
+                    },
+                );
+            }
+            NodePopupContentRow::Bool {
+                label,
+                index,
+                value,
+            } => {
+                content
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            display: Display::Flex,
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::all(Val::Px(6.0)),
+                            border_radius: BorderRadius::all(Val::Px(4.0)),
                             ..default()
                         },
-                        TextColor(Color::srgb(0.9, 0.7, 0.4)),
-                    ));
-                }
+                        BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.85)),
+                    ))
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(format!("{}: {}", label, value)),
+                            TextFont {
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(70.0),
+                                height: Val::Px(24.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(if *value {
+                                Color::srgb(0.2, 0.45, 0.22)
+                            } else {
+                                Color::srgb(0.45, 0.2, 0.2)
+                            }),
+                            NodePopupBoolToggleButton {
+                                input_index: *index,
+                            },
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new(if *value { "ON" } else { "OFF" }),
+                                TextFont {
+                                    font_size: 11.0,
+                                    ..default()
+                                },
+                                TextColor(Color::WHITE),
+                            ));
+                        });
+                    });
+            }
+            NodePopupContentRow::Color { label, index, rgba } => {
+                content.spawn((
+                    Text::new(format!(
+                        "{}: ({:.2}, {:.2}, {:.2}, {:.2})",
+                        label, rgba[0], rgba[1], rgba[2], rgba[3]
+                    )),
+                    TextFont {
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+
+                spawn_numeric_row(
+                    content,
+                    "R",
+                    &format!("{:.2}", rgba[0]),
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: -1.0,
+                        channel: Some(ColorChannel::R),
+                    },
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: 1.0,
+                        channel: Some(ColorChannel::R),
+                    },
+                );
+                spawn_numeric_row(
+                    content,
+                    "G",
+                    &format!("{:.2}", rgba[1]),
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: -1.0,
+                        channel: Some(ColorChannel::G),
+                    },
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: 1.0,
+                        channel: Some(ColorChannel::G),
+                    },
+                );
+                spawn_numeric_row(
+                    content,
+                    "B",
+                    &format!("{:.2}", rgba[2]),
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: -1.0,
+                        channel: Some(ColorChannel::B),
+                    },
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: 1.0,
+                        channel: Some(ColorChannel::B),
+                    },
+                );
+                spawn_numeric_row(
+                    content,
+                    "A",
+                    &format!("{:.2}", rgba[3]),
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: -1.0,
+                        channel: Some(ColorChannel::A),
+                    },
+                    NodePopupAdjustButton {
+                        input_index: *index,
+                        delta: 1.0,
+                        channel: Some(ColorChannel::A),
+                    },
+                );
+            }
+            NodePopupContentRow::String {
+                label,
+                index,
+                value,
+            } => {
+                spawn_text_row(content, label, *index, value);
+            }
+            NodePopupContentRow::Unsupported(line) => {
+                content.spawn((
+                    Text::new(line),
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.9, 0.7, 0.4)),
+                ));
             }
         }
-    });
+    }
 }
 
 fn spawn_numeric_row(
-    content: &mut ChildSpawnerCommands,
+    content: &mut ChildSpawner,
     label: &str,
     value: &str,
     minus: NodePopupAdjustButton,
@@ -1057,11 +1159,7 @@ fn spawn_numeric_row(
         });
 }
 
-fn spawn_adjust_button(
-    parent: &mut ChildSpawnerCommands,
-    text: &str,
-    marker: NodePopupAdjustButton,
-) {
+fn spawn_adjust_button(parent: &mut ChildSpawner, text: &str, marker: NodePopupAdjustButton) {
     parent
         .spawn((
             Button,
@@ -1088,12 +1186,7 @@ fn spawn_adjust_button(
         });
 }
 
-fn spawn_text_row(
-    content: &mut ChildSpawnerCommands,
-    label: &str,
-    input_index: usize,
-    value: &str,
-) {
+fn spawn_text_row(content: &mut ChildSpawner, label: &str, input_index: usize, value: &str) {
     content
         .spawn((
             Node {

@@ -15,7 +15,11 @@ pub fn component_display_name(key: &str) -> String {
         SPRITE_COMPONENT_KEY => "Sprite".to_string(),
         CAMERA2D_COMPONENT_KEY => "Camera2D".to_string(),
         TEXT2D_COMPONENT_KEY => "Text2D".to_string(),
-        _ => key.rsplit('/').next().unwrap_or(key).replace(['_', '-'], " "),
+        _ => key
+            .rsplit('/')
+            .next()
+            .unwrap_or(key)
+            .replace(['_', '-'], " "),
     }
 }
 
@@ -145,6 +149,18 @@ pub struct EntityValue {
     pub children: Vec<EntityValue>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct EntitySpawnOptions {
+    pub name_prefix: Option<String>,
+}
+
+impl EntitySpawnOptions {
+    pub fn with_name_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.name_prefix = Some(prefix.into());
+        self
+    }
+}
+
 impl EntityValue {
     pub fn named(name: impl Into<String>) -> Self {
         Self {
@@ -177,11 +193,7 @@ impl EntityValue {
         self.merge_in_place_with_policy(other, EntityMergePolicy::KeepExisting);
     }
 
-    pub fn merge_in_place_with_policy(
-        &mut self,
-        other: &EntityValue,
-        policy: EntityMergePolicy,
-    ) {
+    pub fn merge_in_place_with_policy(&mut self, other: &EntityValue, policy: EntityMergePolicy) {
         if self.name.is_none() {
             self.name = other.name.clone();
         }
@@ -194,7 +206,9 @@ impl EntityValue {
     }
 
     pub fn component(&self, key: &str) -> Option<&EntityComponentValue> {
-        self.components.iter().find(|component| component.key() == key)
+        self.components
+            .iter()
+            .find(|component| component.key() == key)
     }
 
     pub fn find_first_component(&self, key: &str) -> Option<&EntityComponentValue> {
@@ -212,7 +226,9 @@ impl EntityValue {
     }
 
     pub fn transform(&self) -> Option<&TransformComponentValue> {
-        self.components.iter().find_map(EntityComponentValue::as_transform)
+        self.components
+            .iter()
+            .find_map(EntityComponentValue::as_transform)
     }
 
     pub fn is_pure_component(&self, key: &str) -> bool {
@@ -251,6 +267,201 @@ impl EntityValue {
             self.components.push(component);
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SceneDocument {
+    #[serde(default)]
+    pub root: EntityValue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SceneStats {
+    pub entity_count: usize,
+    pub named_entity_count: usize,
+    pub sprite_count: usize,
+    pub text_count: usize,
+    pub camera_count: usize,
+    pub max_depth: usize,
+}
+
+impl SceneDocument {
+    pub fn new(root: EntityValue) -> Self {
+        Self { root }
+    }
+
+    pub fn from_entity_value(root: EntityValue) -> Self {
+        Self::new(root)
+    }
+
+    pub fn stats(&self) -> SceneStats {
+        fn visit(entity: &EntityValue, depth: usize, stats: &mut SceneStats) {
+            stats.entity_count += 1;
+            stats.max_depth = stats.max_depth.max(depth);
+
+            if entity.name.as_deref().is_some_and(|name| !name.is_empty()) {
+                stats.named_entity_count += 1;
+            }
+            if entity.component(SPRITE_COMPONENT_KEY).is_some() {
+                stats.sprite_count += 1;
+            }
+            if entity.component(TEXT2D_COMPONENT_KEY).is_some() {
+                stats.text_count += 1;
+            }
+            if entity.component(CAMERA2D_COMPONENT_KEY).is_some() {
+                stats.camera_count += 1;
+            }
+
+            for child in &entity.children {
+                visit(child, depth + 1, stats);
+            }
+        }
+
+        let mut stats = SceneStats::default();
+        visit(&self.root, 1, &mut stats);
+        stats
+    }
+
+    pub fn signature(&self) -> String {
+        format!("{:?}", self.root)
+    }
+}
+
+pub fn entity_value_signature(entity: Option<&EntityValue>) -> Option<String> {
+    entity.map(|entity| format!("{entity:?}"))
+}
+
+pub fn scene_document_signature(scene: Option<&SceneDocument>) -> Option<String> {
+    scene.map(SceneDocument::signature)
+}
+
+pub fn scene_transform_to_bevy(transform: &TransformComponentValue) -> Transform {
+    Transform {
+        translation: transform.translation,
+        rotation: Quat::from_rotation_z(transform.rotation_deg.to_radians()),
+        scale: transform.scale,
+    }
+}
+
+pub fn spawn_entity_value_recursive(
+    parent: &mut ChildSpawnerCommands,
+    entity_value: &EntityValue,
+    options: &EntitySpawnOptions,
+) {
+    let transform = entity_value
+        .component(TRANSFORM_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_transform)
+        .map(scene_transform_to_bevy)
+        .unwrap_or_default();
+    let sprite = entity_value
+        .component(SPRITE_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_sprite)
+        .cloned();
+    let text = entity_value
+        .component(TEXT2D_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_text_2d)
+        .cloned();
+    let _has_camera = entity_value.component(CAMERA2D_COMPONENT_KEY).is_some();
+
+    let mut entity_commands = parent.spawn((transform, Visibility::Visible));
+
+    if let Some(name) = entity_value.name.as_deref().filter(|name| !name.is_empty()) {
+        let name = if let Some(prefix) = options.name_prefix.as_deref() {
+            format!("{prefix}{name}")
+        } else {
+            name.to_string()
+        };
+        entity_commands.insert(Name::new(name));
+    }
+
+    if let Some(sprite) = sprite {
+        entity_commands.insert(Sprite::from_color(sprite.color, sprite.size));
+    }
+
+    if let Some(text) = text {
+        entity_commands.insert((
+            Text2d::new(text.content),
+            TextFont::from_font_size(text.font_size),
+            TextColor(text.color),
+        ));
+    }
+
+    // Cameras are currently kept inert during graph materialization because the editor
+    // still assumes a single active Camera2d for interaction and overlays.
+
+    let children = entity_value.children.clone();
+    entity_commands.with_children(|next_parent| {
+        for child in &children {
+            spawn_entity_value_recursive(next_parent, child, options);
+        }
+    });
+}
+
+pub fn spawn_scene_document_recursive(
+    parent: &mut ChildSpawnerCommands,
+    scene: &SceneDocument,
+    options: &EntitySpawnOptions,
+) {
+    spawn_entity_value_recursive(parent, &scene.root, options);
+}
+
+pub fn spawn_entity_value_recursive_world(
+    parent: &mut ChildSpawner,
+    entity_value: &EntityValue,
+    options: &EntitySpawnOptions,
+) {
+    let transform = entity_value
+        .component(TRANSFORM_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_transform)
+        .map(scene_transform_to_bevy)
+        .unwrap_or_default();
+    let sprite = entity_value
+        .component(SPRITE_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_sprite)
+        .cloned();
+    let text = entity_value
+        .component(TEXT2D_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_text_2d)
+        .cloned();
+    let _has_camera = entity_value.component(CAMERA2D_COMPONENT_KEY).is_some();
+
+    let mut entity_commands = parent.spawn((transform, Visibility::Visible));
+
+    if let Some(name) = entity_value.name.as_deref().filter(|name| !name.is_empty()) {
+        let name = if let Some(prefix) = options.name_prefix.as_deref() {
+            format!("{prefix}{name}")
+        } else {
+            name.to_string()
+        };
+        entity_commands.insert(Name::new(name));
+    }
+
+    if let Some(sprite) = sprite {
+        entity_commands.insert(Sprite::from_color(sprite.color, sprite.size));
+    }
+
+    if let Some(text) = text {
+        entity_commands.insert((
+            Text2d::new(text.content),
+            TextFont::from_font_size(text.font_size),
+            TextColor(text.color),
+        ));
+    }
+
+    let children = entity_value.children.clone();
+    entity_commands.with_children(|next_parent| {
+        for child in &children {
+            spawn_entity_value_recursive_world(next_parent, child, options);
+        }
+    });
+}
+
+pub fn spawn_scene_document_recursive_world(
+    parent: &mut ChildSpawner,
+    scene: &SceneDocument,
+    options: &EntitySpawnOptions,
+) {
+    spawn_entity_value_recursive_world(parent, &scene.root, options);
 }
 
 fn custom_component_color(key: &str) -> Color {

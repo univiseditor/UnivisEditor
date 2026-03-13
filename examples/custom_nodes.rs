@@ -364,7 +364,10 @@ register_node!(Vec3BuildNode);
 register_node!(ColorBoostNode);
 register_node!(MaterialMetalNode);
 register_node!(WheelPartNode);
-register_node!(PrefixTextNode, ctor = || PrefixTextNode { prefix: "[Custom]" });
+register_node!(
+    PrefixTextNode,
+    ctor = || PrefixTextNode { prefix: "[Custom]" }
+);
 
 fn main() {
     App::new()

@@ -103,7 +103,10 @@ fn name_and_text_nodes_preserve_existing_name_and_fallback_to_base_transform() {
 
     let (_, outputs) = run_node(
         &NameNode,
-        vec![NodeValue::entity(base.clone()), NodeValue::string("Replacement")],
+        vec![
+            NodeValue::entity(base.clone()),
+            NodeValue::string("Replacement"),
+        ],
     );
     match &outputs[0] {
         NodeValue::Entity(entity) => assert_eq!(entity.name.as_deref(), Some("Existing")),

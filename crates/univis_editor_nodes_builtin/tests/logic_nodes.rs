@@ -36,7 +36,10 @@ fn branch_node_returns_the_selected_input_value() {
 
 #[test]
 fn boolean_logic_nodes_emit_expected_truth_tables() {
-    let (_, outputs) = run_node(&AndNode, vec![NodeValue::bool(true), NodeValue::bool(false)]);
+    let (_, outputs) = run_node(
+        &AndNode,
+        vec![NodeValue::bool(true), NodeValue::bool(false)],
+    );
     assert_eq!(outputs, vec![NodeValue::bool(false)]);
 
     let (_, outputs) = run_node(&OrNode, vec![NodeValue::bool(true), NodeValue::bool(false)]);

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::{Entity, Resource};
 use serde::{Deserialize, Serialize};
+use univis_scene::EntityValue;
 
 use crate::{graph_validation::would_create_cycle, node_definition::NodeId, value::NodeValue};
 
@@ -20,6 +21,10 @@ pub struct GraphDocument {
     #[serde(default)]
     pub edges: Vec<GraphDocumentEdge>,
     #[serde(default)]
+    pub prefabs: Vec<GraphDocumentPrefab>,
+    #[serde(default)]
+    pub subgraphs: Vec<GraphDocumentSubgraph>,
+    #[serde(default)]
     pub view: GraphDocumentViewState,
 }
 
@@ -29,7 +34,35 @@ impl Default for GraphDocument {
             version: GRAPH_DOCUMENT_VERSION,
             nodes: Vec::new(),
             edges: Vec::new(),
+            prefabs: Vec::new(),
+            subgraphs: Vec::new(),
             view: GraphDocumentViewState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GraphDocumentPrefab {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub root: EntityValue,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphDocumentSubgraph {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub document: Box<GraphDocument>,
+}
+
+impl Default for GraphDocumentSubgraph {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            document: Box::new(GraphDocument::default()),
         }
     }
 }
@@ -330,6 +363,14 @@ where
 }
 
 impl GraphDocument {
+    pub fn prefab_count(&self) -> usize {
+        self.prefabs.len()
+    }
+
+    pub fn subgraph_count(&self) -> usize {
+        self.subgraphs.len()
+    }
+
     pub fn next_node_id(&self) -> u64 {
         self.nodes.iter().map(|node| node.id).max().unwrap_or(0) + 1
     }

@@ -10,6 +10,7 @@ legacy = []
 
 [dependencies]
 bevy.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 univis_ui.workspace = true
 univis_node_graph = { path = "../univis_node_graph" }

@@ -73,14 +73,14 @@ pub fn selection_system(
             live_document.select_single_entity(target_entity);
             for entity in selected_nodes.iter() {
                 if entity != target_entity {
-                    commands.entity(entity).remove::<Selected>();
+                    commands.entity(entity).try_remove::<Selected>();
                 }
             }
-            commands.entity(target_entity).insert(Selected);
+            commands.entity(target_entity).try_insert(Selected);
         } else {
             live_document.clear_selected_entities();
             for entity in selected_nodes.iter() {
-                commands.entity(entity).remove::<Selected>();
+                commands.entity(entity).try_remove::<Selected>();
             }
         }
     }
@@ -113,6 +113,7 @@ pub fn delete_node_system(
     mut delete_requests: MessageReader<DeleteSelectedNodesRequest>,
     mut live_document: ResMut<LiveGraphDocumentState>,
     mut connect: ResMut<Connecting>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
         command_requests.clear();
@@ -128,11 +129,17 @@ pub fn delete_node_system(
         return;
     }
 
+    let mut changed = false;
     for entity in live_document.delete_selected_entities() {
-        commands.entity(entity).despawn();
+        commands.entity(entity).try_despawn();
         connect
             .connections
             .retain(|link| link.from_node != entity && link.to_node != entity);
+        changed = true;
+    }
+
+    if changed {
+        mutations.mark_changed();
     }
 }
 
@@ -226,6 +233,7 @@ pub fn disconnect_wire_system(
     mut live_document: ResMut<LiveGraphDocumentState>,
     mut connect: ResMut<Connecting>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if mouse_button.just_pressed(MouseButton::Right) {
         for (port_entity, interaction, port_data) in ports.iter() {
@@ -236,6 +244,7 @@ pub fn disconnect_wire_system(
                     connect
                         .connections
                         .retain(|link| link.to_port != port_entity);
+                    mutations.mark_changed();
                 }
             }
         }
@@ -251,6 +260,7 @@ pub fn node_drag_system(
     parents: Query<&ChildOf>,
     node_markers: Query<(), With<GraphNode>>,
     mut node_transforms: Query<&mut Transform, With<GraphNode>>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let window = if let Ok(w) = windows.single() {
         w
@@ -303,6 +313,9 @@ pub fn node_drag_system(
     }
 
     if mouse_button.just_released(MouseButton::Left) {
+        if drag_state.active_entity.is_some() {
+            mutations.mark_changed();
+        }
         drag_state.active_entity = None;
     }
 }

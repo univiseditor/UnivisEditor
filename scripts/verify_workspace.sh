@@ -15,6 +15,7 @@ core_tests=(
   "cargo test -p univis_node_graph --test core_api --quiet"
   "cargo test -p univis_node_graph --test document_ops --quiet"
   "cargo test -p univis_node_graph --test graph_validation --quiet"
+  "cargo test -p univis_editor_runtime --lib --quiet"
 )
 
 builtin_checks=(

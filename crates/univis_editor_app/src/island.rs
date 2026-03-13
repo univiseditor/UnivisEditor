@@ -1,17 +1,16 @@
+use crate::panels::FloatingPanelsSettings;
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-use univis_node_graph::commands::{
-    GraphCommandRequest, GraphOverlayState, GraphOverlaySurface,
+use univis_editor_persistence::graph_persistence::{
+    GraphHistorySettings, GraphPersistenceRuntimeState, GraphPersistenceSettings,
+    GraphPersistenceStatus, GraphPersistenceStatusSeverity,
 };
+use univis_editor_ui::prelude::{EditorSettings, GraphCamera};
+use univis_node_graph::commands::{GraphCommandRequest, GraphOverlayState, GraphOverlaySurface};
 use univis_node_graph::node_definition::NodeId;
 use univis_node_graph::node_registry::NodeRegistry;
-use univis_editor_persistence::graph_persistence::{
-    GraphPersistenceRuntimeState, GraphPersistenceSettings, GraphPersistenceStatus,
-    GraphPersistenceStatusSeverity,
-};
-use univis_editor_ui::prelude::GraphCamera;
 
 #[derive(Resource, Debug, Clone, Default)]
 struct CanvasIslandState {
@@ -26,6 +25,7 @@ enum CanvasIslandSurface {
     FileMenu,
     EditMenu,
     Search,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +66,48 @@ struct CanvasIslandMenuActionButton {
     action: CanvasIslandMenuAction,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum CanvasIslandSettingsAction {
+    ToggleAutosave,
+    TogglePrettyJson,
+    ToggleHistory,
+    DecreaseHistoryLimit,
+    IncreaseHistoryLimit,
+    ToggleDiagnosticsPanel,
+    ToggleScenePreviewPanel,
+    ToggleGridDisplayMode,
+    CycleGridPalette,
+    DecreaseGridPointSize,
+    IncreaseGridPointSize,
+    CycleWireStyle,
+    ToggleWireColorFromOutput,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CanvasIslandSettingsValueKind {
+    Autosave,
+    PrettyJson,
+    HistoryEnabled,
+    HistoryLimit,
+    DiagnosticsPanel,
+    ScenePreviewPanel,
+    GridDisplayMode,
+    GridColorPalette,
+    GridPointSize,
+    WireStyle,
+    WireColorFromOutput,
+}
+
+#[derive(Component)]
+struct CanvasIslandSettingsActionButton {
+    action: CanvasIslandSettingsAction,
+}
+
+#[derive(Component)]
+struct CanvasIslandSettingsValueText {
+    kind: CanvasIslandSettingsValueKind,
+}
+
 #[derive(Component)]
 struct CanvasIslandSearchQueryText;
 
@@ -75,6 +117,13 @@ struct CanvasIslandSearchResults;
 #[derive(Component)]
 struct CanvasIslandSearchResultButton {
     definition_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+struct CanvasIslandSearchEntry {
+    definition_id: NodeId,
+    display_name: String,
+    category: String,
 }
 
 pub struct CanvasIslandPlugin;
@@ -89,6 +138,7 @@ impl Plugin for CanvasIslandPlugin {
                     handle_canvas_island_shortcuts,
                     handle_canvas_island_trigger_buttons,
                     handle_canvas_island_menu_actions,
+                    handle_canvas_island_settings_actions,
                     handle_canvas_island_search_typing,
                     handle_canvas_island_search_result_buttons,
                     close_canvas_island_menu_on_outside_click,
@@ -96,6 +146,7 @@ impl Plugin for CanvasIslandPlugin {
                     sync_canvas_island_overlay,
                     update_canvas_island_menu_visibility,
                     rebuild_canvas_island_search_panel,
+                    sync_canvas_island_settings_values,
                     sync_canvas_island_status,
                     style_canvas_island_buttons,
                 )
@@ -134,7 +185,8 @@ fn setup_canvas_island_ui(mut commands: Commands) {
                 BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.08)),
             ))
             .with_children(|shell| {
-                shell.spawn((
+                shell
+                    .spawn((
                         Node {
                             min_width: Val::Px(180.0),
                             height: Val::Px(32.0),
@@ -262,6 +314,34 @@ fn setup_canvas_island_ui(mut commands: Commands) {
                             TextColor(Color::WHITE),
                         ));
                     });
+
+                shell
+                    .spawn((
+                        Button,
+                        Node {
+                            height: Val::Px(32.0),
+                            padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border_radius: BorderRadius::all(Val::Px(999.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.06)),
+                        CanvasIslandInteractive,
+                        CanvasIslandTriggerButton {
+                            surface: CanvasIslandSurface::Settings,
+                        },
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Settings"),
+                            TextFont {
+                                font_size: 12.5,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+                    });
             });
 
             spawn_canvas_island_menu_panel(
@@ -287,6 +367,7 @@ fn setup_canvas_island_ui(mut commands: Commands) {
             );
 
             spawn_canvas_island_search_panel(root);
+            spawn_canvas_island_settings_panel(root);
         });
 }
 
@@ -304,7 +385,9 @@ fn sync_canvas_island_ui_target(
             continue;
         }
 
-        commands.entity(entity).insert(UiTargetCamera(graph_camera));
+        commands
+            .entity(entity)
+            .try_insert(UiTargetCamera(graph_camera));
     }
 }
 
@@ -339,7 +422,8 @@ fn spawn_canvas_island_menu_panel(
         ));
 
         for (label, shortcut, action) in items {
-            panel.spawn((
+            panel
+                .spawn((
                     Button,
                     Node {
                         width: Val::Percent(100.0),
@@ -404,7 +488,8 @@ fn spawn_canvas_island_search_panel(root: &mut ChildSpawnerCommands) {
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5)),
         ));
 
-        panel.spawn((
+        panel
+            .spawn((
                 Node {
                     width: Val::Percent(100.0),
                     min_height: Val::Px(34.0),
@@ -439,6 +524,239 @@ fn spawn_canvas_island_search_panel(root: &mut ChildSpawnerCommands) {
     });
 }
 
+fn spawn_canvas_island_settings_panel(root: &mut ChildSpawnerCommands) {
+    root.spawn((
+        Node {
+            width: Val::Px(320.0),
+            display: Display::None,
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(10.0)),
+            row_gap: Val::Px(8.0),
+            border_radius: BorderRadius::all(Val::Px(22.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.05, 0.06, 0.08, 0.96)),
+        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+        CanvasIslandMenuPanel {
+            surface: CanvasIslandSurface::Settings,
+        },
+    ))
+    .with_children(|panel| {
+        panel.spawn((
+            Text::new("Settings"),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5)),
+        ));
+
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Autosave",
+            CanvasIslandSettingsAction::ToggleAutosave,
+            CanvasIslandSettingsValueKind::Autosave,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Pretty JSON",
+            CanvasIslandSettingsAction::TogglePrettyJson,
+            CanvasIslandSettingsValueKind::PrettyJson,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "History",
+            CanvasIslandSettingsAction::ToggleHistory,
+            CanvasIslandSettingsValueKind::HistoryEnabled,
+        );
+        spawn_canvas_island_setting_stepper_row(
+            panel,
+            "History Limit",
+            CanvasIslandSettingsAction::DecreaseHistoryLimit,
+            CanvasIslandSettingsValueKind::HistoryLimit,
+            CanvasIslandSettingsAction::IncreaseHistoryLimit,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Diagnostics Panel",
+            CanvasIslandSettingsAction::ToggleDiagnosticsPanel,
+            CanvasIslandSettingsValueKind::DiagnosticsPanel,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Scene Preview",
+            CanvasIslandSettingsAction::ToggleScenePreviewPanel,
+            CanvasIslandSettingsValueKind::ScenePreviewPanel,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Grid Mode",
+            CanvasIslandSettingsAction::ToggleGridDisplayMode,
+            CanvasIslandSettingsValueKind::GridDisplayMode,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Grid Palette",
+            CanvasIslandSettingsAction::CycleGridPalette,
+            CanvasIslandSettingsValueKind::GridColorPalette,
+        );
+        spawn_canvas_island_setting_stepper_row(
+            panel,
+            "Point Size",
+            CanvasIslandSettingsAction::DecreaseGridPointSize,
+            CanvasIslandSettingsValueKind::GridPointSize,
+            CanvasIslandSettingsAction::IncreaseGridPointSize,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Wire Style",
+            CanvasIslandSettingsAction::CycleWireStyle,
+            CanvasIslandSettingsValueKind::WireStyle,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Wire Color by Output",
+            CanvasIslandSettingsAction::ToggleWireColorFromOutput,
+            CanvasIslandSettingsValueKind::WireColorFromOutput,
+        );
+    });
+}
+
+fn spawn_canvas_island_setting_toggle_row(
+    panel: &mut ChildSpawnerCommands,
+    label: &str,
+    action: CanvasIslandSettingsAction,
+    value_kind: CanvasIslandSettingsValueKind,
+) {
+    panel
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(34.0),
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(14.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 12.5,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            row.spawn((
+                Button,
+                Node {
+                    min_width: Val::Px(72.0),
+                    height: Val::Px(24.0),
+                    padding: UiRect::horizontal(Val::Px(10.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border_radius: BorderRadius::all(Val::Px(999.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+                CanvasIslandInteractive,
+                CanvasIslandSettingsActionButton { action },
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    Text::new("..."),
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    CanvasIslandSettingsValueText { kind: value_kind },
+                ));
+            });
+        });
+}
+
+fn spawn_canvas_island_setting_stepper_row(
+    panel: &mut ChildSpawnerCommands,
+    label: &str,
+    decrease_action: CanvasIslandSettingsAction,
+    value_kind: CanvasIslandSettingsValueKind,
+    increase_action: CanvasIslandSettingsAction,
+) {
+    panel
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(34.0),
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(14.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 12.5,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            row.spawn((Node {
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },))
+                .with_children(|controls| {
+                    for (text, action) in [("-", decrease_action), ("+", increase_action)] {
+                        controls
+                            .spawn((
+                                Button,
+                                Node {
+                                    width: Val::Px(24.0),
+                                    height: Val::Px(24.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border_radius: BorderRadius::all(Val::Px(999.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+                                CanvasIslandInteractive,
+                                CanvasIslandSettingsActionButton { action },
+                            ))
+                            .with_children(|button| {
+                                button.spawn((
+                                    Text::new(text),
+                                    TextFont {
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                ));
+                            });
+                    }
+
+                    controls.spawn((
+                        Text::new("0"),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        CanvasIslandSettingsValueText { kind: value_kind },
+                    ));
+                });
+        });
+}
+
 fn handle_canvas_island_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut island: ResMut<CanvasIslandState>,
@@ -455,6 +773,18 @@ fn handle_canvas_island_shortcuts(
             island.search_query.clear();
             overlay.active_surface = GraphOverlaySurface::CanvasIslandMenu;
             CanvasIslandSurface::Search
+        };
+    }
+
+    if ctrl_pressed && keys.just_pressed(KeyCode::Comma) {
+        island.surface = if island.surface == CanvasIslandSurface::Settings {
+            if overlay.active_surface == GraphOverlaySurface::CanvasIslandMenu {
+                overlay.active_surface = GraphOverlaySurface::None;
+            }
+            CanvasIslandSurface::Compact
+        } else {
+            overlay.active_surface = GraphOverlaySurface::CanvasIslandMenu;
+            CanvasIslandSurface::Settings
         };
     }
 }
@@ -515,6 +845,65 @@ fn handle_canvas_island_menu_actions(
         island.surface = CanvasIslandSurface::Compact;
         if overlay.active_surface == GraphOverlaySurface::CanvasIslandMenu {
             overlay.active_surface = GraphOverlaySurface::None;
+        }
+    }
+}
+
+fn handle_canvas_island_settings_actions(
+    buttons: Query<(&Interaction, &CanvasIslandSettingsActionButton), Changed<Interaction>>,
+    mut persistence_settings: ResMut<GraphPersistenceSettings>,
+    mut history_settings: ResMut<GraphHistorySettings>,
+    mut floating_panels: ResMut<FloatingPanelsSettings>,
+    mut editor_settings: ResMut<EditorSettings>,
+) {
+    for (interaction, button) in buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        match button.action {
+            CanvasIslandSettingsAction::ToggleAutosave => {
+                persistence_settings.autosave_enabled = !persistence_settings.autosave_enabled;
+            }
+            CanvasIslandSettingsAction::TogglePrettyJson => {
+                persistence_settings.pretty_json = !persistence_settings.pretty_json;
+            }
+            CanvasIslandSettingsAction::ToggleHistory => {
+                history_settings.enabled = !history_settings.enabled;
+            }
+            CanvasIslandSettingsAction::DecreaseHistoryLimit => {
+                history_settings.max_entries =
+                    history_settings.max_entries.saturating_sub(16).max(16);
+            }
+            CanvasIslandSettingsAction::IncreaseHistoryLimit => {
+                history_settings.max_entries = (history_settings.max_entries + 16).min(256);
+            }
+            CanvasIslandSettingsAction::ToggleDiagnosticsPanel => {
+                floating_panels.show_diagnostics = !floating_panels.show_diagnostics;
+            }
+            CanvasIslandSettingsAction::ToggleScenePreviewPanel => {
+                floating_panels.show_scene_preview = !floating_panels.show_scene_preview;
+            }
+            CanvasIslandSettingsAction::ToggleGridDisplayMode => {
+                editor_settings.grid_display_mode = editor_settings.grid_display_mode.toggle();
+            }
+            CanvasIslandSettingsAction::CycleGridPalette => {
+                editor_settings.grid_color_palette = editor_settings.grid_color_palette.next();
+            }
+            CanvasIslandSettingsAction::DecreaseGridPointSize => {
+                editor_settings.grid_point_size =
+                    (editor_settings.grid_point_size - 0.1).clamp(0.5, 3.0);
+            }
+            CanvasIslandSettingsAction::IncreaseGridPointSize => {
+                editor_settings.grid_point_size =
+                    (editor_settings.grid_point_size + 0.1).clamp(0.5, 3.0);
+            }
+            CanvasIslandSettingsAction::CycleWireStyle => {
+                editor_settings.wire_style = editor_settings.wire_style.next();
+            }
+            CanvasIslandSettingsAction::ToggleWireColorFromOutput => {
+                editor_settings.wire_color_from_output = !editor_settings.wire_color_from_output;
+            }
         }
     }
 }
@@ -600,9 +989,9 @@ fn close_canvas_island_menu_on_outside_click(
         return;
     }
 
-    let inside_island = interactions
-        .iter()
-        .any(|interaction| *interaction == Interaction::Hovered || *interaction == Interaction::Pressed);
+    let inside_island = interactions.iter().any(|interaction| {
+        *interaction == Interaction::Hovered || *interaction == Interaction::Pressed
+    });
 
     if !inside_island {
         island.surface = CanvasIslandSurface::Compact;
@@ -670,7 +1059,7 @@ fn rebuild_canvas_island_search_panel(
 
     if let Ok(existing_children) = children_query.get(results_entity) {
         for child in existing_children.iter() {
-            commands.entity(child).despawn();
+            commands.entity(child).try_despawn();
         }
     }
 
@@ -691,59 +1080,150 @@ fn rebuild_canvas_island_search_panel(
     };
     nodes.truncate(8);
 
-    commands.entity(results_entity).with_children(|results| {
-        if nodes.is_empty() {
-            results.spawn((
-                Text::new("No matching nodes"),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
-            ));
-            return;
-        }
+    let search_entries: Vec<_> = nodes
+        .into_iter()
+        .map(|definition| CanvasIslandSearchEntry {
+            definition_id: definition.id(),
+            display_name: definition.display_name().to_string(),
+            category: definition.category().as_str().to_string(),
+        })
+        .collect();
 
-        for definition in nodes {
-            results
-                .spawn((
-                    Button,
-                    Node {
-                        width: Val::Percent(100.0),
-                        min_height: Val::Px(36.0),
-                        padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                        justify_content: JustifyContent::SpaceBetween,
-                        align_items: AlignItems::Center,
-                        border_radius: BorderRadius::all(Val::Px(14.0)),
+    commands.queue(move |world: &mut World| {
+        let Ok(mut results_entity_mut) = world.get_entity_mut(results_entity) else {
+            return;
+        };
+
+        results_entity_mut.with_children(|results| {
+            if search_entries.is_empty() {
+                results.spawn((
+                    Text::new("No matching nodes"),
+                    TextFont {
+                        font_size: 12.0,
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
-                    CanvasIslandInteractive,
-                    CanvasIslandSearchResultButton {
-                        definition_id: definition.id(),
-                    },
-                ))
-                .with_children(|button| {
-                    button.spawn((
-                        Text::new(definition.display_name()),
-                        TextFont {
-                            font_size: 12.5,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                    ));
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                ));
+                return;
+            }
 
-                    button.spawn((
-                        Text::new(definition.category().as_str()),
-                        TextFont {
-                            font_size: 11.0,
+            for entry in &search_entries {
+                results
+                    .spawn((
+                        Button,
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: Val::Px(36.0),
+                            padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            border_radius: BorderRadius::all(Val::Px(14.0)),
                             ..default()
                         },
-                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
-                    ));
-                });
-        }
+                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                        CanvasIslandInteractive,
+                        CanvasIslandSearchResultButton {
+                            definition_id: entry.definition_id.clone(),
+                        },
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new(&entry.display_name),
+                            TextFont {
+                                font_size: 12.5,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        button.spawn((
+                            Text::new(&entry.category),
+                            TextFont {
+                                font_size: 11.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
+                        ));
+                    });
+            }
+        });
     });
+}
+
+fn sync_canvas_island_settings_values(
+    persistence_settings: Res<GraphPersistenceSettings>,
+    history_settings: Res<GraphHistorySettings>,
+    floating_panels: Res<FloatingPanelsSettings>,
+    editor_settings: Res<EditorSettings>,
+    mut texts: Query<(&CanvasIslandSettingsValueText, &mut Text)>,
+) {
+    if !persistence_settings.is_changed()
+        && !history_settings.is_changed()
+        && !floating_panels.is_changed()
+        && !editor_settings.is_changed()
+    {
+        return;
+    }
+
+    for (marker, mut text) in texts.iter_mut() {
+        text.0 = match marker.kind {
+            CanvasIslandSettingsValueKind::Autosave => if persistence_settings.autosave_enabled {
+                "ON"
+            } else {
+                "OFF"
+            }
+            .to_string(),
+            CanvasIslandSettingsValueKind::PrettyJson => if persistence_settings.pretty_json {
+                "ON"
+            } else {
+                "OFF"
+            }
+            .to_string(),
+            CanvasIslandSettingsValueKind::HistoryEnabled => if history_settings.enabled {
+                "ON"
+            } else {
+                "OFF"
+            }
+            .to_string(),
+            CanvasIslandSettingsValueKind::HistoryLimit => history_settings.max_entries.to_string(),
+            CanvasIslandSettingsValueKind::DiagnosticsPanel => {
+                if floating_panels.show_diagnostics {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .to_string()
+            }
+            CanvasIslandSettingsValueKind::ScenePreviewPanel => {
+                if floating_panels.show_scene_preview {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .to_string()
+            }
+            CanvasIslandSettingsValueKind::GridDisplayMode => {
+                editor_settings.grid_display_mode.label().to_string()
+            }
+            CanvasIslandSettingsValueKind::GridColorPalette => {
+                editor_settings.grid_color_palette.label().to_string()
+            }
+            CanvasIslandSettingsValueKind::GridPointSize => {
+                format!("{:.1}x", editor_settings.grid_point_size)
+            }
+            CanvasIslandSettingsValueKind::WireStyle => {
+                editor_settings.wire_style.label().to_string()
+            }
+            CanvasIslandSettingsValueKind::WireColorFromOutput => {
+                if editor_settings.wire_color_from_output {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .to_string()
+            }
+        };
+    }
 }
 
 fn sync_canvas_island_status(
@@ -803,7 +1283,11 @@ fn sync_canvas_island_status(
 fn style_canvas_island_buttons(
     island: Res<CanvasIslandState>,
     mut trigger_buttons: Query<
-        (&Interaction, &CanvasIslandTriggerButton, &mut BackgroundColor),
+        (
+            &Interaction,
+            &CanvasIslandTriggerButton,
+            &mut BackgroundColor,
+        ),
         (
             With<Button>,
             With<CanvasIslandTriggerButton>,
@@ -811,11 +1295,28 @@ fn style_canvas_island_buttons(
         ),
     >,
     mut menu_buttons: Query<
-        (&Interaction, &CanvasIslandMenuActionButton, &mut BackgroundColor),
+        (
+            &Interaction,
+            &CanvasIslandMenuActionButton,
+            &mut BackgroundColor,
+        ),
         (
             With<Button>,
             With<CanvasIslandMenuActionButton>,
             Without<CanvasIslandTriggerButton>,
+        ),
+    >,
+    mut settings_buttons: Query<
+        (
+            &Interaction,
+            &CanvasIslandSettingsActionButton,
+            &mut BackgroundColor,
+        ),
+        (
+            With<Button>,
+            With<CanvasIslandSettingsActionButton>,
+            Without<CanvasIslandTriggerButton>,
+            Without<CanvasIslandMenuActionButton>,
         ),
     >,
 ) {
@@ -836,6 +1337,14 @@ fn style_canvas_island_buttons(
             Interaction::Pressed => Color::srgba(0.9, 0.93, 1.0, 0.18),
             Interaction::Hovered => Color::srgba(1.0, 1.0, 1.0, 0.1),
             Interaction::None => Color::srgba(1.0, 1.0, 1.0, 0.05),
+        };
+    }
+
+    for (interaction, _, mut background) in settings_buttons.iter_mut() {
+        background.0 = match *interaction {
+            Interaction::Pressed => Color::srgba(0.9, 0.93, 1.0, 0.18),
+            Interaction::Hovered => Color::srgba(1.0, 1.0, 1.0, 0.1),
+            Interaction::None => Color::srgba(1.0, 1.0, 1.0, 0.08),
         };
     }
 }

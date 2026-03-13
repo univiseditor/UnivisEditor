@@ -3,6 +3,15 @@ use crate::prelude::*;
 use bevy::prelude::*;
 use univis_ui::prelude::*;
 
+use crate::editor::{EditorSettings, WireStyle};
+
+const WIRE_SEGMENT_Z: f32 = 0.25;
+const WIRE_SEGMENT_THICKNESS: f32 = 5.0;
+const BEZIER_SEGMENT_COUNT: usize = 24;
+
+#[derive(Component)]
+pub struct WireVisualSegment;
+
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum WireSystemsSet {
     Start,
@@ -25,15 +34,13 @@ pub fn wire_start_system(
 ) {
     if mouse_button.just_pressed(MouseButton::Left) {
         for (entity, interaction, port) in ports.iter() {
-            if interaction_is_pointer_active(interaction) {
-                if port.port_type == PortType::Output {
-                    wire_state.dragging_from = Some(entity);
-                    wire_state.node_from = Some(port.node_entity);
-                    wire_state.index_from = Some(port.index);
-                    wire_state.is_dragging = true;
-                    wire_state.current_mouse_world_pos = Vec2::ZERO;
-                    break;
-                }
+            if interaction_is_pointer_active(interaction) && port.port_type == PortType::Output {
+                wire_state.dragging_from = Some(entity);
+                wire_state.node_from = Some(port.node_entity);
+                wire_state.index_from = Some(port.index);
+                wire_state.is_dragging = true;
+                wire_state.current_mouse_world_pos = Vec2::ZERO;
+                break;
             }
         }
     }
@@ -71,6 +78,7 @@ pub fn wire_complete_system(
     registry: Res<NodeRegistry>,
     q_nodes: Query<&GraphNode>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
+    mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if !wire_state.is_dragging || !mouse_button.just_released(MouseButton::Left) {
         return;
@@ -104,11 +112,7 @@ pub fn wire_complete_system(
         };
 
         for (to_port_entity, interaction, port) in ports.iter() {
-            if port.port_type != PortType::Input {
-                continue;
-            }
-
-            if port.node_entity == from_node {
+            if port.port_type != PortType::Input || port.node_entity == from_node {
                 continue;
             }
 
@@ -203,6 +207,7 @@ pub fn wire_complete_system(
                 from_port: from_port_entity,
                 to_port: to_port_entity,
             });
+            mutations.mark_changed();
             break;
         }
     }
@@ -213,62 +218,135 @@ pub fn wire_complete_system(
     wire_state.is_dragging = false;
 }
 
-pub fn wire_preview_system(
-    mut gizmos: Gizmos,
-    wire_state: ResMut<WireConnectionState>,
-    port_transforms: Query<&GlobalTransform, With<GraphPort>>,
+pub fn wire_visuals_system(
+    mut commands: Commands,
+    links: Res<Connecting>,
+    wire_state: Res<WireConnectionState>,
+    settings: Res<EditorSettings>,
+    port_transforms: Query<(&GlobalTransform, &GraphPort)>,
+    existing_visuals: Query<Entity, With<WireVisualSegment>>,
 ) {
+    for entity in existing_visuals.iter() {
+        commands.entity(entity).try_despawn();
+    }
+
+    for link in &links.connections {
+        let Ok((start_transform, from_port)) = port_transforms.get(link.from_port) else {
+            continue;
+        };
+        let Ok((end_transform, _)) = port_transforms.get(link.to_port) else {
+            continue;
+        };
+
+        spawn_wire_segments(
+            &mut commands,
+            start_transform.translation().truncate(),
+            end_transform.translation().truncate(),
+            resolved_wire_color(&settings, from_port),
+            settings.wire_style,
+        );
+    }
+
     if !wire_state.is_dragging {
         return;
     }
 
-    if let Some(from_entity) = wire_state.dragging_from {
-        if let Ok(start_transform) = port_transforms.get(from_entity) {
-            let start = start_transform.translation().truncate();
-            let end = wire_state.current_mouse_world_pos;
-            let z = start_transform.translation().z;
+    let Some(from_entity) = wire_state.dragging_from else {
+        return;
+    };
+    let Ok((start_transform, from_port)) = port_transforms.get(from_entity) else {
+        return;
+    };
 
-            draw_bezier_wire(&mut gizmos, start, end, z, Color::srgba(1.0, 1.0, 0.0, 0.8));
-        }
+    spawn_wire_segments(
+        &mut commands,
+        start_transform.translation().truncate(),
+        wire_state.current_mouse_world_pos,
+        preview_wire_color(&settings, from_port),
+        settings.wire_style,
+    );
+}
+
+fn preview_wire_color(settings: &EditorSettings, from_port: &GraphPort) -> Color {
+    if settings.wire_color_from_output {
+        from_port.value_type.port_color()
+    } else {
+        Color::srgba(1.0, 0.92, 0.35, 0.85)
     }
 }
 
-fn draw_bezier_wire(gizmos: &mut Gizmos, start: Vec2, end: Vec2, z: f32, color: Color) {
+fn resolved_wire_color(settings: &EditorSettings, from_port: &GraphPort) -> Color {
+    if settings.wire_color_from_output {
+        from_port.value_type.port_color()
+    } else {
+        Color::WHITE
+    }
+}
+
+fn spawn_wire_segments(
+    commands: &mut Commands,
+    start: Vec2,
+    end: Vec2,
+    color: Color,
+    style: WireStyle,
+) {
+    let points = wire_points(start, end, style);
+    for pair in points.windows(2) {
+        let from = pair[0];
+        let to = pair[1];
+        let delta = to - from;
+        let length = delta.length();
+        if length <= f32::EPSILON {
+            continue;
+        }
+
+        let center = (from + to) * 0.5;
+        let rotation = Quat::from_rotation_z(delta.y.atan2(delta.x));
+
+        commands.spawn((
+            Sprite {
+                color,
+                custom_size: Some(Vec2::new(length, WIRE_SEGMENT_THICKNESS)),
+                ..default()
+            },
+            Transform {
+                translation: center.extend(WIRE_SEGMENT_Z),
+                rotation,
+                ..default()
+            },
+            Pickable::IGNORE,
+            WireVisualSegment,
+        ));
+    }
+}
+
+fn wire_points(start: Vec2, end: Vec2, style: WireStyle) -> Vec<Vec2> {
+    match style {
+        WireStyle::Bezier => bezier_points(start, end),
+        WireStyle::Straight => vec![start, end],
+        WireStyle::Stepped => stepped_points(start, end),
+    }
+}
+
+fn bezier_points(start: Vec2, end: Vec2) -> Vec<Vec2> {
     let dist = (end.x - start.x).abs().max(50.0);
     let control_offset = dist * 0.5;
-
     let cp1 = start + Vec2::new(control_offset, 0.0);
     let cp2 = end - Vec2::new(control_offset, 0.0);
-
     let bezier = CubicBezier::new([[start, cp1, cp2, end]]);
 
-    if let Ok(curve) = bezier.to_curve() {
-        let points = curve.iter_positions(30).map(|p| Vec3::new(p.x, p.y, z));
-        gizmos.linestrip(points, color);
-    }
+    bezier
+        .to_curve()
+        .map(|curve| curve.iter_positions(BEZIER_SEGMENT_COUNT).collect())
+        .unwrap_or_else(|_| vec![start, end])
 }
 
-pub fn wire_render_system(
-    mut gizmos: Gizmos,
-    links: Res<Connecting>,
-    port_transforms: Query<&GlobalTransform, With<GraphPort>>,
-) {
-    for link in &links.connections {
-        let start_transform = port_transforms.get(link.from_port);
-        let end_transform = port_transforms.get(link.to_port);
-
-        if let (Ok(start), Ok(end)) = (start_transform, end_transform) {
-            let start_pos = start.translation().truncate();
-            let end_pos = end.translation().truncate();
-            let z = start.translation().z;
-
-            draw_bezier_wire(
-                &mut gizmos,
-                start_pos,
-                end_pos,
-                z,
-                Color::srgb(1.0, 1.0, 1.0),
-            );
-        }
-    }
+fn stepped_points(start: Vec2, end: Vec2) -> Vec<Vec2> {
+    let mid_x = start.x + ((end.x - start.x) * 0.5);
+    vec![
+        start,
+        Vec2::new(mid_x, start.y),
+        Vec2::new(mid_x, end.y),
+        end,
+    ]
 }

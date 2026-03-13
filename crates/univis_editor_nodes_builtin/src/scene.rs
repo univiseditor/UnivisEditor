@@ -22,6 +22,14 @@ fn scene_category() -> NodeCategory {
     NodeCategory::new(NodeCategory::SCENE)
 }
 
+fn require_scene_sink_input(ctx: &mut ProcessContext) -> ProcessResult {
+    if ctx.get_entity(0).is_some() {
+        ProcessResult::Success
+    } else {
+        ProcessResult::MissingInput(0)
+    }
+}
+
 pub struct TransformNode;
 
 impl NodeDefinition for TransformNode {
@@ -474,7 +482,7 @@ impl NodeDefinition for SceneNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Displays the incoming EntityValue in the world")
+        Some("Materializes the incoming EntityValue into the Bevy world")
     }
 
     fn color(&self) -> Color {
@@ -486,7 +494,7 @@ impl NodeDefinition for SceneNode {
     }
 
     fn keywords(&self) -> Vec<&str> {
-        vec!["scene", "entity", "world", "display", "render"]
+        vec!["scene", "entity", "world", "display", "materialize"]
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
@@ -498,11 +506,7 @@ impl NodeDefinition for SceneNode {
     }
 
     fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
-        if ctx.get_entity(0).is_some() {
-            ProcessResult::Success
-        } else {
-            ProcessResult::MissingInput(0)
-        }
+        require_scene_sink_input(ctx)
     }
 }
 

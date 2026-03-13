@@ -5,6 +5,7 @@ use bevy::camera::visibility::{
 };
 use bevy::{prelude::*, render::sync_world::SyncToRenderWorld};
 
+use crate::editor::GridDisplayMode;
 use crate::widgets::render;
 
 pub struct InfiniteGridPlugin;
@@ -39,6 +40,8 @@ pub struct InfiniteGridSettings {
     pub fadeout_distance: f32,
     pub dot_fadeout_strength: f32,
     pub scale: f32,
+    pub point_size: f32,
+    pub display_mode: GridDisplayMode,
 }
 
 impl Default for InfiniteGridSettings {
@@ -51,6 +54,8 @@ impl Default for InfiniteGridSettings {
             fadeout_distance: 100.,
             dot_fadeout_strength: 0.25,
             scale: 1.,
+            point_size: 1.0,
+            display_mode: GridDisplayMode::Lines,
         }
     }
 }

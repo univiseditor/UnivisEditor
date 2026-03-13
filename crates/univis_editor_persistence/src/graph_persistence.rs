@@ -1,13 +1,13 @@
 //! Graph persistence resources and systems.
+use crate::format::{
+    ParsedGraphDocument, PreparedGraphWrite, graph_document_signature,
+    parse_graph_document_payload, prepare_graph_document_write, serialize_graph_document,
+};
 use bevy::prelude::*;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::format::{
-    ParsedGraphDocument, PreparedGraphWrite, graph_document_signature,
-    parse_graph_document_payload, prepare_graph_document_write, serialize_graph_document,
-};
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
@@ -69,6 +69,53 @@ impl Default for GraphPersistenceRuntimeState {
     }
 }
 
+#[derive(Resource, Debug, Clone)]
+pub struct GraphHistorySettings {
+    pub enabled: bool,
+    pub max_entries: usize,
+}
+
+impl Default for GraphHistorySettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_entries: 64,
+        }
+    }
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct GraphHistoryState {
+    pub past: Vec<GraphDocument>,
+    pub future: Vec<GraphDocument>,
+    pub last_document: Option<GraphDocument>,
+    pub last_signature: Option<String>,
+    pub awaiting_rebaseline: bool,
+}
+
+impl GraphHistoryState {
+    pub fn clear(&mut self) {
+        self.past.clear();
+        self.future.clear();
+        self.last_document = None;
+        self.last_signature = None;
+        self.awaiting_rebaseline = false;
+    }
+
+    pub fn rebaseline_to_document(&mut self, document: &GraphDocument) {
+        self.last_signature = graph_document_signature(document).ok();
+        self.last_document = Some(document.clone());
+        self.awaiting_rebaseline = false;
+    }
+
+    pub fn trim_to_limit(&mut self, max_entries: usize) {
+        if self.past.len() > max_entries {
+            let trim = self.past.len() - max_entries;
+            self.past.drain(0..trim);
+        }
+    }
+}
+
 /// Feature flag that enables or disables persistence systems.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct GraphPersistenceActivation {
@@ -121,7 +168,8 @@ pub struct LoadGraphFromPathRequest {
 #[derive(Resource, Default)]
 struct PendingGraphLoad {
     is_pending: bool,
-    source_path: Option<String>,
+    source_label: Option<String>,
+    origin: PendingGraphApplyOrigin,
     node_map: HashMap<u64, Entity>,
     node_inputs: Vec<(Entity, Vec<NodeValue>)>,
     edges: Vec<GraphDocumentEdge>,
@@ -134,7 +182,8 @@ struct PendingGraphLoad {
 impl PendingGraphLoad {
     fn reset(&mut self) {
         self.is_pending = false;
-        self.source_path = None;
+        self.source_label = None;
+        self.origin = PendingGraphApplyOrigin::Load;
         self.node_map.clear();
         self.node_inputs.clear();
         self.edges.clear();
@@ -145,6 +194,14 @@ impl PendingGraphLoad {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PendingGraphApplyOrigin {
+    #[default]
+    Load,
+    Undo,
+    Redo,
+}
+
 /// Plugin that wires save/load and autosave systems into the app.
 pub struct GraphPersistencePlugin;
 
@@ -152,6 +209,8 @@ impl Plugin for GraphPersistencePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GraphPersistenceSettings>()
             .init_resource::<GraphPersistenceRuntimeState>()
+            .init_resource::<GraphHistorySettings>()
+            .init_resource::<GraphHistoryState>()
             .init_resource::<GraphPersistenceActivation>()
             .init_resource::<GraphPersistenceStatus>()
             .init_resource::<PendingGraphLoad>()
@@ -163,6 +222,7 @@ impl Plugin for GraphPersistencePlugin {
                 PreUpdate,
                 (
                     graph_persistence_shortcuts,
+                    handle_history_requests,
                     handle_save_graph_requests,
                     handle_load_graph_requests,
                 )
@@ -172,6 +232,8 @@ impl Plugin for GraphPersistencePlugin {
                 PostUpdate,
                 (
                     finalize_pending_graph_load,
+                    capture_graph_history_snapshot
+                        .after(univis_editor_ui::interaction::sync_live_graph_document_state),
                     refresh_dirty_state,
                     autosave_dirty_graph,
                     expire_persistence_status,
@@ -197,6 +259,16 @@ fn graph_persistence_shortcuts(
         command_writer.write(GraphCommandRequest::SaveGraph);
     }
 
+    if ctrl_pressed && !shift_pressed && keys.just_pressed(KeyCode::KeyZ) {
+        command_writer.write(GraphCommandRequest::UndoGraphChange);
+    }
+
+    if ctrl_pressed
+        && (keys.just_pressed(KeyCode::KeyY) || (shift_pressed && keys.just_pressed(KeyCode::KeyZ)))
+    {
+        command_writer.write(GraphCommandRequest::RedoGraphChange);
+    }
+
     if ctrl_pressed && shift_pressed && keys.just_pressed(KeyCode::KeyS) {
         let stamped_path = format!("assets/graphs/graph_{}.json", unix_timestamp_millis());
         command_writer.write(GraphCommandRequest::SaveGraphToPath { path: stamped_path });
@@ -205,6 +277,112 @@ fn graph_persistence_shortcuts(
     if ctrl_pressed && keys.just_pressed(KeyCode::KeyO) {
         command_writer.write(GraphCommandRequest::LoadGraph);
     }
+}
+
+fn handle_history_requests(
+    mut commands: Commands,
+    mut command_requests: MessageReader<GraphCommandRequest>,
+    activation: Option<Res<GraphPersistenceActivation>>,
+    history_settings: Res<GraphHistorySettings>,
+    registry: Res<NodeRegistry>,
+    mut graph: ResMut<Connecting>,
+    q_existing_nodes: Query<Entity, With<GraphNode>>,
+    live_document: Res<LiveGraphDocumentState>,
+    mut pending: ResMut<PendingGraphLoad>,
+    mut history: ResMut<GraphHistoryState>,
+    mut mutation_tracker: ResMut<GraphMutationTracker>,
+    mut status: ResMut<GraphPersistenceStatus>,
+    settings: Res<GraphPersistenceSettings>,
+    time: Res<Time>,
+) {
+    if !graph_persistence_enabled(activation.as_deref()) || !history_settings.enabled {
+        return;
+    }
+
+    if pending.is_pending {
+        return;
+    }
+
+    let mut origin = None;
+    for command in command_requests.read() {
+        match command {
+            GraphCommandRequest::UndoGraphChange => origin = Some(PendingGraphApplyOrigin::Undo),
+            GraphCommandRequest::RedoGraphChange => origin = Some(PendingGraphApplyOrigin::Redo),
+            _ => {}
+        }
+    }
+
+    let Some(origin) = origin else {
+        return;
+    };
+
+    let current_document = live_document.document.clone();
+    let target_document = match origin {
+        PendingGraphApplyOrigin::Undo => {
+            let Some(previous) = history.past.pop() else {
+                set_persistence_status(
+                    &mut status,
+                    GraphPersistenceStatusSeverity::Warning,
+                    "Nothing to undo.".to_string(),
+                    time.elapsed_secs_f64(),
+                    settings.status_duration_secs,
+                );
+                return;
+            };
+            history.future.push(current_document);
+            previous
+        }
+        PendingGraphApplyOrigin::Redo => {
+            let Some(next) = history.future.pop() else {
+                set_persistence_status(
+                    &mut status,
+                    GraphPersistenceStatusSeverity::Warning,
+                    "Nothing to redo.".to_string(),
+                    time.elapsed_secs_f64(),
+                    settings.status_duration_secs,
+                );
+                return;
+            };
+            history.past.push(current_document);
+            history.trim_to_limit(history_settings.max_entries);
+            next
+        }
+        PendingGraphApplyOrigin::Load => return,
+    };
+
+    let validation_issue_count = validate_graph_document(&target_document, &registry).len();
+    stage_graph_document_apply(
+        &mut commands,
+        &registry,
+        &mut graph,
+        &q_existing_nodes,
+        &mut pending,
+        target_document.clone(),
+        origin,
+        match origin {
+            PendingGraphApplyOrigin::Undo => "undo snapshot".to_string(),
+            PendingGraphApplyOrigin::Redo => "redo snapshot".to_string(),
+            PendingGraphApplyOrigin::Load => settings.file_path.clone(),
+        },
+        validation_issue_count,
+    );
+
+    history.awaiting_rebaseline = true;
+    history.last_document = Some(target_document.clone());
+    history.last_signature = graph_document_signature(&target_document).ok();
+    mutation_tracker.capture_requested = false;
+
+    set_persistence_status(
+        &mut status,
+        GraphPersistenceStatusSeverity::Info,
+        match origin {
+            PendingGraphApplyOrigin::Undo => "Applying undo snapshot...".to_string(),
+            PendingGraphApplyOrigin::Redo => "Applying redo snapshot...".to_string(),
+            PendingGraphApplyOrigin::Load => "Applying graph snapshot...".to_string(),
+        },
+        time.elapsed_secs_f64(),
+        settings.status_duration_secs,
+    );
 }
 
 fn handle_save_graph_requests(
@@ -320,6 +498,8 @@ fn handle_load_graph_requests(
     q_existing_nodes: Query<Entity, With<GraphNode>>,
     mut pending: ResMut<PendingGraphLoad>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
+    mut history: ResMut<GraphHistoryState>,
+    mut mutation_tracker: ResMut<GraphMutationTracker>,
     mut status: ResMut<GraphPersistenceStatus>,
     time: Res<Time>,
 ) {
@@ -429,66 +609,21 @@ fn handle_load_graph_requests(
     }
 
     pending.reset();
-
-    for entity in q_existing_nodes.iter() {
-        commands.entity(entity).despawn();
-    }
-    graph.connections.clear();
-
-    for saved_node in save_file.nodes {
-        let position = Vec2::new(saved_node.position[0], saved_node.position[1]);
-
-        let spawned = if let Some(definition) = registry.get(&saved_node.definition_id) {
-            let expected_inputs = definition.inputs().len();
-            let expected_outputs = definition.outputs().len();
-
-            if expected_inputs == saved_node.input_count
-                && expected_outputs == saved_node.output_count
-            {
-                spawn_node_from_definition_entity(&mut commands, &definition, position)
-            } else {
-                warn!(
-                    "Node definition {} port mismatch (saved {}/{}, runtime {}/{}) - using placeholder",
-                    saved_node.definition_id,
-                    saved_node.input_count,
-                    saved_node.output_count,
-                    expected_inputs,
-                    expected_outputs
-                );
-                pending.placeholder_count += 1;
-                spawn_placeholder_node_entity(
-                    &mut commands,
-                    &saved_node.definition_id,
-                    position,
-                    saved_node.input_count,
-                    saved_node.output_count,
-                )
-            }
-        } else {
-            warn!(
-                "Node definition {} not found during load - using placeholder",
-                saved_node.definition_id
-            );
-            pending.placeholder_count += 1;
-            spawn_placeholder_node_entity(
-                &mut commands,
-                &saved_node.definition_id,
-                position,
-                saved_node.input_count,
-                saved_node.output_count,
-            )
-        };
-
-        pending.node_map.insert(saved_node.id, spawned);
-        pending.node_inputs.push((spawned, saved_node.inputs));
-    }
-
-    pending.edges = save_file.edges;
-    pending.selected_node_ids = save_file.view.selected_node_ids;
-    pending.camera = save_file.view.camera;
-    pending.source_path = Some(path.clone());
-    pending.is_pending = true;
-    pending.validation_issue_count = validation_issues.len();
+    stage_graph_document_apply(
+        &mut commands,
+        &registry,
+        &mut graph,
+        &q_existing_nodes,
+        &mut pending,
+        save_file.clone(),
+        PendingGraphApplyOrigin::Load,
+        path.clone(),
+        validation_issues.len(),
+    );
+    history.clear();
+    history.awaiting_rebaseline = true;
+    history.last_document = Some(save_file);
+    mutation_tracker.capture_requested = false;
 
     if let Some(note) = migration_note {
         set_persistence_status(
@@ -628,7 +763,7 @@ fn finalize_pending_graph_load(
     let selected_ids: Vec<u64> = pending.selected_node_ids.drain(..).collect();
     for selected_id in selected_ids {
         if let Some(entity) = pending.node_map.get(&selected_id).copied() {
-            commands.entity(entity).insert(Selected);
+            commands.entity(entity).try_insert(Selected);
         }
     }
 
@@ -649,8 +784,8 @@ fn finalize_pending_graph_load(
     runtime.autosave_elapsed_secs = 0.0;
     runtime.open_confirm_until_secs = None;
 
-    let source_path = pending
-        .source_path
+    let source_label = pending
+        .source_label
         .clone()
         .unwrap_or_else(|| settings.file_path.clone());
 
@@ -660,8 +795,8 @@ fn finalize_pending_graph_load(
             &mut status,
             GraphPersistenceStatusSeverity::Warning,
             format!(
-                "Loaded {} with {} placeholder node(s), {} skipped link(s), and {} validation issue(s).",
-                source_path,
+                "{} with {} placeholder node(s), {} skipped link(s), and {} validation issue(s).",
+                pending_completion_prefix(pending.origin, &source_label),
                 pending.placeholder_count,
                 skipped_link_count,
                 pending.validation_issue_count
@@ -673,13 +808,74 @@ fn finalize_pending_graph_load(
         set_persistence_status(
             &mut status,
             GraphPersistenceStatusSeverity::Info,
-            format!("Graph loaded successfully from {}", source_path),
+            pending_completion_success(pending.origin, &source_label),
             time.elapsed_secs_f64(),
             settings.status_duration_secs,
         );
     }
 
     pending.reset();
+}
+
+fn pending_completion_prefix(origin: PendingGraphApplyOrigin, source_label: &str) -> String {
+    match origin {
+        PendingGraphApplyOrigin::Load => format!("Loaded {}", source_label),
+        PendingGraphApplyOrigin::Undo => "Undo restored graph snapshot".to_string(),
+        PendingGraphApplyOrigin::Redo => "Redo restored graph snapshot".to_string(),
+    }
+}
+
+fn pending_completion_success(origin: PendingGraphApplyOrigin, source_label: &str) -> String {
+    match origin {
+        PendingGraphApplyOrigin::Load => format!("Graph loaded successfully from {}", source_label),
+        PendingGraphApplyOrigin::Undo => "Undo restored graph snapshot".to_string(),
+        PendingGraphApplyOrigin::Redo => "Redo restored graph snapshot".to_string(),
+    }
+}
+
+fn capture_graph_history_snapshot(
+    activation: Option<Res<GraphPersistenceActivation>>,
+    settings: Res<GraphHistorySettings>,
+    live_document: Res<LiveGraphDocumentState>,
+    mut history: ResMut<GraphHistoryState>,
+    mut mutation_tracker: ResMut<GraphMutationTracker>,
+) {
+    if !graph_persistence_enabled(activation.as_deref()) || !settings.enabled {
+        mutation_tracker.capture_requested = false;
+        return;
+    }
+
+    let Ok(current_signature) = graph_document_signature(&live_document.document) else {
+        mutation_tracker.capture_requested = false;
+        return;
+    };
+
+    if history.awaiting_rebaseline || history.last_signature.is_none() {
+        history.rebaseline_to_document(&live_document.document);
+        mutation_tracker.capture_requested = false;
+        return;
+    }
+
+    if history
+        .last_signature
+        .as_ref()
+        .is_some_and(|signature| signature == &current_signature)
+    {
+        mutation_tracker.capture_requested = false;
+        return;
+    }
+
+    if mutation_tracker.capture_requested {
+        if let Some(previous) = history.last_document.take() {
+            history.past.push(previous);
+            history.trim_to_limit(settings.max_entries);
+        }
+        history.future.clear();
+    }
+
+    history.last_document = Some(live_document.document.clone());
+    history.last_signature = Some(current_signature);
+    mutation_tracker.capture_requested = false;
 }
 
 fn refresh_dirty_state(
@@ -847,6 +1043,85 @@ fn graph_persistence_enabled(activation: Option<&GraphPersistenceActivation>) ->
     activation
         .map(|activation| activation.enabled)
         .unwrap_or(true)
+}
+
+fn stage_graph_document_apply(
+    commands: &mut Commands,
+    registry: &NodeRegistry,
+    graph: &mut Connecting,
+    q_existing_nodes: &Query<Entity, With<GraphNode>>,
+    pending: &mut PendingGraphLoad,
+    document: GraphDocument,
+    origin: PendingGraphApplyOrigin,
+    source_label: String,
+    validation_issue_count: usize,
+) {
+    pending.reset();
+
+    for entity in q_existing_nodes.iter() {
+        commands.entity(entity).try_despawn();
+    }
+    graph.connections.clear();
+
+    let GraphDocument {
+        nodes, edges, view, ..
+    } = document;
+
+    for saved_node in nodes {
+        let position = Vec2::new(saved_node.position[0], saved_node.position[1]);
+
+        let spawned = if let Some(definition) = registry.get(&saved_node.definition_id) {
+            let expected_inputs = definition.inputs().len();
+            let expected_outputs = definition.outputs().len();
+
+            if expected_inputs == saved_node.input_count
+                && expected_outputs == saved_node.output_count
+            {
+                spawn_node_from_definition_entity(commands, &definition, position)
+            } else {
+                warn!(
+                    "Node definition {} port mismatch (saved {}/{}, runtime {}/{}) - using placeholder",
+                    saved_node.definition_id,
+                    saved_node.input_count,
+                    saved_node.output_count,
+                    expected_inputs,
+                    expected_outputs
+                );
+                pending.placeholder_count += 1;
+                spawn_placeholder_node_entity(
+                    commands,
+                    &saved_node.definition_id,
+                    position,
+                    saved_node.input_count,
+                    saved_node.output_count,
+                )
+            }
+        } else {
+            warn!(
+                "Node definition {} not found during apply - using placeholder",
+                saved_node.definition_id
+            );
+            pending.placeholder_count += 1;
+            spawn_placeholder_node_entity(
+                commands,
+                &saved_node.definition_id,
+                position,
+                saved_node.input_count,
+                saved_node.output_count,
+            )
+        };
+
+        pending.node_map.insert(saved_node.id, spawned);
+        pending.node_inputs.push((spawned, saved_node.inputs));
+    }
+
+    pending.edges = edges;
+    pending.selected_node_ids = view.selected_node_ids;
+    pending.camera = view.camera;
+    pending.source_label = Some(source_label);
+    pending.origin = origin;
+    pending.is_pending = true;
+    pending.validation_issue_count = validation_issue_count;
 }
 
 fn persist_graph_to_path(

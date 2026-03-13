@@ -2,9 +2,9 @@ use bevy::prelude::*;
 use serde_json::json;
 use univis_editor_app::{NodeGraphPlugin, prelude::*};
 use univis_editor_nodes_builtin::scene_support::{
-    apply_resolved_transform, base_entity_or_empty, entity_extension_input,
-    finish_entity_process, popup_color, popup_float, popup_string, resolve_transform,
-    scene_entity_output, transform_fallback_inputs, transform_override_input,
+    apply_resolved_transform, base_entity_or_empty, entity_extension_input, finish_entity_process,
+    popup_color, popup_float, popup_string, resolve_transform, scene_entity_output,
+    transform_fallback_inputs, transform_override_input,
 };
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
@@ -111,7 +111,9 @@ impl NodeDefinition for SpriteFrameNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Small companion node that proves external nodes can compose over built-in scene entities")
+        Some(
+            "Small companion node that proves external nodes can compose over built-in scene entities",
+        )
     }
 
     fn color(&self) -> Color {
@@ -119,10 +121,7 @@ impl NodeDefinition for SpriteFrameNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![
-            entity_extension_input(),
-            popup_string("Frame Tag", "idle"),
-        ]
+        vec![entity_extension_input(), popup_string("Frame Tag", "idle")]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
