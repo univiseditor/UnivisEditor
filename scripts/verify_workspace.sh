@@ -36,6 +36,7 @@ persistence_checks=(
 persistence_tests=(
   "cargo test -p univis_editor_persistence --test persistence_defaults --quiet"
   "cargo test -p univis_editor_persistence --test persistence_format --quiet"
+  "cargo test -p univis_editor_persistence --test workflow_smoke --quiet"
 )
 
 app_checks=(

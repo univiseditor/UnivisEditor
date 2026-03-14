@@ -46,6 +46,7 @@ impl Plugin for NodeUiPlugin {
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
             .add_plugins(NodePopupPlugin)
+            .add_systems(Update, sanitize_graph_editor_state)
             .add_systems(
                 Update,
                 (camera_controller, node_drag_system, node_highlight_system).chain(),
@@ -90,9 +91,6 @@ pub mod prelude {
     pub use univis_editor_runtime::prelude::*;
     pub use univis_node_graph::prelude::*;
 
-    pub use crate::DeleteSelectedNodesRequest;
-    pub use crate::GraphEditingUiActivation;
-    pub use crate::NodeUiPlugin;
     pub use crate::editor::*;
     pub use crate::interaction::*;
     pub use crate::menu::*;
@@ -100,4 +98,7 @@ pub mod prelude {
     pub use crate::node_spawn::*;
     pub use crate::widgets::prelude::*;
     pub use crate::wire::*;
+    pub use crate::DeleteSelectedNodesRequest;
+    pub use crate::GraphEditingUiActivation;
+    pub use crate::NodeUiPlugin;
 }

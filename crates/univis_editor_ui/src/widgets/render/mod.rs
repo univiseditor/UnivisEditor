@@ -7,8 +7,8 @@ use bevy::{
     ecs::{
         query::ROQueryItem,
         system::{
-            SystemParamItem,
             lifetimeless::{Read, SRes},
+            SystemParamItem,
         },
     },
     image::BevyDefault,
@@ -17,23 +17,22 @@ use bevy::{
     pbr::MeshPipelineKey,
     prelude::*,
     render::{
-        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
             RenderCommandResult, SetItemPipeline, ViewSortedRenderPhases,
         },
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
-            BindGroupLayoutEntries, BlendState, ColorTargetState, ColorWrites, CompareFunction,
-            DepthBiasState, DepthStencilState, DynamicUniformBuffer, FragmentState,
-            MultisampleState, PipelineCache, PolygonMode, PrimitiveState, RenderPipelineDescriptor,
-            ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines,
-            StencilFaceState, StencilState, TextureFormat, VertexState,
-            binding_types::uniform_buffer,
+            binding_types::uniform_buffer, BindGroup, BindGroupEntries, BindGroupLayout,
+            BindGroupLayoutDescriptor, BindGroupLayoutEntries, BlendState, ColorTargetState,
+            ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, DynamicUniformBuffer,
+            FragmentState, MultisampleState, PipelineCache, PolygonMode, PrimitiveState,
+            RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
+            SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, VertexState,
         },
         renderer::{RenderDevice, RenderQueue},
         sync_world::RenderEntity,
         view::{ExtractedView, RenderVisibleEntities, ViewTarget},
+        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
     },
 };
 

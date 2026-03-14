@@ -23,3 +23,5 @@ assets/graphs/
 
 # Local editor preferences
 .univis/
+
+.vscode

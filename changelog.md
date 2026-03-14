@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-14
+
+- Hardened graph-editor mutation flows by sanitizing stale drag, wire, popup, selection, and live-document state after delete/load/undo/redo paths instead of letting invalid entity references linger.
+- Added `workflow_smoke` persistence coverage for `spawn -> connect -> save/load` and `spawn -> connect -> undo/redo`, and wired it into the staged verification script.
+- Reduced idle editor work by refreshing wire visuals only when links, drag state, settings, or port transforms actually change, and by skipping infinite-grid sync passes when settings are unchanged.
+- Expanded editor workflow persistence with saved session settings, tracked `Recent Files`, and automatic persistence of those entries into `.univis/editor_settings.json`.
+- Extended the `CanvasIsland` file/settings surfaces with `Reset Settings`, `Recent Files`, and `Recover Latest Autosave`, backed by a shared latest-backup lookup in graph persistence.
+- Continued polishing the graph-native editor presentation by persisting grid and wire display settings and ignoring local IDE metadata in Git.
+
 ## 2026-03-10
 
 - Upgraded the workspace Bevy dependency to `0.18.0`.

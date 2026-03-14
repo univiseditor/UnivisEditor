@@ -1,13 +1,16 @@
 //! Graph persistence resources and systems.
 use crate::format::{
-    ParsedGraphDocument, PreparedGraphWrite, graph_document_signature,
-    parse_graph_document_payload, prepare_graph_document_write, serialize_graph_document,
+    graph_document_signature, parse_graph_document_payload, prepare_graph_document_write,
+    serialize_graph_document, ParsedGraphDocument, PreparedGraphWrite,
 };
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use univis_editor_ui::menu::ContextMenuState;
+use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
@@ -179,6 +182,26 @@ struct PendingGraphLoad {
     validation_issue_count: usize,
 }
 
+#[derive(SystemParam)]
+struct MutationUiState<'w> {
+    drag_state: ResMut<'w, DragState>,
+    wire_state: ResMut<'w, WireConnectionState>,
+    popup: ResMut<'w, NodePopupState>,
+    menu_state: ResMut<'w, ContextMenuState>,
+    overlay: ResMut<'w, GraphOverlayState>,
+}
+
+impl MutationUiState<'_> {
+    fn reset(&mut self) {
+        self.drag_state.clear();
+        self.wire_state.clear();
+        self.popup.open_for = None;
+        self.menu_state.is_open = false;
+        self.menu_state.search_query.clear();
+        self.overlay.active_surface = GraphOverlaySurface::None;
+    }
+}
+
 impl PendingGraphLoad {
     fn reset(&mut self) {
         self.is_pending = false;
@@ -292,6 +315,7 @@ fn handle_history_requests(
     mut history: ResMut<GraphHistoryState>,
     mut mutation_tracker: ResMut<GraphMutationTracker>,
     mut status: ResMut<GraphPersistenceStatus>,
+    mut ui_state: MutationUiState,
     settings: Res<GraphPersistenceSettings>,
     time: Res<Time>,
 ) {
@@ -351,6 +375,7 @@ fn handle_history_requests(
     };
 
     let validation_issue_count = validate_graph_document(&target_document, &registry).len();
+    ui_state.reset();
     stage_graph_document_apply(
         &mut commands,
         &registry,
@@ -501,6 +526,7 @@ fn handle_load_graph_requests(
     mut history: ResMut<GraphHistoryState>,
     mut mutation_tracker: ResMut<GraphMutationTracker>,
     mut status: ResMut<GraphPersistenceStatus>,
+    mut ui_state: MutationUiState,
     time: Res<Time>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
@@ -609,6 +635,7 @@ fn handle_load_graph_requests(
     }
 
     pending.reset();
+    ui_state.reset();
     stage_graph_document_apply(
         &mut commands,
         &registry,
@@ -1226,11 +1253,45 @@ fn write_backup_file(
     Ok(backup_path)
 }
 
+pub fn latest_backup_file(backup_directory: &str) -> Result<Option<PathBuf>, String> {
+    let backup_dir = Path::new(backup_directory);
+    if !backup_dir.exists() {
+        return Ok(None);
+    }
+
+    let mut files = collect_backup_files(backup_dir)?;
+    if files.is_empty() {
+        return Ok(None);
+    }
+
+    files.sort_by_key(|(_, modified)| *modified);
+    Ok(files.pop().map(|(path, _)| path))
+}
+
 fn prune_backup_files(backup_dir: &Path, max_backup_files: usize) -> Result<(), String> {
     if max_backup_files == 0 {
         return Ok(());
     }
 
+    let mut files = collect_backup_files(backup_dir)?;
+
+    if files.len() <= max_backup_files {
+        return Ok(());
+    }
+
+    files.sort_by_key(|(_, modified)| *modified);
+
+    let remove_count = files.len().saturating_sub(max_backup_files);
+    for (path, _) in files.into_iter().take(remove_count) {
+        if let Err(err) = fs::remove_file(&path) {
+            warn!("Failed to prune backup file {}: {}", path.display(), err);
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_backup_files(backup_dir: &Path) -> Result<Vec<(PathBuf, SystemTime)>, String> {
     let mut files = Vec::new();
     for entry in fs::read_dir(backup_dir).map_err(|err| {
         format!(
@@ -1256,20 +1317,7 @@ fn prune_backup_files(backup_dir: &Path, max_backup_files: usize) -> Result<(), 
         files.push((path, modified));
     }
 
-    if files.len() <= max_backup_files {
-        return Ok(());
-    }
-
-    files.sort_by_key(|(_, modified)| *modified);
-
-    let remove_count = files.len().saturating_sub(max_backup_files);
-    for (path, _) in files.into_iter().take(remove_count) {
-        if let Err(err) = fs::remove_file(&path) {
-            warn!("Failed to prune backup file {}: {}", path.display(), err);
-        }
-    }
-
-    Ok(())
+    Ok(files)
 }
 
 fn unix_timestamp_millis() -> u128 {

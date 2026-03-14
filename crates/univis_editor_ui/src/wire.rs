@@ -90,24 +90,15 @@ pub fn wire_complete_system(
         wire_state.node_from,
     ) {
         let Ok((_, _, from_port_data)) = ports.get(from_port_entity) else {
-            wire_state.dragging_from = None;
-            wire_state.node_from = None;
-            wire_state.index_from = None;
-            wire_state.is_dragging = false;
+            wire_state.clear();
             return;
         };
         let Ok(from_graph_node) = q_nodes.get(from_node) else {
-            wire_state.dragging_from = None;
-            wire_state.node_from = None;
-            wire_state.index_from = None;
-            wire_state.is_dragging = false;
+            wire_state.clear();
             return;
         };
         let Some(from_definition) = registry.get(&from_graph_node.definition_id) else {
-            wire_state.dragging_from = None;
-            wire_state.node_from = None;
-            wire_state.index_from = None;
-            wire_state.is_dragging = false;
+            wire_state.clear();
             return;
         };
 
@@ -212,10 +203,7 @@ pub fn wire_complete_system(
         }
     }
 
-    wire_state.dragging_from = None;
-    wire_state.node_from = None;
-    wire_state.index_from = None;
-    wire_state.is_dragging = false;
+    wire_state.clear();
 }
 
 pub fn wire_visuals_system(
@@ -224,8 +212,27 @@ pub fn wire_visuals_system(
     wire_state: Res<WireConnectionState>,
     settings: Res<EditorSettings>,
     port_transforms: Query<(&GlobalTransform, &GraphPort)>,
+    changed_ports: Query<
+        (),
+        (
+            With<GraphPort>,
+            Or<(Changed<GlobalTransform>, Changed<GraphPort>)>,
+        ),
+    >,
     existing_visuals: Query<Entity, With<WireVisualSegment>>,
 ) {
+    let should_refresh = links.is_changed()
+        || wire_state.is_changed()
+        || settings.is_changed()
+        || !changed_ports.is_empty();
+    if !should_refresh {
+        return;
+    }
+
+    if links.connections.is_empty() && !wire_state.is_dragging && existing_visuals.is_empty() {
+        return;
+    }
+
     for entity in existing_visuals.iter() {
         commands.entity(entity).try_despawn();
     }

@@ -1,7 +1,7 @@
 //! Node settings popup rendered over the graph canvas.
 use crate::prelude::*;
-use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::ButtonState;
 use bevy::picking::prelude::Pickable;
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
@@ -677,6 +677,7 @@ fn sync_popup_text_field_visuals(
 
 fn sync_popup_anchor_world(
     mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
     q_nodes: Query<&Transform, With<GraphNode>>,
 ) {
     let Some(node_entity) = popup.open_for else {
@@ -685,6 +686,9 @@ fn sync_popup_anchor_world(
 
     let Ok(transform) = q_nodes.get(node_entity) else {
         popup.open_for = None;
+        if overlay.active_surface == GraphOverlaySurface::NodePopup {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
         return;
     };
     popup.anchor_world = transform.translation.truncate();
@@ -736,6 +740,7 @@ fn update_popup_panel_position(
 fn rebuild_popup_content(
     mut commands: Commands,
     mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
     registry: Res<NodeRegistry>,
     q_nodes: Query<Ref<GraphNode>>,
     content_query: Query<Entity, With<NodePopupContent>>,
@@ -768,6 +773,9 @@ fn rebuild_popup_content(
 
     let Ok(graph_node) = q_nodes.get(node_entity) else {
         popup.open_for = None;
+        if overlay.active_surface == GraphOverlaySurface::NodePopup {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
         return;
     };
     let text_field_focused = popup_text_fields.iter().any(|field| field.focused);
@@ -776,6 +784,9 @@ fn rebuild_popup_content(
     }
     let Some(definition) = registry.get(&graph_node.definition_id) else {
         popup.open_for = None;
+        if overlay.active_surface == GraphOverlaySurface::NodePopup {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
         return;
     };
     let inputs = definition.inputs();

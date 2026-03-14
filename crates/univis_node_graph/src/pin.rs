@@ -15,6 +15,15 @@ pub struct DragState {
     pub last_mouse_pos: Vec2,
 }
 
+impl DragState {
+    pub fn clear(&mut self) {
+        self.active_entity = None;
+        self.initial_mouse_pos = Vec2::ZERO;
+        self.initial_node_pos = Vec2::ZERO;
+        self.last_mouse_pos = Vec2::ZERO;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GraphLink {
     pub from_node: Entity,
@@ -32,6 +41,20 @@ pub struct WireConnectionState {
     pub index_from: Option<usize>,
     pub current_mouse_world_pos: Vec2,
     pub is_dragging: bool,
+}
+
+impl WireConnectionState {
+    pub fn clear(&mut self) {
+        self.dragging_from = None;
+        self.node_from = None;
+        self.index_from = None;
+        self.current_mouse_world_pos = Vec2::ZERO;
+        self.is_dragging = false;
+    }
+
+    pub fn references_node(&self, entity: Entity) -> bool {
+        self.node_from == Some(entity)
+    }
 }
 
 #[derive(Resource, Debug, Default)]

@@ -211,6 +211,36 @@ impl LiveGraphDocumentState {
         };
         self.document.disconnect_input(node_id, input_index)
     }
+
+    pub fn retain_existing_entities<F>(&mut self, mut exists: F) -> bool
+    where
+        F: FnMut(Entity) -> bool,
+    {
+        let original_mapping_count = self.entity_to_node_id.len();
+        let original_selected_count = self.document.view.selected_node_ids.len();
+        let original_node_count = self.document.nodes.len();
+        let original_edge_count = self.document.edges.len();
+
+        self.entity_to_node_id.retain(|entity, _| exists(*entity));
+        self.node_id_to_entity
+            .retain(|_, entity| self.entity_to_node_id.contains_key(entity));
+        self.document
+            .nodes
+            .retain(|node| self.node_id_to_entity.contains_key(&node.id));
+        self.document.edges.retain(|edge| {
+            self.node_id_to_entity.contains_key(&edge.from_node_id)
+                && self.node_id_to_entity.contains_key(&edge.to_node_id)
+        });
+        self.document
+            .view
+            .selected_node_ids
+            .retain(|node_id| self.node_id_to_entity.contains_key(node_id));
+
+        original_mapping_count != self.entity_to_node_id.len()
+            || original_selected_count != self.document.view.selected_node_ids.len()
+            || original_node_count != self.document.nodes.len()
+            || original_edge_count != self.document.edges.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

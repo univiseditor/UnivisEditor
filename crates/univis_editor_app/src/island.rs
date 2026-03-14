@@ -1,11 +1,12 @@
+use crate::editor_settings_persistence::EditorWorkflowState;
 use crate::panels::FloatingPanelsSettings;
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use univis_editor_persistence::graph_persistence::{
-    GraphHistorySettings, GraphPersistenceRuntimeState, GraphPersistenceSettings,
-    GraphPersistenceStatus, GraphPersistenceStatusSeverity,
+    latest_backup_file, GraphHistorySettings, GraphPersistenceRuntimeState,
+    GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
 };
 use univis_editor_ui::prelude::{EditorSettings, GraphCamera};
 use univis_node_graph::commands::{GraphCommandRequest, GraphOverlayState, GraphOverlaySurface};
@@ -66,6 +67,19 @@ struct CanvasIslandMenuActionButton {
     action: CanvasIslandMenuAction,
 }
 
+#[derive(Component)]
+struct CanvasIslandRecentFileButton {
+    path: String,
+}
+
+#[derive(Component)]
+struct CanvasIslandRecoverAutosaveButton {
+    path: String,
+}
+
+#[derive(Component)]
+struct CanvasIslandFileDynamicContent;
+
 #[derive(Debug, Clone, Copy)]
 enum CanvasIslandSettingsAction {
     ToggleAutosave,
@@ -81,6 +95,7 @@ enum CanvasIslandSettingsAction {
     IncreaseGridPointSize,
     CycleWireStyle,
     ToggleWireColorFromOutput,
+    ResetToDefaults,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -138,6 +153,8 @@ impl Plugin for CanvasIslandPlugin {
                     handle_canvas_island_shortcuts,
                     handle_canvas_island_trigger_buttons,
                     handle_canvas_island_menu_actions,
+                    handle_canvas_island_recent_file_buttons,
+                    handle_canvas_island_recover_autosave_buttons,
                     handle_canvas_island_settings_actions,
                     handle_canvas_island_search_typing,
                     handle_canvas_island_search_result_buttons,
@@ -145,6 +162,7 @@ impl Plugin for CanvasIslandPlugin {
                     sync_canvas_island_ui_target,
                     sync_canvas_island_overlay,
                     update_canvas_island_menu_visibility,
+                    rebuild_canvas_island_file_panel,
                     rebuild_canvas_island_search_panel,
                     sync_canvas_island_settings_values,
                     sync_canvas_island_status,
@@ -344,16 +362,7 @@ fn setup_canvas_island_ui(mut commands: Commands) {
                     });
             });
 
-            spawn_canvas_island_menu_panel(
-                root,
-                CanvasIslandSurface::FileMenu,
-                "File",
-                &[
-                    ("Save", "Ctrl+S", CanvasIslandMenuAction::Save),
-                    ("Save As", "Ctrl+Shift+S", CanvasIslandMenuAction::SaveAs),
-                    ("Open", "Ctrl+O", CanvasIslandMenuAction::Open),
-                ],
-            );
+            spawn_canvas_island_file_panel(root);
 
             spawn_canvas_island_menu_panel(
                 root,
@@ -369,6 +378,88 @@ fn setup_canvas_island_ui(mut commands: Commands) {
             spawn_canvas_island_search_panel(root);
             spawn_canvas_island_settings_panel(root);
         });
+}
+
+fn spawn_canvas_island_file_panel(root: &mut ChildSpawnerCommands) {
+    root.spawn((
+        Node {
+            width: Val::Px(280.0),
+            display: Display::None,
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(8.0)),
+            row_gap: Val::Px(6.0),
+            border_radius: BorderRadius::all(Val::Px(22.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.05, 0.06, 0.08, 0.94)),
+        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+        CanvasIslandMenuPanel {
+            surface: CanvasIslandSurface::FileMenu,
+        },
+    ))
+    .with_children(|panel| {
+        panel.spawn((
+            Text::new("File"),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5)),
+        ));
+
+        for (label, shortcut, action) in [
+            ("Save", "Ctrl+S", CanvasIslandMenuAction::Save),
+            ("Save As", "Ctrl+Shift+S", CanvasIslandMenuAction::SaveAs),
+            ("Open", "Ctrl+O", CanvasIslandMenuAction::Open),
+        ] {
+            panel
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(34.0),
+                        padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                        justify_content: JustifyContent::SpaceBetween,
+                        align_items: AlignItems::Center,
+                        border_radius: BorderRadius::all(Val::Px(14.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                    CanvasIslandInteractive,
+                    CanvasIslandMenuActionButton { action },
+                ))
+                .with_children(|button| {
+                    button.spawn((
+                        Text::new(label),
+                        TextFont {
+                            font_size: 12.5,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                    ));
+
+                    button.spawn((
+                        Text::new(shortcut),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
+                    ));
+                });
+        }
+
+        panel.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                padding: UiRect::top(Val::Px(2.0)),
+                ..default()
+            },
+            CanvasIslandFileDynamicContent,
+        ));
+    });
 }
 
 fn sync_canvas_island_ui_target(
@@ -619,6 +710,12 @@ fn spawn_canvas_island_settings_panel(root: &mut ChildSpawnerCommands) {
             CanvasIslandSettingsAction::ToggleWireColorFromOutput,
             CanvasIslandSettingsValueKind::WireColorFromOutput,
         );
+        spawn_canvas_island_setting_action_row(
+            panel,
+            "Reset Settings",
+            "Reset",
+            CanvasIslandSettingsAction::ResetToDefaults,
+        );
     });
 }
 
@@ -757,6 +854,63 @@ fn spawn_canvas_island_setting_stepper_row(
         });
 }
 
+fn spawn_canvas_island_setting_action_row(
+    panel: &mut ChildSpawnerCommands,
+    label: &str,
+    button_label: &str,
+    action: CanvasIslandSettingsAction,
+) {
+    panel
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(34.0),
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(14.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 12.5,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            row.spawn((
+                Button,
+                Node {
+                    min_width: Val::Px(82.0),
+                    height: Val::Px(24.0),
+                    padding: UiRect::horizontal(Val::Px(10.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border_radius: BorderRadius::all(Val::Px(999.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.86, 0.28, 0.24, 0.18)),
+                CanvasIslandInteractive,
+                CanvasIslandSettingsActionButton { action },
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    Text::new(button_label),
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+            });
+        });
+}
+
 fn handle_canvas_island_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut island: ResMut<CanvasIslandState>,
@@ -849,6 +1003,56 @@ fn handle_canvas_island_menu_actions(
     }
 }
 
+fn handle_canvas_island_recent_file_buttons(
+    mut island: ResMut<CanvasIslandState>,
+    mut overlay: ResMut<GraphOverlayState>,
+    buttons: Query<
+        (&Interaction, &CanvasIslandRecentFileButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
+) {
+    for (interaction, button) in buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        command_writer.write(GraphCommandRequest::LoadGraphFromPath {
+            path: button.path.clone(),
+            force_if_dirty: true,
+        });
+        island.surface = CanvasIslandSurface::Compact;
+        if overlay.active_surface == GraphOverlaySurface::CanvasIslandMenu {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
+    }
+}
+
+fn handle_canvas_island_recover_autosave_buttons(
+    mut island: ResMut<CanvasIslandState>,
+    mut overlay: ResMut<GraphOverlayState>,
+    buttons: Query<
+        (&Interaction, &CanvasIslandRecoverAutosaveButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
+) {
+    for (interaction, button) in buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        command_writer.write(GraphCommandRequest::LoadGraphFromPath {
+            path: button.path.clone(),
+            force_if_dirty: true,
+        });
+        island.surface = CanvasIslandSurface::Compact;
+        if overlay.active_surface == GraphOverlaySurface::CanvasIslandMenu {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
+    }
+}
+
 fn handle_canvas_island_settings_actions(
     buttons: Query<(&Interaction, &CanvasIslandSettingsActionButton), Changed<Interaction>>,
     mut persistence_settings: ResMut<GraphPersistenceSettings>,
@@ -903,6 +1107,14 @@ fn handle_canvas_island_settings_actions(
             }
             CanvasIslandSettingsAction::ToggleWireColorFromOutput => {
                 editor_settings.wire_color_from_output = !editor_settings.wire_color_from_output;
+            }
+            CanvasIslandSettingsAction::ResetToDefaults => {
+                let persistence_defaults = GraphPersistenceSettings::default();
+                persistence_settings.pretty_json = persistence_defaults.pretty_json;
+                persistence_settings.autosave_enabled = persistence_defaults.autosave_enabled;
+                *history_settings = GraphHistorySettings::default();
+                *floating_panels = FloatingPanelsSettings::default();
+                *editor_settings = EditorSettings::default();
             }
         }
     }
@@ -1027,6 +1239,214 @@ fn update_canvas_island_menu_visibility(
             Display::None
         };
     }
+}
+
+fn rebuild_canvas_island_file_panel(
+    mut commands: Commands,
+    island: Res<CanvasIslandState>,
+    workflow: Res<EditorWorkflowState>,
+    persistence_settings: Res<GraphPersistenceSettings>,
+    runtime: Res<GraphPersistenceRuntimeState>,
+    dynamic_content_entity: Query<Entity, With<CanvasIslandFileDynamicContent>>,
+    children_query: Query<&Children>,
+) {
+    if !island.is_changed()
+        && !workflow.is_changed()
+        && !persistence_settings.is_changed()
+        && !runtime.is_changed()
+    {
+        return;
+    }
+
+    let Ok(content_entity) = dynamic_content_entity.single() else {
+        return;
+    };
+
+    if let Ok(existing_children) = children_query.get(content_entity) {
+        for child in existing_children.iter() {
+            commands.entity(child).try_despawn();
+        }
+    }
+
+    if island.surface != CanvasIslandSurface::FileMenu {
+        return;
+    }
+
+    let latest_backup_path = latest_backup_file(&persistence_settings.backup_directory)
+        .ok()
+        .flatten()
+        .and_then(|path| path.to_str().map(|path| path.to_string()));
+    let recent_files: Vec<String> = workflow
+        .recent_files
+        .iter()
+        .filter(|path| Path::new(path).is_file())
+        .cloned()
+        .collect();
+
+    commands.queue(move |world: &mut World| {
+        let Ok(mut content_entity_mut) = world.get_entity_mut(content_entity) else {
+            return;
+        };
+
+        content_entity_mut.with_children(|content| {
+            content.spawn((
+                Text::new("Recovery"),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+            ));
+
+            match latest_backup_path.as_deref() {
+                Some(path) => {
+                    let file_name = Path::new(path)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(path)
+                        .to_string();
+
+                    content
+                        .spawn((
+                            Button,
+                            Node {
+                                width: Val::Percent(100.0),
+                                min_height: Val::Px(42.0),
+                                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::FlexStart,
+                                border_radius: BorderRadius::all(Val::Px(14.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.36, 0.58, 0.96, 0.16)),
+                            CanvasIslandInteractive,
+                            CanvasIslandRecoverAutosaveButton {
+                                path: path.to_string(),
+                            },
+                        ))
+                        .with_children(|button| {
+                            button
+                                .spawn((
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: Val::Px(2.0),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::NONE),
+                                ))
+                                .with_children(|column| {
+                                    column.spawn((
+                                        Text::new("Recover Latest Autosave"),
+                                        TextFont {
+                                            font_size: 12.5,
+                                            ..default()
+                                        },
+                                        TextColor(Color::WHITE),
+                                    ));
+
+                                    column.spawn((
+                                        Text::new(file_name),
+                                        TextFont {
+                                            font_size: 10.5,
+                                            ..default()
+                                        },
+                                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5)),
+                                    ));
+                                });
+                        });
+                }
+                None => {
+                    content.spawn((
+                        Text::new("No autosave backup found"),
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                    ));
+                }
+            }
+
+            content.spawn((
+                Text::new("Recent Files"),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+            ));
+
+            if recent_files.is_empty() {
+                content.spawn((
+                    Text::new("No recent files"),
+                    TextFont {
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                ));
+            } else {
+                for path in &recent_files {
+                    let file_name = Path::new(path)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(path)
+                        .to_string();
+
+                    content
+                        .spawn((
+                            Button,
+                            Node {
+                                width: Val::Percent(100.0),
+                                min_height: Val::Px(42.0),
+                                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::FlexStart,
+                                border_radius: BorderRadius::all(Val::Px(14.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                            CanvasIslandInteractive,
+                            CanvasIslandRecentFileButton {
+                                path: path.to_string(),
+                            },
+                        ))
+                        .with_children(|button| {
+                            button
+                                .spawn((
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: Val::Px(2.0),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::NONE),
+                                ))
+                                .with_children(|column| {
+                                    column.spawn((
+                                        Text::new(file_name),
+                                        TextFont {
+                                            font_size: 12.5,
+                                            ..default()
+                                        },
+                                        TextColor(Color::WHITE),
+                                    ));
+
+                                    column.spawn((
+                                        Text::new(path),
+                                        TextFont {
+                                            font_size: 10.5,
+                                            ..default()
+                                        },
+                                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+                                    ));
+                                });
+                        });
+                }
+            }
+        });
+    });
 }
 
 fn rebuild_canvas_island_search_panel(

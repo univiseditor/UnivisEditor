@@ -30,6 +30,68 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
     )
 }
 
+pub fn sanitize_graph_editor_state(
+    mut live_document: ResMut<LiveGraphDocumentState>,
+    mut connect: ResMut<Connecting>,
+    mut drag_state: ResMut<DragState>,
+    mut wire_state: ResMut<WireConnectionState>,
+    mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
+    q_nodes: Query<(), With<GraphNode>>,
+    q_ports: Query<&GraphPort>,
+) {
+    let node_exists = |entity: Entity| q_nodes.get(entity).is_ok();
+    let port_matches = |port_entity: Entity,
+                        expected_node: Entity,
+                        expected_type: PortType,
+                        expected_index: usize| {
+        q_ports.get(port_entity).is_ok_and(|port| {
+            port.node_entity == expected_node
+                && port.port_type == expected_type
+                && port.index == expected_index
+        })
+    };
+
+    connect.connections.retain(|link| {
+        node_exists(link.from_node)
+            && node_exists(link.to_node)
+            && port_matches(
+                link.from_port,
+                link.from_node,
+                PortType::Output,
+                link.from_index,
+            )
+            && port_matches(link.to_port, link.to_node, PortType::Input, link.to_index)
+    });
+
+    live_document.retain_existing_entities(|entity| q_nodes.get(entity).is_ok());
+
+    if drag_state
+        .active_entity
+        .is_some_and(|entity| !node_exists(entity))
+    {
+        drag_state.clear();
+    }
+
+    if wire_state
+        .node_from
+        .is_some_and(|entity| !node_exists(entity))
+        || wire_state
+            .dragging_from
+            .is_some_and(|entity| q_ports.get(entity).is_err())
+    {
+        wire_state.clear();
+    }
+
+    if popup.open_for.is_some_and(|entity| !node_exists(entity)) {
+        popup.open_for = None;
+    }
+
+    if overlay.active_surface == GraphOverlaySurface::NodePopup && popup.open_for.is_none() {
+        overlay.active_surface = GraphOverlaySurface::None;
+    }
+}
+
 /// Selects the node under the pointer and mirrors that selection into the live document.
 pub fn selection_system(
     mut commands: Commands,
@@ -113,6 +175,10 @@ pub fn delete_node_system(
     mut delete_requests: MessageReader<DeleteSelectedNodesRequest>,
     mut live_document: ResMut<LiveGraphDocumentState>,
     mut connect: ResMut<Connecting>,
+    mut drag_state: ResMut<DragState>,
+    mut wire_state: ResMut<WireConnectionState>,
+    mut popup: ResMut<NodePopupState>,
+    mut overlay: ResMut<GraphOverlayState>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
@@ -129,18 +195,48 @@ pub fn delete_node_system(
         return;
     }
 
-    let mut changed = false;
-    for entity in live_document.delete_selected_entities() {
-        commands.entity(entity).try_despawn();
-        connect
-            .connections
-            .retain(|link| link.from_node != entity && link.to_node != entity);
-        changed = true;
+    let deleted_entities = live_document.delete_selected_entities();
+    if deleted_entities.is_empty() {
+        return;
     }
 
-    if changed {
-        mutations.mark_changed();
+    let deleted_set: HashSet<Entity> = deleted_entities.iter().copied().collect();
+    for entity in deleted_entities {
+        commands.entity(entity).try_despawn();
     }
+
+    connect.connections.retain(|link| {
+        !deleted_set.contains(&link.from_node)
+            && !deleted_set.contains(&link.to_node)
+            && !deleted_set.contains(&link.from_port)
+            && !deleted_set.contains(&link.to_port)
+    });
+
+    if drag_state
+        .active_entity
+        .is_some_and(|entity| deleted_set.contains(&entity))
+    {
+        drag_state.clear();
+    }
+
+    if wire_state
+        .node_from
+        .is_some_and(|entity| deleted_set.contains(&entity))
+    {
+        wire_state.clear();
+    }
+
+    if popup
+        .open_for
+        .is_some_and(|entity| deleted_set.contains(&entity))
+    {
+        popup.open_for = None;
+        if overlay.active_surface == GraphOverlaySurface::NodePopup {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
+    }
+
+    mutations.mark_changed();
 }
 
 pub fn request_delete_selected_nodes(

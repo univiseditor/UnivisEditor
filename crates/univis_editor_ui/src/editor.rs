@@ -180,6 +180,10 @@ fn sync_infinite_grid_settings(
     settings: Res<EditorSettings>,
     mut grids: Query<&mut InfiniteGridSettings>,
 ) {
+    if !settings.is_changed() {
+        return;
+    }
+
     let palette = settings.grid_color_palette.colors();
     for mut grid in grids.iter_mut() {
         if grid.display_mode != settings.grid_display_mode {
