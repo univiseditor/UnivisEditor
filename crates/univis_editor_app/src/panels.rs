@@ -4,10 +4,9 @@ use serde::{Deserialize, Serialize};
 use univis_editor_persistence::graph_persistence::{
     GraphHistoryState, GraphPersistenceRuntimeState, GraphPersistenceStatus,
 };
-use univis_editor_runtime::GraphRuntimeDiagnostics;
+use univis_editor_runtime::{GraphRuntimeDiagnostics, GraphSceneOutputs};
 use univis_editor_ui::prelude::{GraphCamera, Selected};
-use univis_node_graph::prelude::{GraphNode, LiveGraphDocumentState, NodeRegistry};
-use univis_scene::SceneDocument;
+use univis_node_graph::prelude::{LiveGraphDocumentState, NodeRegistry};
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FloatingPanelsSettings {
@@ -284,53 +283,32 @@ fn refresh_editor_diagnostics_summary(
 }
 
 fn refresh_scene_preview_summary(
-    q_nodes: Query<(Entity, &GraphNode, Option<&Selected>)>,
+    selected_nodes: Query<(), With<Selected>>,
+    scene_outputs: Res<GraphSceneOutputs>,
     live_document: Res<LiveGraphDocumentState>,
     mut summary: ResMut<ScenePreviewSummary>,
 ) {
-    let selected_sink = q_nodes.iter().find_map(|(entity, node, selected)| {
-        (selected.is_some() && node.definition_id.as_str() == "scene/scene")
-            .then_some((entity, node))
-    });
-    let scene_sink = selected_sink.or_else(|| {
-        q_nodes.iter().find_map(|(entity, node, _)| {
-            (node.definition_id.as_str() == "scene/scene").then_some((entity, node))
-        })
-    });
+    let selected_sink = scene_outputs
+        .sinks
+        .iter()
+        .find(|sink| selected_nodes.get(sink.node_entity).is_ok());
+    let scene_sink = selected_sink.or_else(|| scene_outputs.sinks.first());
 
-    let Some((sink_entity, sink_node)) = scene_sink else {
+    let Some(scene_sink) = scene_sink else {
         summary.text = "No scene sink node in the current graph.".to_string();
         return;
     };
 
-    let Some(entity_value) = sink_node
-        .values
-        .inputs
-        .first()
-        .and_then(|value| value.as_entity())
-        .cloned()
-    else {
+    let Some(scene) = scene_sink.scene.as_ref() else {
         summary.text = "Scene sink exists, but its Entity input is not connected.".to_string();
         return;
     };
 
-    let scene = SceneDocument::from_entity_value(entity_value);
-    let stats = scene.stats();
+    let stats = scene_sink.stats.unwrap_or_else(|| scene.stats());
     let node_id = live_document
-        .node_id_for_entity(sink_entity)
+        .node_id_for_entity(scene_sink.node_entity)
         .unwrap_or_default();
-    let child_names: Vec<String> = scene
-        .root
-        .children
-        .iter()
-        .take(4)
-        .map(|child| {
-            child
-                .name
-                .clone()
-                .unwrap_or_else(|| "<unnamed>".to_string())
-        })
-        .collect();
+    let child_names = scene.child_names(4);
 
     summary.text = vec![
         format!("Sink node id: {}", node_id),
@@ -344,11 +322,7 @@ fn refresh_scene_preview_summary(
         ),
         format!(
             "Root: {}",
-            scene
-                .root
-                .name
-                .clone()
-                .unwrap_or_else(|| "<unnamed root>".to_string())
+            scene.root_name().unwrap_or("<unnamed root>").to_string()
         ),
         format!(
             "Children: {}",

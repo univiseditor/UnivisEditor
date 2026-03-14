@@ -1,26 +1,32 @@
 use bevy::prelude::*;
+use univis_editor_nodes_builtin::scene::PrefabInstanceData;
 use univis_node_graph::prelude::{
-    Connecting, GraphNode, NodeRegistry, NodeValue, ProcessContext, ProcessResult,
-    analyze_graph_topology,
+    analyze_graph_topology, Connecting, GraphNode, LiveGraphDocumentState, NodeRegistry, NodeValue,
+    ProcessContext, ProcessResult,
 };
 use univis_scene::{
-    EntitySpawnOptions, SceneDocument, scene_document_signature, spawn_scene_document_recursive,
+    scene_document_signature, spawn_scene_document_recursive, EntitySpawnOptions, SceneDocument,
+    SceneStats,
 };
 
 pub struct NodeRuntimePlugin;
 
 impl Plugin for NodeRuntimePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GraphRuntimeDiagnostics>().add_systems(
-            Update,
-            (
-                initialize_node_defaults,
-                propagate_and_process_nodes,
-                sync_scene_nodes_to_world,
-                cleanup_orphaned_scene_roots,
-            )
-                .chain(),
-        );
+        app.init_resource::<GraphRuntimeDiagnostics>()
+            .init_resource::<GraphSceneOutputs>()
+            .add_systems(
+                Update,
+                (
+                    initialize_node_defaults,
+                    sync_prefab_instance_nodes,
+                    propagate_and_process_nodes,
+                    collect_scene_outputs,
+                    sync_scene_nodes_to_world,
+                    cleanup_orphaned_scene_roots,
+                )
+                    .chain(),
+            );
     }
 }
 
@@ -42,6 +48,26 @@ pub struct GraphRuntimeNodeIssue {
     pub definition_id: String,
     pub severity: GraphRuntimeIssueSeverity,
     pub message: String,
+}
+
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct GraphSceneOutputs {
+    pub sinks: Vec<GraphSceneSinkOutput>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphSceneSinkOutput {
+    pub node_entity: Entity,
+    pub definition_id: String,
+    pub mode: GraphSceneOutputMode,
+    pub scene: Option<SceneDocument>,
+    pub stats: Option<SceneStats>,
+    pub signature: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphSceneOutputMode {
+    World,
 }
 
 #[derive(Component, Clone, Default)]
@@ -68,10 +94,6 @@ fn scene_sink_mode(definition_id: &str) -> SceneSinkMode {
     }
 }
 
-fn is_scene_world_sink(node: &GraphNode) -> bool {
-    scene_sink_mode(node.definition_id.as_str()) == SceneSinkMode::World
-}
-
 fn initialize_node_defaults(
     registry: Res<NodeRegistry>,
     mut q_nodes: Query<(Entity, &mut GraphNode), Added<GraphNode>>,
@@ -91,6 +113,34 @@ fn initialize_node_defaults(
         for output in node.values.outputs.iter_mut() {
             *output = NodeValue::None;
         }
+    }
+}
+
+fn sync_prefab_instance_nodes(
+    live_document: Res<LiveGraphDocumentState>,
+    mut q_nodes: Query<&mut GraphNode>,
+) {
+    for mut node in q_nodes.iter_mut() {
+        if node.definition_id.as_str() != "scene/prefab_instance" {
+            continue;
+        }
+
+        let prefab_id = node
+            .values
+            .inputs
+            .first()
+            .and_then(NodeValue::as_string)
+            .map(str::trim)
+            .unwrap_or("")
+            .to_string();
+        let root = live_document
+            .document
+            .prefabs
+            .iter()
+            .find(|prefab| prefab.id == prefab_id)
+            .map(|prefab| prefab.root.clone());
+
+        node.custom_data = Some(Box::new(PrefabInstanceData { prefab_id, root }));
     }
 }
 
@@ -189,23 +239,69 @@ fn propagate_and_process_nodes(
     }
 }
 
-fn sync_scene_nodes_to_world(
-    mut commands: Commands,
-    q_nodes: Query<(Entity, &GraphNode, Option<&SceneWorldDisplayState>)>,
+fn collect_scene_outputs(
+    q_nodes: Query<(Entity, &GraphNode)>,
+    mut scene_outputs: ResMut<GraphSceneOutputs>,
 ) {
-    for (node_entity, node, state) in q_nodes.iter() {
-        if !is_scene_world_sink(node) {
-            continue;
-        }
+    let mut next_outputs = Vec::new();
 
-        let input_entity = node
+    for (node_entity, node) in q_nodes.iter() {
+        let mode = match scene_sink_mode(node.definition_id.as_str()) {
+            SceneSinkMode::World => GraphSceneOutputMode::World,
+            SceneSinkMode::None => continue,
+        };
+
+        let scene = node
             .values
             .inputs
             .first()
             .and_then(NodeValue::as_entity)
-            .cloned();
-        let next_scene = input_entity.map(SceneDocument::from_entity_value);
-        let next_signature = scene_document_signature(next_scene.as_ref());
+            .cloned()
+            .map(SceneDocument::from_entity_value);
+        let stats = scene.as_ref().map(SceneDocument::stats);
+        let signature = scene_document_signature(scene.as_ref());
+
+        next_outputs.push(GraphSceneSinkOutput {
+            node_entity,
+            definition_id: node.definition_id.as_str().to_string(),
+            mode,
+            scene,
+            stats,
+            signature,
+        });
+    }
+
+    next_outputs.sort_by_key(|sink| sink.node_entity.index());
+    if scene_outputs.sinks != next_outputs {
+        scene_outputs.sinks = next_outputs;
+    }
+}
+
+fn sync_scene_nodes_to_world(
+    mut commands: Commands,
+    scene_outputs: Res<GraphSceneOutputs>,
+    q_nodes: Query<(Entity, Option<&SceneWorldDisplayState>), With<GraphNode>>,
+) {
+    for (node_entity, state) in q_nodes.iter() {
+        let next_output = scene_outputs.sinks.iter().find(|sink| {
+            sink.node_entity == node_entity && sink.mode == GraphSceneOutputMode::World
+        });
+
+        if next_output.is_none() {
+            if let Some(state) = state.cloned() {
+                if let Some(root) = state.root {
+                    commands.entity(root).try_despawn();
+                }
+                commands
+                    .entity(node_entity)
+                    .try_remove::<SceneWorldDisplayState>();
+            }
+            continue;
+        }
+
+        let next_output = next_output.expect("checked above");
+        let next_scene = next_output.scene.as_ref();
+        let next_signature = next_output.signature.clone();
         let mut next_state = state.cloned().unwrap_or_default();
         let unchanged = next_state.last_signature == next_signature
             && if next_scene.is_some() {
@@ -256,12 +352,15 @@ fn cleanup_orphaned_scene_roots(
 }
 
 pub mod prelude {
-    pub use crate::{GraphRuntimeDiagnostics, NodeRuntimePlugin};
+    pub use crate::{
+        GraphRuntimeDiagnostics, GraphSceneOutputMode, GraphSceneOutputs, GraphSceneSinkOutput,
+        NodeRuntimePlugin,
+    };
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SceneSinkMode, scene_sink_mode};
+    use super::{scene_sink_mode, SceneSinkMode};
 
     #[test]
     fn scene_sinks_are_treated_as_world_sinks() {

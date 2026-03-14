@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::sprite::Anchor;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::hash_map::DefaultHasher;
@@ -8,6 +9,8 @@ pub const TRANSFORM_COMPONENT_KEY: &str = "scene/transform";
 pub const SPRITE_COMPONENT_KEY: &str = "scene/sprite";
 pub const CAMERA2D_COMPONENT_KEY: &str = "scene/camera_2d";
 pub const TEXT2D_COMPONENT_KEY: &str = "scene/text_2d";
+pub const VISIBILITY_COMPONENT_KEY: &str = "scene/visibility";
+pub const ANCHOR_COMPONENT_KEY: &str = "scene/anchor";
 
 pub fn component_display_name(key: &str) -> String {
     match key {
@@ -15,6 +18,8 @@ pub fn component_display_name(key: &str) -> String {
         SPRITE_COMPONENT_KEY => "Sprite".to_string(),
         CAMERA2D_COMPONENT_KEY => "Camera2D".to_string(),
         TEXT2D_COMPONENT_KEY => "Text2D".to_string(),
+        VISIBILITY_COMPONENT_KEY => "Visibility".to_string(),
+        ANCHOR_COMPONENT_KEY => "Anchor".to_string(),
         _ => key
             .rsplit('/')
             .next()
@@ -29,6 +34,8 @@ pub fn component_port_color(key: &str) -> Color {
         SPRITE_COMPONENT_KEY => Color::srgb(0.94, 0.53, 0.34),
         CAMERA2D_COMPONENT_KEY => Color::srgb(0.96, 0.83, 0.32),
         TEXT2D_COMPONENT_KEY => Color::srgb(0.71, 0.60, 0.95),
+        VISIBILITY_COMPONENT_KEY => Color::srgb(0.45, 0.92, 0.58),
+        ANCHOR_COMPONENT_KEY => Color::srgb(0.84, 0.68, 0.28),
         _ => custom_component_color(key),
     }
 }
@@ -79,6 +86,16 @@ pub struct Text2DComponentValue {
     pub color: Color,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VisibilityComponentValue {
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnchorComponentValue {
+    pub position: Vec2,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EntityMergePolicy {
     #[default]
@@ -92,6 +109,8 @@ pub enum EntityComponentValue {
     Sprite(SpriteComponentValue),
     Camera2D(Camera2DComponentValue),
     Text2D(Text2DComponentValue),
+    Visibility(VisibilityComponentValue),
+    Anchor(AnchorComponentValue),
     Custom {
         #[serde(alias = "kind")]
         key: String,
@@ -106,6 +125,8 @@ impl EntityComponentValue {
             Self::Sprite(_) => SPRITE_COMPONENT_KEY,
             Self::Camera2D(_) => CAMERA2D_COMPONENT_KEY,
             Self::Text2D(_) => TEXT2D_COMPONENT_KEY,
+            Self::Visibility(_) => VISIBILITY_COMPONENT_KEY,
+            Self::Anchor(_) => ANCHOR_COMPONENT_KEY,
             Self::Custom { key, .. } => key.as_str(),
         }
     }
@@ -134,6 +155,20 @@ impl EntityComponentValue {
     pub fn as_text_2d(&self) -> Option<&Text2DComponentValue> {
         match self {
             Self::Text2D(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_visibility(&self) -> Option<&VisibilityComponentValue> {
+        match self {
+            Self::Visibility(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_anchor(&self) -> Option<&AnchorComponentValue> {
+        match self {
+            Self::Anchor(value) => Some(value),
             _ => None,
         }
     }
@@ -322,6 +357,24 @@ impl SceneDocument {
         stats
     }
 
+    pub fn root_name(&self) -> Option<&str> {
+        self.root.name.as_deref().filter(|name| !name.is_empty())
+    }
+
+    pub fn child_names(&self, limit: usize) -> Vec<String> {
+        self.root
+            .children
+            .iter()
+            .take(limit)
+            .map(|child| {
+                child
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "<unnamed>".to_string())
+            })
+            .collect()
+    }
+
     pub fn signature(&self) -> String {
         format!("{:?}", self.root)
     }
@@ -361,9 +414,24 @@ pub fn spawn_entity_value_recursive(
         .component(TEXT2D_COMPONENT_KEY)
         .and_then(EntityComponentValue::as_text_2d)
         .cloned();
+    let visibility = entity_value
+        .component(VISIBILITY_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_visibility)
+        .cloned();
+    let anchor = entity_value
+        .component(ANCHOR_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_anchor)
+        .cloned();
     let _has_camera = entity_value.component(CAMERA2D_COMPONENT_KEY).is_some();
 
-    let mut entity_commands = parent.spawn((transform, Visibility::Visible));
+    let mut entity_commands = parent.spawn((
+        transform,
+        if visibility.as_ref().is_some_and(|value| !value.visible) {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        },
+    ));
 
     if let Some(name) = entity_value.name.as_deref().filter(|name| !name.is_empty()) {
         let name = if let Some(prefix) = options.name_prefix.as_deref() {
@@ -384,6 +452,10 @@ pub fn spawn_entity_value_recursive(
             TextFont::from_font_size(text.font_size),
             TextColor(text.color),
         ));
+    }
+
+    if let Some(anchor) = anchor {
+        entity_commands.insert(Anchor(anchor.position));
     }
 
     // Cameras are currently kept inert during graph materialization because the editor
@@ -423,9 +495,24 @@ pub fn spawn_entity_value_recursive_world(
         .component(TEXT2D_COMPONENT_KEY)
         .and_then(EntityComponentValue::as_text_2d)
         .cloned();
+    let visibility = entity_value
+        .component(VISIBILITY_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_visibility)
+        .cloned();
+    let anchor = entity_value
+        .component(ANCHOR_COMPONENT_KEY)
+        .and_then(EntityComponentValue::as_anchor)
+        .cloned();
     let _has_camera = entity_value.component(CAMERA2D_COMPONENT_KEY).is_some();
 
-    let mut entity_commands = parent.spawn((transform, Visibility::Visible));
+    let mut entity_commands = parent.spawn((
+        transform,
+        if visibility.as_ref().is_some_and(|value| !value.visible) {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        },
+    ));
 
     if let Some(name) = entity_value.name.as_deref().filter(|name| !name.is_empty()) {
         let name = if let Some(prefix) = options.name_prefix.as_deref() {
@@ -446,6 +533,10 @@ pub fn spawn_entity_value_recursive_world(
             TextFont::from_font_size(text.font_size),
             TextColor(text.color),
         ));
+    }
+
+    if let Some(anchor) = anchor {
+        entity_commands.insert(Anchor(anchor.position));
     }
 
     let children = entity_value.children.clone();

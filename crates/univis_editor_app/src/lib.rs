@@ -1,11 +1,13 @@
 //! UnivisEditor App facade
 
 mod editor_settings_persistence;
+mod graph_assets;
 mod island;
 mod panels;
 
 use bevy::prelude::*;
 use editor_settings_persistence::EditorSettingsPersistencePlugin;
+use graph_assets::GraphAssetWorkflowPlugin;
 use island::CanvasIslandPlugin;
 use panels::FloatingPanelsPlugin;
 use univis_editor_nodes_builtin as _;
@@ -34,6 +36,7 @@ impl Plugin for NodeGraphPlugin {
             .add_plugins(NodeRuntimePlugin)
             .add_plugins(GraphPersistencePlugin)
             .add_plugins(CanvasIslandPlugin)
+            .add_plugins(GraphAssetWorkflowPlugin)
             .add_plugins(FloatingPanelsPlugin)
             .add_plugins(EditorSettingsPersistencePlugin);
     }

@@ -14,6 +14,16 @@ pub enum GraphCommandRequest {
         force_if_dirty: bool,
     },
     DeleteSelectedNodes,
+    CapturePrefabFromSelection,
+    CaptureSubgraphFromSelection,
+    InsertSubgraph {
+        subgraph_id: String,
+        position: Vec2,
+    },
+    SpawnPrefabNode {
+        prefab_id: String,
+        position: Vec2,
+    },
     UndoGraphChange,
     RedoGraphChange,
     SpawnNode {

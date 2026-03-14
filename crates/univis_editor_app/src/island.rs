@@ -35,6 +35,10 @@ enum CanvasIslandMenuAction {
     SaveAs,
     Open,
     DeleteSelected,
+    CapturePrefab,
+    CaptureSubgraph,
+    InsertLatestSubgraph,
+    SpawnLatestPrefabNode,
 }
 
 #[derive(Component)]
@@ -368,11 +372,33 @@ fn setup_canvas_island_ui(mut commands: Commands) {
                 root,
                 CanvasIslandSurface::EditMenu,
                 "Edit",
-                &[(
-                    "Delete Selected",
-                    "Delete",
-                    CanvasIslandMenuAction::DeleteSelected,
-                )],
+                &[
+                    (
+                        "Delete Selected",
+                        "Delete",
+                        CanvasIslandMenuAction::DeleteSelected,
+                    ),
+                    (
+                        "Capture Prefab",
+                        "Store",
+                        CanvasIslandMenuAction::CapturePrefab,
+                    ),
+                    (
+                        "Capture Subgraph",
+                        "Store",
+                        CanvasIslandMenuAction::CaptureSubgraph,
+                    ),
+                    (
+                        "Insert Latest Subgraph",
+                        "Insert",
+                        CanvasIslandMenuAction::InsertLatestSubgraph,
+                    ),
+                    (
+                        "Spawn Latest Prefab Node",
+                        "Spawn",
+                        CanvasIslandMenuAction::SpawnLatestPrefabNode,
+                    ),
+                ],
             );
 
             spawn_canvas_island_search_panel(root);
@@ -973,7 +999,15 @@ fn handle_canvas_island_menu_actions(
     mut overlay: ResMut<GraphOverlayState>,
     buttons: Query<(&Interaction, &CanvasIslandMenuActionButton), Changed<Interaction>>,
     mut command_writer: MessageWriter<GraphCommandRequest>,
+    live_document: Res<univis_node_graph::prelude::LiveGraphDocumentState>,
+    camera_query: Query<&Transform, With<GraphCamera>>,
 ) {
+    let spawn_position = camera_query
+        .iter()
+        .next()
+        .map(|transform| transform.translation.truncate())
+        .unwrap_or(Vec2::ZERO);
+
     for (interaction, action) in buttons.iter() {
         if *interaction != Interaction::Pressed {
             continue;
@@ -993,6 +1027,34 @@ fn handle_canvas_island_menu_actions(
             }
             CanvasIslandMenuAction::DeleteSelected => {
                 command_writer.write(GraphCommandRequest::DeleteSelectedNodes);
+            }
+            CanvasIslandMenuAction::CapturePrefab => {
+                command_writer.write(GraphCommandRequest::CapturePrefabFromSelection);
+            }
+            CanvasIslandMenuAction::CaptureSubgraph => {
+                command_writer.write(GraphCommandRequest::CaptureSubgraphFromSelection);
+            }
+            CanvasIslandMenuAction::InsertLatestSubgraph => {
+                command_writer.write(GraphCommandRequest::InsertSubgraph {
+                    subgraph_id: live_document
+                        .document
+                        .subgraphs
+                        .last()
+                        .map(|subgraph| subgraph.id.clone())
+                        .unwrap_or_default(),
+                    position: spawn_position,
+                });
+            }
+            CanvasIslandMenuAction::SpawnLatestPrefabNode => {
+                command_writer.write(GraphCommandRequest::SpawnPrefabNode {
+                    prefab_id: live_document
+                        .document
+                        .prefabs
+                        .last()
+                        .map(|prefab| prefab.id.clone())
+                        .unwrap_or_default(),
+                    position: spawn_position,
+                });
             }
         };
 

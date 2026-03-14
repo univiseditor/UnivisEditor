@@ -155,7 +155,11 @@ impl LiveGraphDocumentState {
             Some(&self.entity_to_node_id),
         );
 
-        self.document = build.document;
+        let mut document = build.document;
+        document.prefabs = self.document.prefabs.clone();
+        document.subgraphs = self.document.subgraphs.clone();
+
+        self.document = document;
         self.entity_to_node_id = build.entity_to_node_id;
         self.node_id_to_entity = build.node_id_to_entity;
     }
@@ -401,6 +405,38 @@ impl GraphDocument {
         self.subgraphs.len()
     }
 
+    pub fn prefab(&self, id: &str) -> Option<&GraphDocumentPrefab> {
+        self.prefabs.iter().find(|prefab| prefab.id == id)
+    }
+
+    pub fn subgraph(&self, id: &str) -> Option<&GraphDocumentSubgraph> {
+        self.subgraphs.iter().find(|subgraph| subgraph.id == id)
+    }
+
+    pub fn upsert_prefab(&mut self, prefab: GraphDocumentPrefab) {
+        if let Some(existing) = self
+            .prefabs
+            .iter_mut()
+            .find(|existing| existing.id == prefab.id)
+        {
+            *existing = prefab;
+        } else {
+            self.prefabs.push(prefab);
+        }
+    }
+
+    pub fn upsert_subgraph(&mut self, subgraph: GraphDocumentSubgraph) {
+        if let Some(existing) = self
+            .subgraphs
+            .iter_mut()
+            .find(|existing| existing.id == subgraph.id)
+        {
+            *existing = subgraph;
+        } else {
+            self.subgraphs.push(subgraph);
+        }
+    }
+
     pub fn next_node_id(&self) -> u64 {
         self.nodes.iter().map(|node| node.id).max().unwrap_or(0) + 1
     }
@@ -604,5 +640,130 @@ impl GraphDocument {
 
     pub fn set_camera(&mut self, camera: Option<GraphDocumentCameraState>) {
         self.view.camera = camera;
+    }
+
+    pub fn capture_selected_subgraph(&mut self, id: String, name: String) -> bool {
+        let selected: HashSet<u64> = self.selected_node_ids().iter().copied().collect();
+        if selected.is_empty() {
+            return false;
+        }
+
+        let selected_nodes: Vec<GraphDocumentNode> = self
+            .nodes
+            .iter()
+            .filter(|node| selected.contains(&node.id))
+            .cloned()
+            .collect();
+        if selected_nodes.is_empty() {
+            return false;
+        }
+
+        let min_x = selected_nodes
+            .iter()
+            .map(|node| node.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let min_y = selected_nodes
+            .iter()
+            .map(|node| node.position[1])
+            .fold(f32::INFINITY, f32::min);
+
+        let nodes = selected_nodes
+            .into_iter()
+            .map(|mut node| {
+                node.position[0] -= min_x;
+                node.position[1] -= min_y;
+                node
+            })
+            .collect();
+        let edges = self
+            .edges
+            .iter()
+            .filter(|edge| {
+                selected.contains(&edge.from_node_id) && selected.contains(&edge.to_node_id)
+            })
+            .cloned()
+            .collect();
+
+        self.upsert_subgraph(GraphDocumentSubgraph {
+            id,
+            name,
+            document: Box::new(GraphDocument {
+                version: GRAPH_DOCUMENT_VERSION,
+                nodes,
+                edges,
+                prefabs: self.prefabs.clone(),
+                subgraphs: Vec::new(),
+                view: GraphDocumentViewState::default(),
+            }),
+        });
+        true
+    }
+
+    pub fn merged_with_subgraph_instance(
+        &self,
+        subgraph_id: &str,
+        origin: [f32; 2],
+    ) -> Option<GraphDocument> {
+        let subgraph = self.subgraph(subgraph_id)?;
+        if subgraph.document.nodes.is_empty() {
+            return None;
+        }
+
+        let min_x = subgraph
+            .document
+            .nodes
+            .iter()
+            .map(|node| node.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let min_y = subgraph
+            .document
+            .nodes
+            .iter()
+            .map(|node| node.position[1])
+            .fold(f32::INFINITY, f32::min);
+
+        let mut merged = self.clone();
+        let mut next_node_id = merged.next_node_id();
+        let mut selected_node_ids = Vec::new();
+        let mut node_id_map = HashMap::new();
+
+        for node in &subgraph.document.nodes {
+            let new_id = next_node_id;
+            next_node_id += 1;
+            node_id_map.insert(node.id, new_id);
+
+            let mut cloned = node.clone();
+            cloned.id = new_id;
+            cloned.position[0] = origin[0] + (cloned.position[0] - min_x);
+            cloned.position[1] = origin[1] + (cloned.position[1] - min_y);
+            selected_node_ids.push(new_id);
+            merged.nodes.push(cloned);
+        }
+
+        for edge in &subgraph.document.edges {
+            let Some(from_node_id) = node_id_map.get(&edge.from_node_id).copied() else {
+                continue;
+            };
+            let Some(to_node_id) = node_id_map.get(&edge.to_node_id).copied() else {
+                continue;
+            };
+
+            merged.edges.push(GraphDocumentEdge {
+                from_node_id,
+                from_index: edge.from_index,
+                to_node_id,
+                to_index: edge.to_index,
+            });
+        }
+
+        for prefab in &subgraph.document.prefabs {
+            merged.upsert_prefab(prefab.clone());
+        }
+        for nested_subgraph in &subgraph.document.subgraphs {
+            merged.upsert_subgraph(nested_subgraph.clone());
+        }
+
+        merged.set_selected_nodes(selected_node_ids);
+        Some(merged)
     }
 }

@@ -8,6 +8,9 @@
 - Expanded editor workflow persistence with saved session settings, tracked `Recent Files`, and automatic persistence of those entries into `.univis/editor_settings.json`.
 - Extended the `CanvasIsland` file/settings surfaces with `Reset Settings`, `Recent Files`, and `Recover Latest Autosave`, backed by a shared latest-backup lookup in graph persistence.
 - Continued polishing the graph-native editor presentation by persisting grid and wire display settings and ignoring local IDE metadata in Git.
+- Formalized `SceneDocument` as the shared Scene IR between runtime world materialization and the app-side scene preview panel, so scene sinks now flow through one explicit document model instead of ad-hoc `EntityValue` consumption.
+- Expanded the core graph-native scene toolset with typed `Visibility` and `Anchor` components plus new `visibility`, `anchor`, `scale`, `rotation`, `z-order`, and `group` nodes so common scene-authoring work no longer depends on ad-hoc transform composition alone.
+- Started a practical graph-asset workflow by preserving document `prefabs` and `subgraphs` through live sync and persistence, adding a `scene/prefab_instance` node, and wiring island actions for capturing prefabs/subgraphs plus instancing saved subgraphs back into the canvas.
 
 ## 2026-03-10
 

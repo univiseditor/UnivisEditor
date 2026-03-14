@@ -168,6 +168,13 @@ pub struct LoadGraphFromPathRequest {
     pub force_if_dirty: bool,
 }
 
+#[derive(Message, Debug, Clone)]
+pub struct ApplyGraphDocumentRequest {
+    pub document: GraphDocument,
+    pub source_label: String,
+    pub track_for_undo: bool,
+}
+
 #[derive(Resource, Default)]
 struct PendingGraphLoad {
     is_pending: bool,
@@ -202,6 +209,18 @@ impl MutationUiState<'_> {
     }
 }
 
+#[derive(SystemParam)]
+struct LoadGraphRuntimeParams<'w> {
+    settings: ResMut<'w, GraphPersistenceSettings>,
+    graph: ResMut<'w, Connecting>,
+    live_document: ResMut<'w, LiveGraphDocumentState>,
+    pending: ResMut<'w, PendingGraphLoad>,
+    runtime: ResMut<'w, GraphPersistenceRuntimeState>,
+    history: ResMut<'w, GraphHistoryState>,
+    mutation_tracker: ResMut<'w, GraphMutationTracker>,
+    status: ResMut<'w, GraphPersistenceStatus>,
+}
+
 impl PendingGraphLoad {
     fn reset(&mut self) {
         self.is_pending = false;
@@ -221,6 +240,7 @@ impl PendingGraphLoad {
 enum PendingGraphApplyOrigin {
     #[default]
     Load,
+    Mutation,
     Undo,
     Redo,
 }
@@ -241,6 +261,7 @@ impl Plugin for GraphPersistencePlugin {
             .add_message::<LoadGraphRequest>()
             .add_message::<SaveGraphToPathRequest>()
             .add_message::<LoadGraphFromPathRequest>()
+            .add_message::<ApplyGraphDocumentRequest>()
             .add_systems(
                 PreUpdate,
                 (
@@ -251,6 +272,7 @@ impl Plugin for GraphPersistencePlugin {
                 )
                     .chain(),
             )
+            .add_systems(PreUpdate, handle_apply_graph_document_requests)
             .add_systems(
                 PostUpdate,
                 (
@@ -310,7 +332,7 @@ fn handle_history_requests(
     registry: Res<NodeRegistry>,
     mut graph: ResMut<Connecting>,
     q_existing_nodes: Query<Entity, With<GraphNode>>,
-    live_document: Res<LiveGraphDocumentState>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
     mut pending: ResMut<PendingGraphLoad>,
     mut history: ResMut<GraphHistoryState>,
     mut mutation_tracker: ResMut<GraphMutationTracker>,
@@ -371,10 +393,13 @@ fn handle_history_requests(
             history.trim_to_limit(history_settings.max_entries);
             next
         }
+        PendingGraphApplyOrigin::Mutation => return,
         PendingGraphApplyOrigin::Load => return,
     };
 
     let validation_issue_count = validate_graph_document(&target_document, &registry).len();
+    live_document.document.prefabs = target_document.prefabs.clone();
+    live_document.document.subgraphs = target_document.subgraphs.clone();
     ui_state.reset();
     stage_graph_document_apply(
         &mut commands,
@@ -385,6 +410,7 @@ fn handle_history_requests(
         target_document.clone(),
         origin,
         match origin {
+            PendingGraphApplyOrigin::Mutation => "graph snapshot".to_string(),
             PendingGraphApplyOrigin::Undo => "undo snapshot".to_string(),
             PendingGraphApplyOrigin::Redo => "redo snapshot".to_string(),
             PendingGraphApplyOrigin::Load => settings.file_path.clone(),
@@ -401,6 +427,7 @@ fn handle_history_requests(
         &mut status,
         GraphPersistenceStatusSeverity::Info,
         match origin {
+            PendingGraphApplyOrigin::Mutation => "Applying graph snapshot...".to_string(),
             PendingGraphApplyOrigin::Undo => "Applying undo snapshot...".to_string(),
             PendingGraphApplyOrigin::Redo => "Applying redo snapshot...".to_string(),
             PendingGraphApplyOrigin::Load => "Applying graph snapshot...".to_string(),
@@ -420,6 +447,7 @@ fn handle_save_graph_requests(
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
+    live_document: Res<LiveGraphDocumentState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatus>,
     time: Res<Time>,
@@ -468,6 +496,7 @@ fn handle_save_graph_requests(
             &graph,
             &q_nodes,
             &q_camera,
+            &live_document.document,
         ) {
             Ok(prepared) => {
                 runtime.last_saved_signature = Some(prepared.signature);
@@ -517,15 +546,9 @@ fn handle_load_graph_requests(
     mut load_from_path_requests: MessageReader<LoadGraphFromPathRequest>,
     mut command_requests: MessageReader<GraphCommandRequest>,
     activation: Option<Res<GraphPersistenceActivation>>,
-    mut settings: ResMut<GraphPersistenceSettings>,
     registry: Res<NodeRegistry>,
-    mut graph: ResMut<Connecting>,
     q_existing_nodes: Query<Entity, With<GraphNode>>,
-    mut pending: ResMut<PendingGraphLoad>,
-    mut runtime: ResMut<GraphPersistenceRuntimeState>,
-    mut history: ResMut<GraphHistoryState>,
-    mut mutation_tracker: ResMut<GraphMutationTracker>,
-    mut status: ResMut<GraphPersistenceStatus>,
+    mut load_runtime: LoadGraphRuntimeParams,
     mut ui_state: MutationUiState,
     time: Res<Time>,
 ) {
@@ -559,7 +582,7 @@ fn handle_load_graph_requests(
         load_current = true;
     }
     if load_current {
-        requested = Some((settings.file_path.clone(), false));
+        requested = Some((load_runtime.settings.file_path.clone(), false));
     }
 
     let Some((path, force_if_dirty)) = requested else {
@@ -567,39 +590,40 @@ fn handle_load_graph_requests(
     };
 
     let now = time.elapsed_secs_f64();
-    if runtime.dirty && !force_if_dirty {
-        let confirmed = runtime
+    if load_runtime.runtime.dirty && !force_if_dirty {
+        let confirmed = load_runtime
+            .runtime
             .open_confirm_until_secs
             .map(|deadline| now <= deadline)
             .unwrap_or(false);
 
         if !confirmed {
-            runtime.open_confirm_until_secs =
-                Some(now + settings.confirm_reload_window_secs as f64);
+            load_runtime.runtime.open_confirm_until_secs =
+                Some(now + load_runtime.settings.confirm_reload_window_secs as f64);
             set_persistence_status(
-                &mut status,
+                &mut load_runtime.status,
                 GraphPersistenceStatusSeverity::Warning,
                 "Unsaved changes detected. Press Ctrl+O again to confirm reload.".to_string(),
                 now,
-                settings.status_duration_secs,
+                load_runtime.settings.status_duration_secs,
             );
             return;
         }
     }
 
-    runtime.open_confirm_until_secs = None;
-    settings.file_path = path.clone();
+    load_runtime.runtime.open_confirm_until_secs = None;
+    load_runtime.settings.file_path = path.clone();
 
     let content = match fs::read_to_string(&path) {
         Ok(content) => content,
         Err(err) => {
             warn!("Failed to read graph file {}: {}", path, err);
             set_persistence_status(
-                &mut status,
+                &mut load_runtime.status,
                 GraphPersistenceStatusSeverity::Error,
                 format!("Open failed: cannot read {}", path),
                 now,
-                settings.status_duration_secs,
+                load_runtime.settings.status_duration_secs,
             );
             return;
         }
@@ -613,11 +637,11 @@ fn handle_load_graph_requests(
         Err(err) => {
             warn!("Failed to parse/migrate graph JSON {}: {}", path, err);
             set_persistence_status(
-                &mut status,
+                &mut load_runtime.status,
                 GraphPersistenceStatusSeverity::Error,
                 format!("Open failed: {}", err),
                 now,
-                settings.status_duration_secs,
+                load_runtime.settings.status_duration_secs,
             );
             return;
         }
@@ -634,7 +658,72 @@ fn handle_load_graph_requests(
         }
     }
 
-    pending.reset();
+    load_runtime.live_document.document.prefabs = save_file.prefabs.clone();
+    load_runtime.live_document.document.subgraphs = save_file.subgraphs.clone();
+    load_runtime.pending.reset();
+    ui_state.reset();
+    stage_graph_document_apply(
+        &mut commands,
+        &registry,
+        &mut load_runtime.graph,
+        &q_existing_nodes,
+        &mut load_runtime.pending,
+        save_file.clone(),
+        PendingGraphApplyOrigin::Load,
+        path.clone(),
+        validation_issues.len(),
+    );
+    load_runtime.history.clear();
+    load_runtime.history.awaiting_rebaseline = true;
+    load_runtime.history.last_document = Some(save_file);
+    load_runtime.mutation_tracker.capture_requested = false;
+
+    if let Some(note) = migration_note {
+        set_persistence_status(
+            &mut load_runtime.status,
+            GraphPersistenceStatusSeverity::Info,
+            note,
+            now,
+            load_runtime.settings.status_duration_secs,
+        );
+    } else {
+        set_persistence_status(
+            &mut load_runtime.status,
+            GraphPersistenceStatusSeverity::Info,
+            format!("Loading graph from {}", path),
+            now,
+            load_runtime.settings.status_duration_secs,
+        );
+    }
+}
+
+fn handle_apply_graph_document_requests(
+    mut commands: Commands,
+    mut apply_requests: MessageReader<ApplyGraphDocumentRequest>,
+    activation: Option<Res<GraphPersistenceActivation>>,
+    registry: Res<NodeRegistry>,
+    mut graph: ResMut<Connecting>,
+    q_existing_nodes: Query<Entity, With<GraphNode>>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
+    mut pending: ResMut<PendingGraphLoad>,
+    mut history: ResMut<GraphHistoryState>,
+    mut mutation_tracker: ResMut<GraphMutationTracker>,
+    mut status: ResMut<GraphPersistenceStatus>,
+    mut ui_state: MutationUiState,
+    settings: Res<GraphPersistenceSettings>,
+    time: Res<Time>,
+) {
+    if !graph_persistence_enabled(activation.as_deref()) {
+        return;
+    }
+
+    let Some(request) = apply_requests.read().last().cloned() else {
+        return;
+    };
+
+    let validation_issue_count = validate_graph_document(&request.document, &registry).len();
+    live_document.document.prefabs = request.document.prefabs.clone();
+    live_document.document.subgraphs = request.document.subgraphs.clone();
     ui_state.reset();
     stage_graph_document_apply(
         &mut commands,
@@ -642,33 +731,28 @@ fn handle_load_graph_requests(
         &mut graph,
         &q_existing_nodes,
         &mut pending,
-        save_file.clone(),
-        PendingGraphApplyOrigin::Load,
-        path.clone(),
-        validation_issues.len(),
+        request.document,
+        PendingGraphApplyOrigin::Mutation,
+        request.source_label.clone(),
+        validation_issue_count,
     );
-    history.clear();
-    history.awaiting_rebaseline = true;
-    history.last_document = Some(save_file);
-    mutation_tracker.capture_requested = false;
 
-    if let Some(note) = migration_note {
-        set_persistence_status(
-            &mut status,
-            GraphPersistenceStatusSeverity::Info,
-            note,
-            now,
-            settings.status_duration_secs,
-        );
-    } else {
-        set_persistence_status(
-            &mut status,
-            GraphPersistenceStatusSeverity::Info,
-            format!("Loading graph from {}", path),
-            now,
-            settings.status_duration_secs,
-        );
+    if request.track_for_undo {
+        mutation_tracker.capture_requested = true;
     }
+    history.awaiting_rebaseline = false;
+
+    set_persistence_status(
+        &mut status,
+        if validation_issue_count > 0 {
+            GraphPersistenceStatusSeverity::Warning
+        } else {
+            GraphPersistenceStatusSeverity::Info
+        },
+        format!("Applying {}...", request.source_label),
+        time.elapsed_secs_f64(),
+        settings.status_duration_secs,
+    );
 }
 
 fn finalize_pending_graph_load(
@@ -847,6 +931,7 @@ fn finalize_pending_graph_load(
 fn pending_completion_prefix(origin: PendingGraphApplyOrigin, source_label: &str) -> String {
     match origin {
         PendingGraphApplyOrigin::Load => format!("Loaded {}", source_label),
+        PendingGraphApplyOrigin::Mutation => format!("Applied {}", source_label),
         PendingGraphApplyOrigin::Undo => "Undo restored graph snapshot".to_string(),
         PendingGraphApplyOrigin::Redo => "Redo restored graph snapshot".to_string(),
     }
@@ -855,6 +940,7 @@ fn pending_completion_prefix(origin: PendingGraphApplyOrigin, source_label: &str
 fn pending_completion_success(origin: PendingGraphApplyOrigin, source_label: &str) -> String {
     match origin {
         PendingGraphApplyOrigin::Load => format!("Graph loaded successfully from {}", source_label),
+        PendingGraphApplyOrigin::Mutation => format!("Applied {}", source_label),
         PendingGraphApplyOrigin::Undo => "Undo restored graph snapshot".to_string(),
         PendingGraphApplyOrigin::Redo => "Redo restored graph snapshot".to_string(),
     }
@@ -910,6 +996,7 @@ fn refresh_dirty_state(
     activation: Option<Res<GraphPersistenceActivation>>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
+    live_document: Res<LiveGraphDocumentState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
 ) {
     if !graph_persistence_enabled(activation.as_deref()) {
@@ -918,7 +1005,8 @@ fn refresh_dirty_state(
         return;
     }
 
-    let current_document = build_graph_document(&graph, &q_nodes, &q_camera);
+    let current_document =
+        build_graph_document(&graph, &q_nodes, &q_camera, &live_document.document);
     let Ok(current_signature) = graph_document_signature(&current_document) else {
         return;
     };
@@ -946,6 +1034,7 @@ fn autosave_dirty_graph(
     graph: Res<Connecting>,
     q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
+    live_document: Res<LiveGraphDocumentState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatus>,
 ) {
@@ -976,6 +1065,7 @@ fn autosave_dirty_graph(
         &graph,
         &q_nodes,
         &q_camera,
+        &live_document.document,
     ) {
         Ok(prepared) => {
             runtime.last_saved_signature = Some(prepared.signature.clone());
@@ -1158,8 +1248,9 @@ fn persist_graph_to_path(
     graph: &Connecting,
     q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
+    source_document: &GraphDocument,
 ) -> Result<PreparedGraphWrite, String> {
-    let document = build_graph_document(graph, q_nodes, q_camera);
+    let document = build_graph_document(graph, q_nodes, q_camera, source_document);
     let prepared = prepare_graph_document_write(document, pretty_json, registry)?;
     write_graph_payload(path, &prepared.payload)?;
     Ok(prepared)
@@ -1169,6 +1260,7 @@ fn build_graph_document(
     graph: &Connecting,
     q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
+    source_document: &GraphDocument,
 ) -> GraphDocument {
     let mut nodes_data = Vec::new();
     for (entity, node, transform, selected) in q_nodes.iter() {
@@ -1208,7 +1300,11 @@ fn build_graph_document(
             to_index: link.to_index,
         });
 
-    build_graph_document_from_snapshots(nodes_data, edge_snapshots, camera, None).document
+    let mut document =
+        build_graph_document_from_snapshots(nodes_data, edge_snapshots, camera, None).document;
+    document.prefabs = source_document.prefabs.clone();
+    document.subgraphs = source_document.subgraphs.clone();
+    document
 }
 
 fn write_graph_payload(path: &str, payload: &str) -> Result<(), String> {
