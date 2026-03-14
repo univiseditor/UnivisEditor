@@ -39,6 +39,7 @@ impl Plugin for NodeUiPlugin {
         }
 
         app.init_resource::<univis_node_graph::pin::DragState>()
+            .init_resource::<interaction::BoxSelectionState>()
             .init_resource::<univis_node_graph::pin::Connecting>()
             .init_resource::<univis_node_graph::pin::WireConnectionState>()
             .add_message::<DeleteSelectedNodesRequest>()
@@ -47,9 +48,18 @@ impl Plugin for NodeUiPlugin {
             .add_plugins(editor::EditorPlugin)
             .add_plugins(NodePopupPlugin)
             .add_systems(Update, sanitize_graph_editor_state)
+            .add_systems(Update, sync_box_selection_overlay)
             .add_systems(
                 Update,
-                (camera_controller, node_drag_system, node_highlight_system).chain(),
+                (
+                    camera_controller,
+                    box_selection_input_system,
+                    node_drag_system,
+                    node_highlight_system,
+                    request_graph_workflow_shortcuts,
+                    frame_selected_nodes_system,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,

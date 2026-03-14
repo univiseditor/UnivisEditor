@@ -147,6 +147,8 @@ bash scripts/verify_workspace.sh app
 
 The script forces sequential execution with `CARGO_BUILD_JOBS=1` unless you override it.
 
+GitHub Actions runs the same script through `.github/workflows/verify-workspace.yml`, split into `core`, `builtin`, `persistence`, and `app` jobs instead of maintaining a separate CI command list.
+
 ## Main Test Targets
 
 Focused test targets currently maintained in the workspace:
@@ -192,7 +194,7 @@ What is still evolving:
 
 - editor polish
 - deeper runtime smoke coverage
-- CI automation
+- broader CI coverage beyond the staged Linux verification workflow
 - further modularization of large editor and persistence modules
 
 ## Guiding Principle

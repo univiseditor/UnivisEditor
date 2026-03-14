@@ -1,6 +1,7 @@
 //! Graph interaction systems.
 use crate::prelude::*;
 use bevy::ecs::relationship::Relationship;
+use bevy::ui::UiTargetCamera;
 use bevy::{input::mouse::MouseWheel, platform::collections::HashSet, prelude::*};
 use univis_ui::prelude::*;
 
@@ -29,6 +30,88 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
         UInteraction::Pressed | UInteraction::Hovered | UInteraction::Clicked
     )
 }
+
+fn pointer_target_node(
+    nodes_interaction: &Query<(Entity, &UInteraction), With<GraphNode>>,
+    headers_interaction: &Query<(Entity, &UInteraction), With<Header>>,
+    ports_interaction: &Query<(&UInteraction, &GraphPort)>,
+    parents: &Query<&ChildOf>,
+    node_markers: &Query<(), With<GraphNode>>,
+) -> Option<Entity> {
+    nodes_interaction
+        .iter()
+        .find_map(|(entity, interaction)| {
+            interaction_is_pointer_active(interaction).then_some(entity)
+        })
+        .or_else(|| {
+            headers_interaction
+                .iter()
+                .find_map(|(header_entity, interaction)| {
+                    if !interaction_is_pointer_active(interaction) {
+                        return None;
+                    }
+
+                    find_graph_node_ancestor(header_entity, parents, node_markers)
+                })
+        })
+        .or_else(|| {
+            ports_interaction.iter().find_map(|(interaction, port)| {
+                if !interaction_is_pointer_active(interaction) {
+                    return None;
+                }
+
+                (node_markers.get(port.node_entity).is_ok()).then_some(port.node_entity)
+            })
+        })
+}
+
+fn selection_additive_modifier(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.pressed(KeyCode::ShiftLeft)
+        || keys.pressed(KeyCode::ShiftRight)
+        || keys.pressed(KeyCode::ControlLeft)
+        || keys.pressed(KeyCode::ControlRight)
+}
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct BoxSelectionState {
+    pub active: bool,
+    pub additive: bool,
+    pub start_screen_pos: Vec2,
+    pub current_screen_pos: Vec2,
+    pub suppress_click_selection: bool,
+}
+
+impl BoxSelectionState {
+    pub fn clear(&mut self) {
+        self.active = false;
+        self.additive = false;
+        self.start_screen_pos = Vec2::ZERO;
+        self.current_screen_pos = Vec2::ZERO;
+        self.suppress_click_selection = false;
+    }
+
+    fn min_screen_pos(&self) -> Vec2 {
+        Vec2::new(
+            self.start_screen_pos.x.min(self.current_screen_pos.x),
+            self.start_screen_pos.y.min(self.current_screen_pos.y),
+        )
+    }
+
+    fn max_screen_pos(&self) -> Vec2 {
+        Vec2::new(
+            self.start_screen_pos.x.max(self.current_screen_pos.x),
+            self.start_screen_pos.y.max(self.current_screen_pos.y),
+        )
+    }
+
+    fn drag_distance_sq(&self) -> f32 {
+        self.start_screen_pos
+            .distance_squared(self.current_screen_pos)
+    }
+}
+
+#[derive(Component)]
+pub struct BoxSelectionOverlay;
 
 pub fn sanitize_graph_editor_state(
     mut live_document: ResMut<LiveGraphDocumentState>,
@@ -92,10 +175,182 @@ pub fn sanitize_graph_editor_state(
     }
 }
 
+pub fn box_selection_input_system(
+    mut commands: Commands,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    windows: Query<&Window>,
+    overlay: Res<GraphOverlayState>,
+    mut box_selection: ResMut<BoxSelectionState>,
+    mut live_document: ResMut<LiveGraphDocumentState>,
+    nodes_interaction: Query<(Entity, &UInteraction), With<GraphNode>>,
+    headers_interaction: Query<(Entity, &UInteraction), With<Header>>,
+    ports_interaction: Query<(&UInteraction, &GraphPort)>,
+    parents: Query<&ChildOf>,
+    node_markers: Query<(), With<GraphNode>>,
+    q_camera: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
+    q_node_transforms: Query<(Entity, &GlobalTransform), With<GraphNode>>,
+    selected_nodes: Query<Entity, With<Selected>>,
+) {
+    if overlay.active_surface != GraphOverlaySurface::None && !box_selection.active {
+        return;
+    }
+
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let cursor_pos = window.cursor_position();
+
+    if mouse_button.just_pressed(MouseButton::Left)
+        && overlay.active_surface == GraphOverlaySurface::None
+    {
+        let clicked_node = pointer_target_node(
+            &nodes_interaction,
+            &headers_interaction,
+            &ports_interaction,
+            &parents,
+            &node_markers,
+        );
+
+        if clicked_node.is_none() {
+            let Some(cursor_pos) = cursor_pos else {
+                return;
+            };
+
+            box_selection.active = true;
+            box_selection.additive = selection_additive_modifier(&keys);
+            box_selection.start_screen_pos = cursor_pos;
+            box_selection.current_screen_pos = cursor_pos;
+            box_selection.suppress_click_selection = true;
+
+            if !box_selection.additive {
+                live_document.clear_selected_entities();
+                for entity in selected_nodes.iter() {
+                    commands.entity(entity).try_remove::<Selected>();
+                }
+            }
+        }
+    }
+
+    if !box_selection.active {
+        return;
+    }
+
+    if let Some(cursor_pos) = cursor_pos {
+        box_selection.current_screen_pos = cursor_pos;
+    }
+
+    if !mouse_button.just_released(MouseButton::Left) {
+        return;
+    }
+
+    if box_selection.drag_distance_sq() >= 16.0 {
+        let Ok((camera, camera_transform)) = q_camera.single() else {
+            box_selection.clear();
+            return;
+        };
+
+        let min = box_selection.min_screen_pos();
+        let max = box_selection.max_screen_pos();
+        let mut next_selection: HashSet<Entity> = if box_selection.additive {
+            selected_nodes.iter().collect()
+        } else {
+            HashSet::default()
+        };
+
+        for (entity, global_transform) in q_node_transforms.iter() {
+            let Ok(screen_pos) =
+                camera.world_to_viewport(camera_transform, global_transform.translation())
+            else {
+                continue;
+            };
+            if screen_pos.x >= min.x
+                && screen_pos.x <= max.x
+                && screen_pos.y >= min.y
+                && screen_pos.y <= max.y
+            {
+                next_selection.insert(entity);
+            }
+        }
+
+        for entity in selected_nodes.iter() {
+            if !next_selection.contains(&entity) {
+                commands.entity(entity).try_remove::<Selected>();
+            }
+        }
+        for entity in &next_selection {
+            commands.entity(*entity).try_insert(Selected);
+        }
+        live_document.set_selected_entities(next_selection.iter().copied());
+    }
+
+    box_selection.active = false;
+    box_selection.additive = false;
+    box_selection.start_screen_pos = Vec2::ZERO;
+    box_selection.current_screen_pos = Vec2::ZERO;
+    box_selection.suppress_click_selection = true;
+}
+
+pub fn sync_box_selection_overlay(
+    mut commands: Commands,
+    box_selection: Res<BoxSelectionState>,
+    q_graph_camera: Query<Entity, With<GraphCamera>>,
+    mut overlays: Query<(Entity, &mut Node, Option<&UiTargetCamera>), With<BoxSelectionOverlay>>,
+) {
+    if overlays.is_empty() {
+        let mut overlay_commands = commands.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                width: Val::Px(0.0),
+                height: Val::Px(0.0),
+                border: UiRect::all(Val::Px(1.0)),
+                display: Display::None,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.32, 0.64, 1.0, 0.12)),
+            BorderColor::all(Color::srgba(0.55, 0.8, 1.0, 0.95)),
+            ZIndex(1500),
+            BoxSelectionOverlay,
+        ));
+
+        if let Some(graph_camera) = q_graph_camera.iter().next() {
+            overlay_commands.insert(UiTargetCamera(graph_camera));
+        }
+    }
+
+    let Some(graph_camera) = q_graph_camera.iter().next() else {
+        return;
+    };
+
+    for (entity, mut node, target_camera) in overlays.iter_mut() {
+        if target_camera.map(|target| target.entity()) != Some(graph_camera) {
+            commands
+                .entity(entity)
+                .try_insert(UiTargetCamera(graph_camera));
+        }
+
+        if box_selection.active && box_selection.drag_distance_sq() >= 4.0 {
+            let min = box_selection.min_screen_pos();
+            let max = box_selection.max_screen_pos();
+            node.display = Display::Flex;
+            node.left = Val::Px(min.x);
+            node.top = Val::Px(min.y);
+            node.width = Val::Px((max.x - min.x).max(1.0));
+            node.height = Val::Px((max.y - min.y).max(1.0));
+        } else {
+            node.display = Display::None;
+        }
+    }
+}
+
 /// Selects the node under the pointer and mirrors that selection into the live document.
 pub fn selection_system(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut box_selection: ResMut<BoxSelectionState>,
     mut live_document: ResMut<LiveGraphDocumentState>,
     nodes_interaction: Query<(Entity, &UInteraction), With<GraphNode>>,
     headers_interaction: Query<(Entity, &UInteraction), With<Header>>,
@@ -104,42 +359,48 @@ pub fn selection_system(
     node_markers: Query<(), With<GraphNode>>,
     selected_nodes: Query<Entity, With<Selected>>,
 ) {
+    if box_selection.suppress_click_selection {
+        box_selection.suppress_click_selection = false;
+        return;
+    }
+
     if mouse_button.just_pressed(MouseButton::Left) {
-        let clicked_node = nodes_interaction
-            .iter()
-            .find_map(|(entity, interaction)| {
-                interaction_is_pointer_active(interaction).then_some(entity)
-            })
-            .or_else(|| {
-                headers_interaction
-                    .iter()
-                    .find_map(|(header_entity, interaction)| {
-                        if !interaction_is_pointer_active(interaction) {
-                            return None;
-                        }
-
-                        find_graph_node_ancestor(header_entity, &parents, &node_markers)
-                    })
-            })
-            .or_else(|| {
-                ports_interaction.iter().find_map(|(interaction, port)| {
-                    if !interaction_is_pointer_active(interaction) {
-                        return None;
-                    }
-
-                    (node_markers.get(port.node_entity).is_ok()).then_some(port.node_entity)
-                })
-            });
+        let clicked_node = pointer_target_node(
+            &nodes_interaction,
+            &headers_interaction,
+            &ports_interaction,
+            &parents,
+            &node_markers,
+        );
+        let additive = selection_additive_modifier(&keys);
 
         if let Some(target_entity) = clicked_node {
-            live_document.select_single_entity(target_entity);
-            for entity in selected_nodes.iter() {
-                if entity != target_entity {
-                    commands.entity(entity).try_remove::<Selected>();
+            if additive {
+                let mut next_selection: HashSet<Entity> = selected_nodes.iter().collect();
+                if !next_selection.insert(target_entity) {
+                    next_selection.remove(&target_entity);
+                    commands.entity(target_entity).try_remove::<Selected>();
+                } else {
+                    commands.entity(target_entity).try_insert(Selected);
                 }
+
+                for entity in selected_nodes.iter() {
+                    if !next_selection.contains(&entity) {
+                        commands.entity(entity).try_remove::<Selected>();
+                    }
+                }
+
+                live_document.set_selected_entities(next_selection.iter().copied());
+            } else {
+                live_document.select_single_entity(target_entity);
+                for entity in selected_nodes.iter() {
+                    if entity != target_entity {
+                        commands.entity(entity).try_remove::<Selected>();
+                    }
+                }
+                commands.entity(target_entity).try_insert(Selected);
             }
-            commands.entity(target_entity).try_insert(Selected);
-        } else {
+        } else if !additive {
             live_document.clear_selected_entities();
             for entity in selected_nodes.iter() {
                 commands.entity(entity).try_remove::<Selected>();
@@ -253,6 +514,29 @@ pub fn request_delete_selected_nodes(
     }
 }
 
+pub fn request_graph_workflow_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    overlay: Res<GraphOverlayState>,
+    activation: Option<Res<GraphEditingUiActivation>>,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
+) {
+    if !graph_editing_enabled(activation.as_deref())
+        || overlay.active_surface != GraphOverlaySurface::None
+    {
+        return;
+    }
+
+    let ctrl_pressed = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+
+    if ctrl_pressed && keys.just_pressed(KeyCode::KeyD) {
+        command_writer.write(GraphCommandRequest::DuplicateSelectedNodes);
+    }
+
+    if keys.just_pressed(KeyCode::KeyF) {
+        command_writer.write(GraphCommandRequest::FrameSelectedNodes);
+    }
+}
+
 fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
     activation
         .map(|activation| activation.enabled)
@@ -344,6 +628,67 @@ pub fn disconnect_wire_system(
                 }
             }
         }
+    }
+}
+
+pub fn frame_selected_nodes_system(
+    activation: Option<Res<GraphEditingUiActivation>>,
+    mut command_requests: MessageReader<GraphCommandRequest>,
+    live_document: Res<LiveGraphDocumentState>,
+    windows: Query<&Window>,
+    mut q_camera: Query<(&mut Transform, &mut Projection), With<GraphCamera>>,
+) {
+    if !graph_editing_enabled(activation.as_deref()) {
+        command_requests.clear();
+        return;
+    }
+
+    if !command_requests
+        .read()
+        .any(|command| matches!(command, GraphCommandRequest::FrameSelectedNodes))
+    {
+        return;
+    }
+
+    let selected_nodes = live_document
+        .document
+        .selected_node_ids()
+        .iter()
+        .filter_map(|node_id| live_document.document.node(*node_id))
+        .collect::<Vec<_>>();
+    if selected_nodes.is_empty() {
+        return;
+    }
+
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok((mut camera_transform, mut projection)) = q_camera.single_mut() else {
+        return;
+    };
+
+    let mut min = Vec2::splat(f32::INFINITY);
+    let mut max = Vec2::splat(f32::NEG_INFINITY);
+    for node in selected_nodes {
+        let position = Vec2::new(node.position[0], node.position[1]);
+        min = min.min(position);
+        max = max.max(position);
+    }
+
+    let node_extent = Vec2::new(300.0, 160.0);
+    min -= node_extent * 0.5;
+    max += node_extent * 0.5;
+
+    let center = (min + max) * 0.5;
+    let framed_size = (max - min) + Vec2::new(220.0, 180.0);
+
+    camera_transform.translation.x = center.x;
+    camera_transform.translation.y = center.y;
+
+    if let Projection::Orthographic(ref mut ortho) = *projection {
+        let width_scale = framed_size.x / (window.width() * 0.72).max(1.0);
+        let height_scale = framed_size.y / (window.height() * 0.72).max(1.0);
+        ortho.scale = width_scale.max(height_scale).max(0.45).clamp(0.2, 5.0);
     }
 }
 

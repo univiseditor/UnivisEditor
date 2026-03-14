@@ -11,6 +11,10 @@
 - Formalized `SceneDocument` as the shared Scene IR between runtime world materialization and the app-side scene preview panel, so scene sinks now flow through one explicit document model instead of ad-hoc `EntityValue` consumption.
 - Expanded the core graph-native scene toolset with typed `Visibility` and `Anchor` components plus new `visibility`, `anchor`, `scale`, `rotation`, `z-order`, and `group` nodes so common scene-authoring work no longer depends on ad-hoc transform composition alone.
 - Started a practical graph-asset workflow by preserving document `prefabs` and `subgraphs` through live sync and persistence, adding a `scene/prefab_instance` node, and wiring island actions for capturing prefabs/subgraphs plus instancing saved subgraphs back into the canvas.
+- Upgraded the floating diagnostics panel from a coarse health summary to issue-focused editor feedback, including selected-node findings, blocked-path reporting, unused-branch reachability hints, and clearer validation/runtime messages tied back to node labels.
+- Improved daily graph editing workflow with additive selection, empty-canvas box selection, `Duplicate Selected` snapshot duplication, and `Frame Selected` camera framing, and exposed the new duplicate/frame actions from the island `Edit` surface.
+- Added lightweight workflow nodes for canvas organization: `logic/reroute` for cleaner wire routing and `logic/note` for inline graph comments without affecting runtime outputs.
+- Added a staged GitHub Actions workflow that runs `scripts/verify_workspace.sh` in a `core`/`builtin`/`persistence`/`app` matrix, keeping CI aligned with the same sequential verification path used locally.
 
 ## 2026-03-10
 

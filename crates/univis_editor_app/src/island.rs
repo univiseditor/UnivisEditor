@@ -35,6 +35,8 @@ enum CanvasIslandMenuAction {
     SaveAs,
     Open,
     DeleteSelected,
+    DuplicateSelected,
+    FrameSelected,
     CapturePrefab,
     CaptureSubgraph,
     InsertLatestSubgraph,
@@ -378,6 +380,12 @@ fn setup_canvas_island_ui(mut commands: Commands) {
                         "Delete",
                         CanvasIslandMenuAction::DeleteSelected,
                     ),
+                    (
+                        "Duplicate Selected",
+                        "Ctrl+D",
+                        CanvasIslandMenuAction::DuplicateSelected,
+                    ),
+                    ("Frame Selected", "F", CanvasIslandMenuAction::FrameSelected),
                     (
                         "Capture Prefab",
                         "Store",
@@ -1027,6 +1035,12 @@ fn handle_canvas_island_menu_actions(
             }
             CanvasIslandMenuAction::DeleteSelected => {
                 command_writer.write(GraphCommandRequest::DeleteSelectedNodes);
+            }
+            CanvasIslandMenuAction::DuplicateSelected => {
+                command_writer.write(GraphCommandRequest::DuplicateSelectedNodes);
+            }
+            CanvasIslandMenuAction::FrameSelected => {
+                command_writer.write(GraphCommandRequest::FrameSelectedNodes);
             }
             CanvasIslandMenuAction::CapturePrefab => {
                 command_writer.write(GraphCommandRequest::CapturePrefabFromSelection);

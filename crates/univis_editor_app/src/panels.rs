@@ -1,12 +1,18 @@
+use std::collections::{HashMap, HashSet};
+
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
 use serde::{Deserialize, Serialize};
 use univis_editor_persistence::graph_persistence::{
     GraphHistoryState, GraphPersistenceRuntimeState, GraphPersistenceStatus,
 };
-use univis_editor_runtime::{GraphRuntimeDiagnostics, GraphSceneOutputs};
+use univis_editor_runtime::{
+    GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity, GraphSceneOutputs,
+};
 use univis_editor_ui::prelude::{GraphCamera, Selected};
-use univis_node_graph::prelude::{LiveGraphDocumentState, NodeRegistry};
+use univis_node_graph::prelude::{
+    GraphDocument, GraphValidationIssue, LiveGraphDocumentState, NodeRegistry,
+};
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FloatingPanelsSettings {
@@ -224,10 +230,113 @@ fn sync_floating_panel_visibility(
     }
 }
 
+fn format_node_label(document: &GraphDocument, registry: &NodeRegistry, node_id: u64) -> String {
+    let Some(node) = document.nodes.iter().find(|node| node.id == node_id) else {
+        return format!("Node#{node_id}");
+    };
+
+    let display_name = registry
+        .get(&node.definition_id)
+        .map(|definition| definition.display_name().to_string())
+        .unwrap_or_else(|| node.definition_id.as_str().to_string());
+
+    format!("{display_name}#{node_id}")
+}
+
+fn format_node_list(
+    document: &GraphDocument,
+    registry: &NodeRegistry,
+    node_ids: &[u64],
+    limit: usize,
+) -> String {
+    let mut labels = node_ids
+        .iter()
+        .take(limit)
+        .map(|node_id| format_node_label(document, registry, *node_id))
+        .collect::<Vec<_>>();
+
+    if node_ids.len() > limit {
+        labels.push(format!("+{}", node_ids.len() - limit));
+    }
+
+    labels.join(", ")
+}
+
+fn collect_unused_branch_nodes(document: &GraphDocument, sink_node_ids: &[u64]) -> Vec<u64> {
+    if sink_node_ids.is_empty() {
+        return Vec::new();
+    }
+
+    let mut reverse_edges: HashMap<u64, Vec<u64>> = HashMap::new();
+    for edge in &document.edges {
+        reverse_edges
+            .entry(edge.to_node_id)
+            .or_default()
+            .push(edge.from_node_id);
+    }
+
+    let mut used_nodes = HashSet::new();
+    let mut pending = sink_node_ids.to_vec();
+    while let Some(node_id) = pending.pop() {
+        if !used_nodes.insert(node_id) {
+            continue;
+        }
+
+        if let Some(upstream_nodes) = reverse_edges.get(&node_id) {
+            pending.extend(upstream_nodes.iter().copied());
+        }
+    }
+
+    document
+        .nodes
+        .iter()
+        .filter_map(|node| (!used_nodes.contains(&node.id)).then_some(node.id))
+        .collect()
+}
+
+fn runtime_issue_line(
+    document: &GraphDocument,
+    registry: &NodeRegistry,
+    live_document: &LiveGraphDocumentState,
+    issue: &univis_editor_runtime::GraphRuntimeNodeIssue,
+) -> String {
+    let severity = match issue.severity {
+        GraphRuntimeIssueSeverity::Warning => "Warning",
+        GraphRuntimeIssueSeverity::Error => "Error",
+    };
+
+    if let Some(node_id) = live_document.node_id_for_entity(issue.node) {
+        format!(
+            "{severity}: {} -> {}",
+            format_node_label(document, registry, node_id),
+            issue.message
+        )
+    } else {
+        format!("{severity}: {} -> {}", issue.definition_id, issue.message)
+    }
+}
+
+fn validation_issue_line(
+    document: &GraphDocument,
+    registry: &NodeRegistry,
+    issue: &GraphValidationIssue,
+) -> String {
+    if issue.node_ids.is_empty() {
+        return format!("Validation: {}", issue.message);
+    }
+
+    format!(
+        "Validation: {} [{}]",
+        issue.message,
+        format_node_list(document, registry, &issue.node_ids, 3)
+    )
+}
+
 fn refresh_editor_diagnostics_summary(
     live_document: Res<LiveGraphDocumentState>,
     registry: Res<NodeRegistry>,
     runtime_diagnostics: Res<GraphRuntimeDiagnostics>,
+    scene_outputs: Res<GraphSceneOutputs>,
     persistence_runtime: Res<GraphPersistenceRuntimeState>,
     persistence_status: Res<GraphPersistenceStatus>,
     history: Res<GraphHistoryState>,
@@ -237,6 +346,19 @@ fn refresh_editor_diagnostics_summary(
         &live_document.document,
         &registry,
     );
+    let blocked_node_ids = runtime_diagnostics
+        .blocked_nodes
+        .iter()
+        .filter_map(|entity| live_document.node_id_for_entity(*entity))
+        .collect::<Vec<_>>();
+    let blocked_node_set = blocked_node_ids.iter().copied().collect::<HashSet<_>>();
+    let sink_node_ids = scene_outputs
+        .sinks
+        .iter()
+        .filter_map(|sink| live_document.node_id_for_entity(sink.node_entity))
+        .collect::<Vec<_>>();
+    let unused_node_ids = collect_unused_branch_nodes(&live_document.document, &sink_node_ids);
+    let unused_node_set = unused_node_ids.iter().copied().collect::<HashSet<_>>();
     let mut lines = Vec::new();
 
     lines.push(format!(
@@ -255,10 +377,11 @@ fn refresh_editor_diagnostics_summary(
         live_document.document.subgraph_count()
     ));
     lines.push(format!(
-        "Validation: {}  Runtime issues: {}  Blocked: {}",
+        "Validation: {}  Runtime issues: {}  Blocked: {}  Unused: {}",
         validation_issues.len(),
         runtime_diagnostics.node_issues.len(),
-        runtime_diagnostics.blocked_nodes.len()
+        blocked_node_ids.len(),
+        unused_node_ids.len()
     ));
     lines.push(format!(
         "Persistence: {}",
@@ -269,14 +392,105 @@ fn refresh_editor_diagnostics_summary(
         }
     ));
 
-    if let Some(issue) = validation_issues.first() {
-        lines.push(format!("Validation issue: {}", issue.message));
-    } else if let Some(issue) = runtime_diagnostics.node_issues.first() {
-        lines.push(format!("Runtime issue: {}", issue.message));
+    if sink_node_ids.is_empty() {
+        lines.push("Reachability: no scene sink, so unused-branch analysis is paused.".to_string());
+    } else {
+        lines.push(format!(
+            "Reachability: {} scene sink(s) active.",
+            sink_node_ids.len()
+        ));
+    }
+
+    if let Some(selected_node_id) = live_document.document.selected_node_ids().first().copied() {
+        lines.push(format!(
+            "Selected: {}",
+            format_node_label(&live_document.document, &registry, selected_node_id)
+        ));
+
+        let mut selected_findings = Vec::new();
+        if blocked_node_set.contains(&selected_node_id) {
+            selected_findings.push(
+                "Selected issue: blocked by a cycle or unresolved dependency path.".to_string(),
+            );
+        }
+        if !sink_node_ids.is_empty() && unused_node_set.contains(&selected_node_id) {
+            selected_findings.push(
+                "Selected issue: this branch does not contribute to any scene sink.".to_string(),
+            );
+        }
+
+        selected_findings.extend(
+            validation_issues
+                .iter()
+                .filter(|issue| issue.node_ids.contains(&selected_node_id))
+                .take(2)
+                .map(|issue| validation_issue_line(&live_document.document, &registry, issue)),
+        );
+        selected_findings.extend(
+            runtime_diagnostics
+                .node_issues
+                .iter()
+                .filter(|issue| {
+                    live_document.node_id_for_entity(issue.node) == Some(selected_node_id)
+                })
+                .take(2)
+                .map(|issue| {
+                    runtime_issue_line(&live_document.document, &registry, &live_document, issue)
+                }),
+        );
+
+        if selected_findings.is_empty() {
+            lines.push("Selected status: healthy".to_string());
+        } else {
+            lines.extend(selected_findings);
+        }
+    } else {
+        lines.push("Selected: none".to_string());
+    }
+
+    if !blocked_node_ids.is_empty() {
+        lines.push(format!(
+            "Blocked path: {}",
+            format_node_list(&live_document.document, &registry, &blocked_node_ids, 4)
+        ));
+    }
+
+    if !unused_node_ids.is_empty() {
+        lines.push(format!(
+            "Unused branch: {}",
+            format_node_list(&live_document.document, &registry, &unused_node_ids, 4)
+        ));
+    }
+
+    for issue in validation_issues.iter().take(2) {
+        lines.push(validation_issue_line(
+            &live_document.document,
+            &registry,
+            issue,
+        ));
+    }
+
+    for issue in runtime_diagnostics.node_issues.iter().take(2) {
+        lines.push(runtime_issue_line(
+            &live_document.document,
+            &registry,
+            &live_document,
+            issue,
+        ));
+    }
+
+    if validation_issues.is_empty()
+        && runtime_diagnostics.node_issues.is_empty()
+        && blocked_node_ids.is_empty()
+        && unused_node_ids.is_empty()
+    {
+        if let Some(status) = persistence_status.active.as_ref() {
+            lines.push(format!("Status: {}", status.text));
+        } else {
+            lines.push("Status: healthy".to_string());
+        }
     } else if let Some(status) = persistence_status.active.as_ref() {
         lines.push(format!("Status: {}", status.text));
-    } else {
-        lines.push("Status: healthy".to_string());
     }
 
     summary.text = lines.join("\n");

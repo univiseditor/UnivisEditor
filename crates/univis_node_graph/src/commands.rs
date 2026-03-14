@@ -14,6 +14,8 @@ pub enum GraphCommandRequest {
         force_if_dirty: bool,
     },
     DeleteSelectedNodes,
+    DuplicateSelectedNodes,
+    FrameSelectedNodes,
     CapturePrefabFromSelection,
     CaptureSubgraphFromSelection,
     InsertSubgraph {
