@@ -2,15 +2,16 @@ use bevy::prelude::*;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
 use univis_editor_persistence::format::parse_graph_document_payload;
 use univis_editor_persistence::graph_persistence::{
     GraphHistoryState, GraphPersistencePlugin, GraphPersistenceSettings,
 };
-use univis_editor_ui::menu::execute_spawn_node_commands;
+use univis_editor_ui::menu::execute_spawn_node_commands_system;
 use univis_editor_ui::menu::ContextMenuState;
 use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::prelude::sync_live_graph_document_state;
-use univis_node_graph::commands::{GraphCommandRequest, GraphCommandsPlugin, GraphMutationTracker};
+use univis_node_graph::commands::GraphMutationTracker;
 use univis_node_graph::document::LiveGraphDocumentState;
 use univis_node_graph::node_definition::{
     GraphNode, GraphPort, NodeCategory, NodeDefinition, NodeId, PortDefinition, PortType,
@@ -90,7 +91,7 @@ fn build_test_app() -> App {
         .init_resource::<NodePopupState>()
         .add_plugins(GraphCommandsPlugin)
         .add_plugins(GraphPersistencePlugin)
-        .add_systems(Update, execute_spawn_node_commands)
+        .add_systems(Update, execute_spawn_node_commands_system)
         .add_systems(PostUpdate, sync_live_graph_document_state);
 
     {

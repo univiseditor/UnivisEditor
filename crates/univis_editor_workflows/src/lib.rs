@@ -1,3 +1,5 @@
+//! Editor workflow systems that operate on graphs without moving editor UX concerns into Graph Core.
+
 mod capture;
 mod duplicate;
 mod instantiate;

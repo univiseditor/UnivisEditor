@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use univis_editor_commands::GraphCommandRequest;
 use univis_editor_ui::prelude::GraphCamera;
 use univis_node_graph::prelude::*;
 

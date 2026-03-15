@@ -1,4 +1,4 @@
-//! UnivisEditor App facade
+//! UnivisEditor app orchestration for editor UX surfaces and plugin assembly.
 
 mod editor_settings_persistence;
 mod island;
@@ -8,12 +8,13 @@ use bevy::prelude::*;
 use editor_settings_persistence::EditorSettingsPersistencePlugin;
 use island::CanvasIslandPlugin;
 use panels::FloatingPanelsPlugin;
+use univis_editor_commands::GraphCommandsPlugin;
 use univis_editor_nodes_builtin as _;
 use univis_editor_persistence::graph_persistence::GraphPersistencePlugin;
 use univis_editor_runtime::NodeRuntimePlugin;
 use univis_editor_ui::NodeUiPlugin;
 use univis_editor_workflows::GraphAssetWorkflowPlugin;
-use univis_node_graph::{commands::GraphCommandsPlugin, node_registry::NodeRegistryPlugin};
+use univis_node_graph::node_registry::NodeRegistryPlugin;
 
 pub mod prelude {
     pub use univis_editor_persistence::prelude::*;

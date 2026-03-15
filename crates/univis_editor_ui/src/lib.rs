@@ -100,6 +100,7 @@ impl Plugin for NodeUiPlugin {
 }
 
 pub mod prelude {
+    pub use univis_editor_commands::prelude::*;
     pub use univis_editor_runtime::prelude::*;
     pub use univis_node_graph::prelude::*;
 

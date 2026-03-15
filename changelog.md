@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-15
+
+- Expanded document-level coverage with a dedicated `document_workflows` target for prefab upserts, subgraph capture/instancing, and live-document entity-retention behavior, keeping structural graph tests focused on document operations instead of node-family details.
+- Added editor/workflow smoke coverage for `box select`, `frame selected`, duplicate snapshots, and prefab/subgraph capture-and-reinsert flows through new `editor_smoke` and `workflow_assets_smoke` targets.
+- Extended the staged verification script and GitHub Actions matrix with a dedicated `workflows` stage plus opt-in `fmt`, `clippy-core`, and `clippy-editor` passes, so maintenance checks stay sequential locally while CI covers formatting and lint drift.
+- Added `CONTRIBUTING.md` and refreshed the verification docs so the crate boundaries, node-extension path, and staged verification workflow are easier for contributors to follow.
+- Re-centered the product definition around `Graph Core`, `Scene Authoring`, and `Editor UX`, moved editor command messages out of `univis_node_graph` into a dedicated `univis_editor_commands` crate, and refreshed the README so the documented scope matches the active architecture more closely.
+
 ## 2026-03-14
 
 - Hardened graph-editor mutation flows by sanitizing stale drag, wire, popup, selection, and live-document state after delete/load/undo/redo paths instead of letting invalid entity references linger.

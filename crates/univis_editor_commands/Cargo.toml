@@ -1,0 +1,8 @@
+[package]
+name = "univis_editor_commands"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy.workspace = true
+univis_node_graph = { path = "../univis_node_graph" }

@@ -1,9 +1,10 @@
 use bevy::prelude::*;
+use univis_editor_commands::GraphCommandRequest;
 use univis_editor_persistence::graph_persistence::{
     GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
 };
 use univis_node_graph::{
-    commands::{GraphCommandRequest, GraphMutationTracker},
+    commands::GraphMutationTracker,
     document::GraphDocumentPrefab,
     prelude::{GraphNode, LiveGraphDocumentState},
     value::NodeValue,

@@ -33,6 +33,25 @@ This is best described today as:
 
 `A graph-native scene editor where scenes are authored as composable node networks and materialized into runtime entities.`
 
+## Product Axes
+
+The active product is intentionally constrained to three axes only:
+
+- `Graph Core`
+  - node definitions, registry, ports, values, graph documents, validation, and structural graph operations
+- `Scene Authoring`
+  - scene-facing value composition, built-in scene nodes, prefabs, subgraphs, scene outputs, and runtime scene materialization
+- `Editor UX`
+  - canvas interaction, menus, wires, grid, settings, persistence, history, diagnostics, and workflow shortcuts
+
+Anything that does not clearly improve one of these axes is either moved out of the active layer that owns it, simplified, or deferred.
+
+Current examples of deferred or intentionally excluded scope:
+
+- turning editor internals such as save/open, autosave timers, or overlay focus into nodes
+- embedding full render viewports directly inside nodes
+- widening the product into a general-purpose node editor outside scene authoring
+
 ## Architectural Model
 
 The project is organized around four layers:
@@ -48,12 +67,19 @@ The project is organized around four layers:
 
 This boundary is intentional. Scene authoring belongs in the graph. Editor infrastructure does not.
 
+The rule used across the workspace is:
+
+- authoring logic lives inside graph-facing data and node processing
+- editor operation lives outside the graph as UX, persistence, and workflow systems
+
 ## Workspace Layout
 
 The workspace is split into focused crates:
 
 - `univis_node_graph`
-  - graph types, node definitions, registry, values, commands, validation, document helpers
+  - graph types, node definitions, registry, values, validation, and document helpers
+- `univis_editor_commands`
+  - editor-facing command messages for spawn, save/load, history, duplicate, frame, and prefab/subgraph workflows
 - `univis_scene`
   - pure scene data types such as `EntityValue` and component payloads
 - `univis_editor_runtime`
@@ -64,8 +90,19 @@ The workspace is split into focused crates:
   - save/load, autosave, serialization helpers, and graph format handling
 - `univis_editor_nodes_builtin`
   - built-in input, math, logic, and scene nodes
+- `univis_editor_workflows`
+  - duplicate, prefab, subgraph, and other editor workflow systems that operate around the graph
 - `univis_editor_app`
-  - facade crate that assembles the editor plugins
+  - thin facade crate that assembles the editor plugins
+
+You can read the same layout through the three product axes:
+
+- `Graph Core`
+  - `univis_node_graph`
+- `Scene Authoring`
+  - `univis_scene`, `univis_editor_runtime`, `univis_editor_nodes_builtin`
+- `Editor UX`
+  - `univis_editor_commands`, `univis_editor_ui`, `univis_editor_persistence`, `univis_editor_workflows`, `univis_editor_app`
 
 ## Scene Authoring Model
 
@@ -98,9 +135,9 @@ Current built-in nodes include:
 - math nodes
   - add, subtract, multiply, divide, clamp, lerp, min, max, abs, sin, cos
 - logic nodes
-  - compare, branch, and, or, not
+  - compare, branch, and, or, not, reroute, note
 - scene nodes
-  - transform, sprite, camera2d, text, name, merge entity, add child, scene
+  - transform, name, visibility, anchor, prefab instance, sprite, text, camera2d, scale, rotation, z-order, merge entity, add child, group, scene
 
 ## Quick Start
 
@@ -142,12 +179,16 @@ Run only one area:
 bash scripts/verify_workspace.sh core
 bash scripts/verify_workspace.sh builtin
 bash scripts/verify_workspace.sh persistence
+bash scripts/verify_workspace.sh workflows
 bash scripts/verify_workspace.sh app
+bash scripts/verify_workspace.sh fmt
+bash scripts/verify_workspace.sh clippy-core
+bash scripts/verify_workspace.sh clippy-editor
 ```
 
 The script forces sequential execution with `CARGO_BUILD_JOBS=1` unless you override it.
 
-GitHub Actions runs the same script through `.github/workflows/verify-workspace.yml`, split into `core`, `builtin`, `persistence`, and `app` jobs instead of maintaining a separate CI command list.
+GitHub Actions runs the same script through `.github/workflows/verify-workspace.yml`, split into `core`, `builtin`, `persistence`, `workflows`, `app`, `fmt`, `clippy-core`, and `clippy-editor` jobs instead of maintaining a separate CI command list.
 
 ## Main Test Targets
 
@@ -155,6 +196,7 @@ Focused test targets currently maintained in the workspace:
 
 - `cargo test -p univis_node_graph --test core_api`
 - `cargo test -p univis_node_graph --test document_ops`
+- `cargo test -p univis_node_graph --test document_workflows`
 - `cargo test -p univis_node_graph --test graph_validation`
 - `cargo test -p univis_editor_runtime --lib`
 - `cargo test -p univis_editor_nodes_builtin --test input_nodes`
@@ -163,6 +205,11 @@ Focused test targets currently maintained in the workspace:
 - `cargo test -p univis_editor_nodes_builtin --test scene_nodes`
 - `cargo test -p univis_editor_persistence --test persistence_defaults`
 - `cargo test -p univis_editor_persistence --test persistence_format`
+- `cargo test -p univis_editor_persistence --test workflow_smoke`
+- `cargo test -p univis_editor_ui --test editor_smoke`
+- `cargo test -p univis_editor_workflows --test workflow_assets_smoke`
+
+For contribution guidelines and crate boundaries, see [CONTRIBUTING.md](/home/abdellah/Desktop/Univis/UnivisEditor/CONTRIBUTING.md).
 
 ## Extending The Graph
 
@@ -189,6 +236,7 @@ What is already clear:
 - the scene-authoring direction is intentional
 - the workspace boundaries are real and useful
 - the graph model is the center of the product
+- the product is being actively constrained to `Graph Core`, `Scene Authoring`, and `Editor UX`
 
 What is still evolving:
 
@@ -196,6 +244,7 @@ What is still evolving:
 - deeper runtime smoke coverage
 - broader CI coverage beyond the staged Linux verification workflow
 - further modularization of large editor and persistence modules
+- continued pruning of features that do not clearly strengthen one of the three product axes
 
 ## Guiding Principle
 

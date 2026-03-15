@@ -23,7 +23,11 @@ jobs:
           - core
           - builtin
           - persistence
+          - workflows
           - app
+          - fmt
+          - clippy-core
+          - clippy-editor
     env:
       CARGO_BUILD_JOBS: 1
       RUST_BACKTRACE: 1
@@ -42,7 +46,7 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: verify-workspace-v1
+          shared-key: verify-workspace-v2
 
       - name: Run staged verification
         run: bash scripts/verify_workspace.sh ${{ matrix.mode }}

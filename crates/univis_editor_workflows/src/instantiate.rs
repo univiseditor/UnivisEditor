@@ -1,11 +1,12 @@
 use bevy::prelude::*;
+use univis_editor_commands::GraphCommandRequest;
 use univis_editor_persistence::graph_persistence::{
     ApplyGraphDocumentRequest, GraphPersistenceSettings, GraphPersistenceStatus,
     GraphPersistenceStatusSeverity,
 };
 use univis_editor_ui::node_spawn::spawn_node_from_definition_entity;
 use univis_node_graph::{
-    commands::{GraphCommandRequest, GraphMutationTracker},
+    commands::GraphMutationTracker,
     node_definition::NodeId,
     prelude::{GraphNode, LiveGraphDocumentState, NodeRegistry},
     value::NodeValue,

@@ -14,6 +14,7 @@ core_checks=(
 core_tests=(
   "cargo test -p univis_node_graph --test core_api --quiet"
   "cargo test -p univis_node_graph --test document_ops --quiet"
+  "cargo test -p univis_node_graph --test document_workflows --quiet"
   "cargo test -p univis_node_graph --test graph_validation --quiet"
   "cargo test -p univis_editor_runtime --lib --quiet"
 )
@@ -39,8 +40,31 @@ persistence_tests=(
   "cargo test -p univis_editor_persistence --test workflow_smoke --quiet"
 )
 
+workflow_checks=(
+  "cargo check -p univis_editor_commands --lib --quiet"
+  "cargo check -p univis_editor_ui --lib --quiet"
+  "cargo check -p univis_editor_workflows --lib --quiet"
+)
+
+workflow_tests=(
+  "cargo test -p univis_editor_ui --test editor_smoke --quiet"
+  "cargo test -p univis_editor_workflows --test workflow_assets_smoke --quiet"
+)
+
 app_checks=(
   "cargo check -p univis_editor_app --lib --quiet"
+)
+
+fmt_checks=(
+  "cargo fmt --all --check"
+)
+
+clippy_core_checks=(
+  "cargo clippy -p univis_node_graph -p univis_scene -p univis_editor_runtime --lib --tests -- -D warnings"
+)
+
+clippy_editor_checks=(
+  "cargo clippy -p univis_editor_nodes_builtin -p univis_editor_ui -p univis_editor_workflows -p univis_editor_persistence -p univis_editor_app --lib --tests --examples -- -D warnings"
 )
 
 run_commands() {
@@ -69,8 +93,21 @@ case "$mode" in
     run_commands "Persistence checks" "${persistence_checks[@]}"
     run_commands "Persistence tests" "${persistence_tests[@]}"
     ;;
+  workflows)
+    run_commands "Workflow checks" "${workflow_checks[@]}"
+    run_commands "Workflow tests" "${workflow_tests[@]}"
+    ;;
   app)
     run_commands "App checks" "${app_checks[@]}"
+    ;;
+  fmt)
+    run_commands "Format checks" "${fmt_checks[@]}"
+    ;;
+  clippy-core)
+    run_commands "Clippy core checks" "${clippy_core_checks[@]}"
+    ;;
+  clippy-editor)
+    run_commands "Clippy editor checks" "${clippy_editor_checks[@]}"
     ;;
   all)
     run_commands "Core checks" "${core_checks[@]}"
@@ -79,10 +116,12 @@ case "$mode" in
     run_commands "Builtin tests" "${builtin_tests[@]}"
     run_commands "Persistence checks" "${persistence_checks[@]}"
     run_commands "Persistence tests" "${persistence_tests[@]}"
+    run_commands "Workflow checks" "${workflow_checks[@]}"
+    run_commands "Workflow tests" "${workflow_tests[@]}"
     run_commands "App checks" "${app_checks[@]}"
     ;;
   *)
-    echo "Usage: $0 [core|builtin|persistence|app|all]" >&2
+    echo "Usage: $0 [core|builtin|persistence|workflows|app|fmt|clippy-core|clippy-editor|all]" >&2
     exit 1
     ;;
 esac

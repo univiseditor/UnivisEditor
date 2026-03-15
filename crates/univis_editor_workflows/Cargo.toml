@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy.workspace = true
 univis_node_graph = { path = "../univis_node_graph" }
+univis_editor_commands = { path = "../univis_editor_commands" }
 univis_scene = { path = "../univis_scene" }
 univis_editor_runtime = { path = "../univis_editor_runtime" }
 univis_editor_ui = { path = "../univis_editor_ui" }

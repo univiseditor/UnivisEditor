@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
+use univis_editor_commands::GraphCommandRequest;
 use univis_editor_persistence::graph_persistence::{
     ApplyGraphDocumentRequest, GraphPersistenceSettings, GraphPersistenceStatus,
     GraphPersistenceStatusSeverity,
 };
-use univis_node_graph::{commands::GraphCommandRequest, prelude::LiveGraphDocumentState};
+use univis_node_graph::prelude::LiveGraphDocumentState;
 
 use crate::status::set_asset_status;
 

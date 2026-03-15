@@ -10,7 +10,7 @@ use univis_editor_persistence::graph_persistence::{
 };
 use univis_editor_ui::overlay::{GraphOverlayState, GraphOverlaySurface};
 use univis_editor_ui::prelude::{EditorSettings, GraphCamera};
-use univis_node_graph::commands::GraphCommandRequest;
+use univis_editor_commands::GraphCommandRequest;
 use univis_node_graph::node_definition::NodeId;
 use univis_node_graph::node_registry::NodeRegistry;
 
