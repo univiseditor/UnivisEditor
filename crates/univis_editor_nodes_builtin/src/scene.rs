@@ -15,9 +15,9 @@ use univis_node_graph::register_node;
 use univis_node_graph::value::NodeValue;
 use univis_scene::{
     AnchorComponentValue, Camera2DComponentValue, EntityComponentValue, EntityValue,
-    SpriteComponentValue, Text2DComponentValue, VisibilityComponentValue, ANCHOR_COMPONENT_KEY,
-    CAMERA2D_COMPONENT_KEY, SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY,
-    VISIBILITY_COMPONENT_KEY,
+    SpriteComponentValue, Text2DComponentValue, VisibilityComponentValue,
+    ANCHOR_COMPONENT_KEY, CAMERA2D_COMPONENT_KEY, SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY,
+    TRANSFORM_COMPONENT_KEY, VISIBILITY_COMPONENT_KEY,
 };
 
 const SCENE_NODE_COLOR: Color = Color::srgb(0.72, 0.55, 0.24);
@@ -34,18 +34,12 @@ fn require_scene_sink_input(ctx: &mut ProcessContext) -> ProcessResult {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct PrefabInstanceData {
-    pub prefab_id: String,
-    pub root: Option<EntityValue>,
-}
-
-pub fn read_prefab_instance_data(
+fn read_prefab_instance_root(
     custom_data: &mut Option<Box<dyn Any + Send + Sync>>,
-) -> Option<PrefabInstanceData> {
+) -> Option<EntityValue> {
     custom_data
         .as_deref_mut()
-        .and_then(|data| data.downcast_mut::<PrefabInstanceData>())
+        .and_then(|data| data.downcast_mut::<EntityValue>())
         .cloned()
 }
 
@@ -295,26 +289,10 @@ impl NodeDefinition for PrefabInstanceNode {
             return ProcessResult::MissingInput(0);
         }
 
-        let Some(data) = read_prefab_instance_data(ctx.custom_data) else {
+        let Some(root) = read_prefab_instance_root(ctx.custom_data) else {
             ctx.set(0, NodeValue::None);
             return ProcessResult::Error(format!(
                 "Prefab '{}' is not available in the current graph document.",
-                requested_id
-            ));
-        };
-
-        if data.prefab_id != requested_id {
-            ctx.set(0, NodeValue::None);
-            return ProcessResult::Error(format!(
-                "Prefab '{}' is stale; expected '{}'.",
-                requested_id, data.prefab_id
-            ));
-        }
-
-        let Some(root) = data.root else {
-            ctx.set(0, NodeValue::None);
-            return ProcessResult::Error(format!(
-                "Prefab '{}' could not be resolved.",
                 requested_id
             ));
         };

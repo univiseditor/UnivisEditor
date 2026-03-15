@@ -19,6 +19,7 @@ univis_editor_runtime = { path = "../univis_editor_runtime" }
 univis_editor_ui = { path = "../univis_editor_ui" }
 univis_editor_persistence = { path = "../univis_editor_persistence" }
 univis_editor_nodes_builtin = { path = "../univis_editor_nodes_builtin" }
+univis_editor_workflows = { path = "../univis_editor_workflows" }
 
 [[example]]
 name = "simple_editor"

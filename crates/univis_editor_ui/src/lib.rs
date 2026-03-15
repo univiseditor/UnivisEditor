@@ -3,6 +3,7 @@ pub mod interaction;
 pub mod menu;
 pub mod node_popup;
 pub mod node_spawn;
+pub mod overlay;
 pub mod widgets;
 pub mod wire;
 
@@ -44,6 +45,7 @@ impl Plugin for NodeUiPlugin {
             .init_resource::<univis_node_graph::pin::WireConnectionState>()
             .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
+            .init_resource::<overlay::GraphOverlayState>()
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
             .add_plugins(NodePopupPlugin)
@@ -74,11 +76,11 @@ impl Plugin for NodeUiPlugin {
             .add_systems(
                 Update,
                 (
-                    open_context_menu,
-                    sync_context_menu_overlay,
-                    draw_context_menu,
-                    interact_context_menu,
-                    execute_spawn_node_commands,
+                    open_context_menu_system,
+                    sync_context_menu_overlay_system,
+                    draw_context_menu_system,
+                    interact_context_menu_system,
+                    execute_spawn_node_commands_system,
                 )
                     .chain(),
             )
@@ -106,6 +108,7 @@ pub mod prelude {
     pub use crate::menu::*;
     pub use crate::node_popup::*;
     pub use crate::node_spawn::*;
+    pub use crate::overlay::*;
     pub use crate::widgets::prelude::*;
     pub use crate::wire::*;
     pub use crate::DeleteSelectedNodesRequest;

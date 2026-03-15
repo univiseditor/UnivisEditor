@@ -45,26 +45,11 @@ impl GraphMutationTracker {
     }
 }
 
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct GraphOverlayState {
-    pub active_surface: GraphOverlaySurface,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum GraphOverlaySurface {
-    #[default]
-    None,
-    ContextMenu,
-    CanvasIslandMenu,
-    NodePopup,
-}
-
 pub struct GraphCommandsPlugin;
 
 impl Plugin for GraphCommandsPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<GraphCommandRequest>()
-            .init_resource::<GraphOverlayState>()
             .init_resource::<GraphMutationTracker>()
             .init_resource::<LiveGraphDocumentState>();
     }

@@ -15,6 +15,14 @@
 - Improved daily graph editing workflow with additive selection, empty-canvas box selection, `Duplicate Selected` snapshot duplication, and `Frame Selected` camera framing, and exposed the new duplicate/frame actions from the island `Edit` surface.
 - Added lightweight workflow nodes for canvas organization: `logic/reroute` for cleaner wire routing and `logic/note` for inline graph comments without affecting runtime outputs.
 - Added a staged GitHub Actions workflow that runs `scripts/verify_workspace.sh` in a `core`/`builtin`/`persistence`/`app` matrix, keeping CI aligned with the same sequential verification path used locally.
+- Started the codebase-organization pass by splitting `crates/univis_editor_ui/src/interaction.rs` into focused modules for `selection`, `drag`, `camera`, `workflow_shortcuts`, `box_selection`, and state/document synchronization while keeping the existing editor behavior intact.
+- Continued the codebase-organization pass by splitting `crates/univis_editor_persistence/src/graph_persistence.rs` into focused `state`, `history`, `apply`, and `io` modules without changing the public persistence surface used by the app, tests, and editor workflow.
+- Continued the runtime cleanup by splitting `crates/univis_editor_runtime/src/lib.rs` into dedicated `processing`, `diagnostics`, `scene_outputs`, and `world_sync` modules, keeping the plugin surface stable while separating node processing from scene-output/world-sync concerns.
+- Started the architecture-boundary pass by moving prefab-instance runtime data into `univis_scene`, which lets `univis_editor_runtime` stop depending on `univis_editor_nodes_builtin` for scene-node-specific `custom_data` plumbing.
+- Continued slimming `univis_editor_app` by splitting `crates/univis_editor_app/src/graph_assets.rs` into focused workflow modules for duplication, asset capture, instancing, and status updates while preserving the same graph-asset commands.
+- Continued the architecture-boundary pass by moving overlay focus state out of `univis_node_graph` into `univis_editor_ui`, removing prefab cache helpers from `univis_scene`, introducing runtime system sets, and extracting graph/prefab workflow logic into a dedicated `univis_editor_workflows` crate so `runtime` stays execution-focused and `app` remains a thin orchestrator.
+- Started the consistency pass by standardizing recently touched systems onto `*_system` names, splitting `crates/univis_node_graph/src/document.rs` into `types/state/snapshots/operations` modules, and adding brief intent comments in wire/workflow/document hotspots so the newer architecture is easier to follow.
+- Continued the consistency pass across the remaining legacy UI/app files by renaming `menu`, `node_popup`, `CanvasIsland`, and editor-settings persistence systems onto the same `*_system` convention, so the newer module structure now reads consistently across runtime, persistence, UI, workflows, and app orchestration.
 
 ## 2026-03-10
 

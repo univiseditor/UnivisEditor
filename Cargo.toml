@@ -6,6 +6,7 @@ members = [
   "crates/univis_editor_ui",
   "crates/univis_editor_persistence",
   "crates/univis_editor_nodes_builtin",
+  "crates/univis_editor_workflows",
   "crates/univis_editor_app",
 ]
 default-members = ["crates/univis_editor_app"]

@@ -23,7 +23,7 @@ pub struct CategoryHeader {
 }
 
 /// Opens or closes the node spawn context menu at the current cursor position.
-pub fn open_context_menu(
+pub fn open_context_menu_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     mut menu_state: ResMut<ContextMenuState>,
@@ -67,7 +67,7 @@ pub fn open_context_menu(
 }
 
 /// Keeps the context menu in sync with the shared overlay focus state.
-pub fn sync_context_menu_overlay(
+pub fn sync_context_menu_overlay_system(
     mut menu_state: ResMut<ContextMenuState>,
     overlay: Res<GraphOverlayState>,
 ) {
@@ -77,7 +77,7 @@ pub fn sync_context_menu_overlay(
 }
 
 /// Builds the floating node spawn menu for the active search and category state.
-pub fn draw_context_menu(
+pub fn draw_context_menu_system(
     mut commands: Commands,
     menu_state: Res<ContextMenuState>,
     activation: Option<Res<GraphEditingUiActivation>>,
@@ -261,7 +261,7 @@ pub struct NodeTypeButton {
     pub definition_id: NodeId,
 }
 
-pub fn interact_context_menu(
+pub fn interact_context_menu_system(
     activation: Option<Res<GraphEditingUiActivation>>,
     mut interaction_query: Query<
         (&Interaction, &NodeTypeButton),
@@ -300,7 +300,7 @@ pub fn interact_context_menu(
     }
 }
 
-pub fn execute_spawn_node_commands(
+pub fn execute_spawn_node_commands_system(
     mut commands: Commands,
     activation: Option<Res<GraphEditingUiActivation>>,
     registry: Res<NodeRegistry>,

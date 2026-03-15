@@ -172,15 +172,19 @@ impl Plugin for EditorSettingsPersistencePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorSettingsStorage>()
             .init_resource::<EditorWorkflowState>()
-            .add_systems(PreStartup, load_editor_settings)
+            .add_systems(PreStartup, load_editor_settings_system)
             .add_systems(
                 PostUpdate,
-                (track_recent_files, persist_editor_settings).chain(),
+                (
+                    track_recent_files_system,
+                    persist_editor_settings_system,
+                )
+                    .chain(),
             );
     }
 }
 
-fn load_editor_settings(
+fn load_editor_settings_system(
     mut storage: ResMut<EditorSettingsStorage>,
     mut persistence_settings: ResMut<GraphPersistenceSettings>,
     mut history_settings: ResMut<GraphHistorySettings>,
@@ -253,7 +257,7 @@ fn load_editor_settings(
     ));
 }
 
-fn track_recent_files(
+fn track_recent_files_system(
     persistence_settings: Res<GraphPersistenceSettings>,
     mut workflow_state: ResMut<EditorWorkflowState>,
 ) {
@@ -269,7 +273,7 @@ fn track_recent_files(
     workflow_state.remember_file(persistence_settings.file_path.clone());
 }
 
-fn persist_editor_settings(
+fn persist_editor_settings_system(
     persistence_settings: Res<GraphPersistenceSettings>,
     history_settings: Res<GraphHistorySettings>,
     workflow_state: Res<EditorWorkflowState>,

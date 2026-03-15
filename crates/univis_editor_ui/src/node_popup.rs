@@ -104,24 +104,24 @@ pub struct NodePopupPlugin;
 impl Plugin for NodePopupPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NodePopupState>()
-            .add_systems(Startup, setup_node_popup_ui)
+            .add_systems(Startup, setup_node_popup_ui_system)
             .add_systems(
                 Update,
                 (
-                    sync_popup_ui_target,
-                    close_popup_when_graph_editing_disabled,
-                    sync_popup_overlay,
-                    handle_node_settings_button_clicks,
-                    handle_popup_close_button,
-                    handle_popup_adjust_buttons,
-                    handle_popup_bool_toggle_buttons,
-                    handle_popup_text_field_focus,
-                    clear_popup_text_field_focus_on_other_clicks,
-                    handle_popup_text_field_keyboard_input,
-                    sync_popup_text_field_visuals,
-                    sync_popup_anchor_world,
-                    update_popup_panel_position,
-                    rebuild_popup_content,
+                    sync_popup_ui_target_system,
+                    close_popup_when_graph_editing_disabled_system,
+                    sync_popup_overlay_system,
+                    handle_node_settings_button_clicks_system,
+                    handle_popup_close_button_system,
+                    handle_popup_adjust_buttons_system,
+                    handle_popup_bool_toggle_buttons_system,
+                    handle_popup_text_field_focus_system,
+                    clear_popup_text_field_focus_on_other_clicks_system,
+                    handle_popup_text_field_keyboard_input_system,
+                    sync_popup_text_field_visuals_system,
+                    sync_popup_anchor_world_system,
+                    update_popup_panel_position_system,
+                    rebuild_popup_content_system,
                 )
                     .chain(),
             );
@@ -135,7 +135,7 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
     )
 }
 
-fn setup_node_popup_ui(mut commands: Commands) {
+fn setup_node_popup_ui_system(mut commands: Commands) {
     commands
         .spawn((
             Node {
@@ -230,7 +230,7 @@ fn setup_node_popup_ui(mut commands: Commands) {
         });
 }
 
-fn sync_popup_ui_target(
+fn sync_popup_ui_target_system(
     mut commands: Commands,
     q_graph_camera: Query<Entity, With<GraphCamera>>,
     q_roots: Query<(Entity, Option<&UiTargetCamera>), With<NodePopupRoot>>,
@@ -250,7 +250,7 @@ fn sync_popup_ui_target(
     }
 }
 
-fn close_popup_when_graph_editing_disabled(
+fn close_popup_when_graph_editing_disabled_system(
     activation: Option<Res<GraphEditingUiActivation>>,
     mut popup: ResMut<NodePopupState>,
     mut overlay: ResMut<GraphOverlayState>,
@@ -263,13 +263,13 @@ fn close_popup_when_graph_editing_disabled(
     }
 }
 
-fn sync_popup_overlay(mut popup: ResMut<NodePopupState>, overlay: Res<GraphOverlayState>) {
+fn sync_popup_overlay_system(mut popup: ResMut<NodePopupState>, overlay: Res<GraphOverlayState>) {
     if popup.open_for.is_some() && overlay.active_surface != GraphOverlaySurface::NodePopup {
         popup.open_for = None;
     }
 }
 
-fn handle_node_settings_button_clicks(
+fn handle_node_settings_button_clicks_system(
     mouse: Res<ButtonInput<MouseButton>>,
     activation: Option<Res<GraphEditingUiActivation>>,
     mut popup: ResMut<NodePopupState>,
@@ -317,7 +317,7 @@ fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool 
         .unwrap_or(true)
 }
 
-fn handle_popup_close_button(
+fn handle_popup_close_button_system(
     buttons: Query<
         &Interaction,
         (
@@ -339,7 +339,7 @@ fn handle_popup_close_button(
     }
 }
 
-fn handle_popup_adjust_buttons(
+fn handle_popup_adjust_buttons_system(
     buttons: Query<(&Interaction, &NodePopupAdjustButton), (Changed<Interaction>, With<Button>)>,
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
@@ -471,7 +471,7 @@ fn handle_popup_adjust_buttons(
     }
 }
 
-fn handle_popup_bool_toggle_buttons(
+fn handle_popup_bool_toggle_buttons_system(
     buttons: Query<
         (&Interaction, &NodePopupBoolToggleButton),
         (Changed<Interaction>, With<Button>),
@@ -519,7 +519,7 @@ fn handle_popup_bool_toggle_buttons(
     }
 }
 
-fn handle_popup_text_field_focus(
+fn handle_popup_text_field_focus_system(
     buttons: Query<
         (Entity, &Interaction),
         (
@@ -547,7 +547,7 @@ fn handle_popup_text_field_focus(
     }
 }
 
-fn clear_popup_text_field_focus_on_other_clicks(
+fn clear_popup_text_field_focus_on_other_clicks_system(
     buttons: Query<
         &Interaction,
         (
@@ -570,7 +570,7 @@ fn clear_popup_text_field_focus_on_other_clicks(
     }
 }
 
-fn handle_popup_text_field_keyboard_input(
+fn handle_popup_text_field_keyboard_input_system(
     mut keyboard: MessageReader<KeyboardInput>,
     popup: Res<NodePopupState>,
     mut fields: Query<(&NodePopupTextFieldInput, &mut NodePopupTextFieldState)>,
@@ -628,7 +628,7 @@ fn handle_popup_text_field_keyboard_input(
     }
 }
 
-fn sync_popup_text_field_visuals(
+fn sync_popup_text_field_visuals_system(
     mut fields: Query<
         (
             &NodePopupTextFieldState,
@@ -675,7 +675,7 @@ fn sync_popup_text_field_visuals(
     }
 }
 
-fn sync_popup_anchor_world(
+fn sync_popup_anchor_world_system(
     mut popup: ResMut<NodePopupState>,
     mut overlay: ResMut<GraphOverlayState>,
     q_nodes: Query<&Transform, With<GraphNode>>,
@@ -694,7 +694,7 @@ fn sync_popup_anchor_world(
     popup.anchor_world = transform.translation.truncate();
 }
 
-fn update_popup_panel_position(
+fn update_popup_panel_position_system(
     popup: Res<NodePopupState>,
     windows: Query<&Window>,
     q_camera: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
@@ -737,7 +737,7 @@ fn update_popup_panel_position(
     panel_node.top = Val::Px(top);
 }
 
-fn rebuild_popup_content(
+fn rebuild_popup_content_system(
     mut commands: Commands,
     mut popup: ResMut<NodePopupState>,
     mut overlay: ResMut<GraphOverlayState>,

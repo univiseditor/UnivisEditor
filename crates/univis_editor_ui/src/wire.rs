@@ -221,6 +221,7 @@ pub fn wire_visuals_system(
     >,
     existing_visuals: Query<Entity, With<WireVisualSegment>>,
 ) {
+    // Refresh only when graph links, preview drag state, or visible port transforms actually change.
     let should_refresh = links.is_changed()
         || wire_state.is_changed()
         || settings.is_changed()
@@ -297,6 +298,7 @@ fn spawn_wire_segments(
     color: Color,
     style: WireStyle,
 ) {
+    // The wire mesh is rebuilt as short sprites so styles can stay lightweight and z-ordered under nodes.
     let points = wire_points(start, end, style);
     for pair in points.windows(2) {
         let from = pair[0];

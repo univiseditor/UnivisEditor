@@ -61,22 +61,22 @@ impl Plugin for FloatingPanelsPlugin {
         app.init_resource::<FloatingPanelsSettings>()
             .init_resource::<EditorDiagnosticsSummary>()
             .init_resource::<ScenePreviewSummary>()
-            .add_systems(Startup, setup_floating_panels)
+            .add_systems(Startup, setup_floating_panels_system)
             .add_systems(
                 Update,
                 (
-                    sync_floating_panels_ui_target,
-                    sync_floating_panel_visibility,
-                    refresh_editor_diagnostics_summary,
-                    refresh_scene_preview_summary,
-                    sync_floating_panel_text,
+                    sync_floating_panels_ui_target_system,
+                    sync_floating_panel_visibility_system,
+                    refresh_editor_diagnostics_summary_system,
+                    refresh_scene_preview_summary_system,
+                    sync_floating_panel_text_system,
                 )
                     .chain(),
             );
     }
 }
 
-fn setup_floating_panels(mut commands: Commands) {
+fn setup_floating_panels_system(mut commands: Commands) {
     commands
         .spawn((
             Node {
@@ -154,7 +154,7 @@ fn spawn_panel<P: Component, T: Component>(
         });
 }
 
-fn sync_floating_panels_ui_target(
+fn sync_floating_panels_ui_target_system(
     mut commands: Commands,
     q_graph_camera: Query<Entity, With<GraphCamera>>,
     q_roots: Query<(Entity, Option<&UiTargetCamera>), With<FloatingPanelsRoot>>,
@@ -174,7 +174,7 @@ fn sync_floating_panels_ui_target(
     }
 }
 
-fn sync_floating_panel_visibility(
+fn sync_floating_panel_visibility_system(
     settings: Res<FloatingPanelsSettings>,
     mut roots: Query<
         &mut Node,
@@ -332,7 +332,7 @@ fn validation_issue_line(
     )
 }
 
-fn refresh_editor_diagnostics_summary(
+fn refresh_editor_diagnostics_summary_system(
     live_document: Res<LiveGraphDocumentState>,
     registry: Res<NodeRegistry>,
     runtime_diagnostics: Res<GraphRuntimeDiagnostics>,
@@ -496,7 +496,7 @@ fn refresh_editor_diagnostics_summary(
     summary.text = lines.join("\n");
 }
 
-fn refresh_scene_preview_summary(
+fn refresh_scene_preview_summary_system(
     selected_nodes: Query<(), With<Selected>>,
     scene_outputs: Res<GraphSceneOutputs>,
     live_document: Res<LiveGraphDocumentState>,
@@ -550,7 +550,7 @@ fn refresh_scene_preview_summary(
     .join("\n");
 }
 
-fn sync_floating_panel_text(
+fn sync_floating_panel_text_system(
     diagnostics: Res<EditorDiagnosticsSummary>,
     scene_preview: Res<ScenePreviewSummary>,
     mut diagnostics_text: Query<
