@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
 use univis_editor_persistence::graph_persistence::{
-    GraphPersistencePlugin, GraphPersistenceSettings,
+    GraphPersistencePlugin, GraphPersistenceSettings, GraphPersistenceStatus,
 };
 use univis_editor_ui::menu::{execute_spawn_node_commands_system, ContextMenuState};
 use univis_editor_ui::node_popup::NodePopupState;
@@ -350,8 +350,10 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
         prefab.id.clone()
     };
 
+    let upstream_node = spawn_node(&mut app, "tests/workflow_value", Vec2::new(-40.0, 180.0));
     let value_node = spawn_node(&mut app, "tests/workflow_value", Vec2::new(120.0, 180.0));
     let sink_node = spawn_node(&mut app, "tests/workflow_sink", Vec2::new(280.0, 180.0));
+    connect_nodes(&mut app, upstream_node, value_node);
     connect_nodes(&mut app, value_node, sink_node);
     select_nodes(&mut app, &[value_node, sink_node]);
     app.world_mut()
@@ -368,6 +370,17 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
         assert_eq!(subgraph.document.nodes.len(), 2);
         assert_eq!(subgraph.document.edges.len(), 1);
     }
+    {
+        let status = app.world().resource::<GraphPersistenceStatus>();
+        let text = status
+            .active
+            .as_ref()
+            .map(|status| status.text.clone())
+            .unwrap_or_default();
+        assert!(text.contains("1 internal wire"));
+        assert!(text.contains("1 incoming"));
+        assert!(text.contains("0 outgoing"));
+    }
 
     app.world_mut()
         .write_message(GraphCommandRequest::InsertSubgraph {
@@ -377,7 +390,7 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
         .expect("insert subgraph request should enqueue");
     update_frames(&mut app, 3);
 
-    assert_eq!(node_count(&mut app), 5);
+    assert_eq!(node_count(&mut app), 6);
     let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
     assert_eq!(live_document.selected_node_ids().len(), 2);
 

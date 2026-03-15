@@ -4,7 +4,8 @@ use crate::{graph_validation::would_create_cycle, node_definition::NodeId, value
 
 use super::{
     GraphDocument, GraphDocumentEdge, GraphDocumentNode, GraphDocumentPrefab,
-    GraphDocumentSubgraph, GraphDocumentViewState, GRAPH_DOCUMENT_VERSION,
+    GraphDocumentSelectionBoundarySummary, GraphDocumentSubgraph, GraphDocumentViewState,
+    GRAPH_DOCUMENT_VERSION,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -323,11 +324,60 @@ impl GraphDocument {
         self.view.camera = camera;
     }
 
-    pub fn capture_selected_subgraph(&mut self, id: String, name: String) -> bool {
-        let selected: HashSet<u64> = self.selected_node_ids().iter().copied().collect();
+    pub fn selected_subgraph_boundary_summary(&self) -> Option<GraphDocumentSelectionBoundarySummary> {
+        self.subgraph_boundary_summary(self.selected_node_ids().iter().copied())
+    }
+
+    pub fn subgraph_boundary_summary<I>(
+        &self,
+        node_ids: I,
+    ) -> Option<GraphDocumentSelectionBoundarySummary>
+    where
+        I: IntoIterator<Item = u64>,
+    {
+        let selected = node_ids.into_iter().collect::<HashSet<_>>();
         if selected.is_empty() {
-            return false;
+            return None;
         }
+
+        let mut selected_node_ids = self
+            .nodes
+            .iter()
+            .filter_map(|node| selected.contains(&node.id).then_some(node.id))
+            .collect::<Vec<_>>();
+        if selected_node_ids.is_empty() {
+            return None;
+        }
+        selected_node_ids.sort_unstable();
+
+        let mut summary = GraphDocumentSelectionBoundarySummary {
+            selected_node_ids,
+            ..Default::default()
+        };
+
+        for edge in &self.edges {
+            let from_selected = selected.contains(&edge.from_node_id);
+            let to_selected = selected.contains(&edge.to_node_id);
+            match (from_selected, to_selected) {
+                (true, true) => summary.internal_edges.push(edge.clone()),
+                (false, true) => summary.incoming_edges.push(edge.clone()),
+                (true, false) => summary.outgoing_edges.push(edge.clone()),
+                (false, false) => {}
+            }
+        }
+
+        Some(summary)
+    }
+
+    pub fn capture_selected_subgraph(&mut self, id: String, name: String) -> bool {
+        let Some(boundary) = self.selected_subgraph_boundary_summary() else {
+            return false;
+        };
+        let selected = boundary
+            .selected_node_ids
+            .iter()
+            .copied()
+            .collect::<HashSet<u64>>();
 
         let selected_nodes: Vec<GraphDocumentNode> = self
             .nodes
@@ -356,14 +406,7 @@ impl GraphDocument {
                 node
             })
             .collect();
-        let edges = self
-            .edges
-            .iter()
-            .filter(|edge| {
-                selected.contains(&edge.from_node_id) && selected.contains(&edge.to_node_id)
-            })
-            .cloned()
-            .collect();
+        let edges = boundary.internal_edges;
 
         self.upsert_subgraph(GraphDocumentSubgraph {
             id,

@@ -11,10 +11,10 @@ use univis_editor_runtime::{
     GraphRuntimeTraceSettings, GraphSceneOutputs,
 };
 use univis_editor_ui::prelude::{
-    GraphCamera, GraphConnectionInspectorSummary, Selected,
+    GraphCamera, GraphConnectionInspectorSummary, GraphPortPreviewSummary, Selected,
 };
 use univis_node_graph::prelude::{
-    GraphDocument, GraphValidationIssue, LiveGraphDocumentState, NodeRegistry,
+    GraphDocument, GraphDocumentEdge, GraphValidationIssue, LiveGraphDocumentState, NodeRegistry,
 };
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +65,24 @@ struct ScenePreviewPanelText;
 #[derive(Component)]
 struct ConnectionInspectorPanelText;
 
+#[derive(Component)]
+struct PortPreviewTooltip;
+
+#[derive(Component)]
+struct PortPreviewTooltipTitle;
+
+#[derive(Component)]
+struct PortPreviewTooltipSubtitle;
+
+#[derive(Component)]
+struct PortPreviewTooltipValue;
+
+#[derive(Component)]
+struct PortPreviewTooltipDetail;
+
+#[derive(Component)]
+struct PortPreviewTooltipSwatch;
+
 pub struct FloatingPanelsPlugin;
 
 impl Plugin for FloatingPanelsPlugin {
@@ -81,6 +99,7 @@ impl Plugin for FloatingPanelsPlugin {
                     refresh_editor_diagnostics_summary_system,
                     refresh_scene_preview_summary_system,
                     sync_floating_panel_text_system,
+                    sync_port_preview_tooltip_system,
                 )
                     .chain(),
             );
@@ -126,6 +145,87 @@ fn setup_floating_panels_system(mut commands: Commands) {
                 ConnectionInspectorPanel,
                 ConnectionInspectorPanelText,
             );
+        });
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(24.0),
+                top: Val::Px(24.0),
+                width: Val::Px(260.0),
+                display: Display::None,
+                padding: UiRect::all(Val::Px(10.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                border_radius: BorderRadius::all(Val::Px(12.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.05, 0.06, 0.08, 0.96)),
+            BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+            ZIndex(1710),
+            PortPreviewTooltip,
+        ))
+        .with_children(|tooltip| {
+            tooltip.spawn((
+                Text::new("Port Preview"),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                PortPreviewTooltipTitle,
+            ));
+            tooltip.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.68)),
+                PortPreviewTooltipSubtitle,
+            ));
+            tooltip
+                .spawn((Node {
+                    width: Val::Percent(100.0),
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(8.0),
+                    align_items: AlignItems::Center,
+                    ..default()
+                },))
+                .with_children(|row| {
+                    row.spawn((
+                        Node {
+                            width: Val::Px(16.0),
+                            height: Val::Px(16.0),
+                            display: Display::None,
+                            border_radius: BorderRadius::all(Val::Px(4.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::WHITE),
+                        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.14)),
+                        PortPreviewTooltipSwatch,
+                    ));
+                    row.spawn((
+                        Text::new(""),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.95, 0.98, 1.0, 0.96)),
+                        PortPreviewTooltipValue,
+                    ));
+                });
+            tooltip.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.76)),
+                PortPreviewTooltipDetail,
+            ));
         });
 }
 
@@ -175,7 +275,10 @@ fn spawn_panel<P: Component, T: Component>(
 fn sync_floating_panels_ui_target_system(
     mut commands: Commands,
     q_graph_camera: Query<Entity, With<GraphCamera>>,
-    q_roots: Query<(Entity, Option<&UiTargetCamera>), With<FloatingPanelsRoot>>,
+    q_roots: Query<
+        (Entity, Option<&UiTargetCamera>),
+        Or<(With<FloatingPanelsRoot>, With<PortPreviewTooltip>)>,
+    >,
 ) {
     let Some(graph_camera) = q_graph_camera.iter().next() else {
         return;
@@ -295,6 +398,33 @@ fn format_node_list(
 
     if node_ids.len() > limit {
         labels.push(format!("+{}", node_ids.len() - limit));
+    }
+
+    labels.join(", ")
+}
+
+fn format_edge_list(
+    document: &GraphDocument,
+    registry: &NodeRegistry,
+    edges: &[GraphDocumentEdge],
+    limit: usize,
+) -> String {
+    let mut labels = edges
+        .iter()
+        .take(limit)
+        .map(|edge| {
+            format!(
+                "{}:{} -> {}:{}",
+                format_node_label(document, registry, edge.from_node_id),
+                edge.from_index + 1,
+                format_node_label(document, registry, edge.to_node_id),
+                edge.to_index + 1
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if edges.len() > limit {
+        labels.push(format!("+{}", edges.len() - limit));
     }
 
     labels.join(", ")
@@ -488,6 +618,30 @@ fn refresh_editor_diagnostics_summary_system(
         lines.push("Selected: none".to_string());
     }
 
+    if let Some(boundary) = live_document.document.selected_subgraph_boundary_summary() {
+        lines.push(format!(
+            "Selection boundary: {} node(s), {} internal wire(s), {} incoming omitted, {} outgoing omitted",
+            boundary.selected_node_count(),
+            boundary.internal_edge_count(),
+            boundary.incoming_edge_count(),
+            boundary.outgoing_edge_count()
+        ));
+
+        if !boundary.incoming_edges.is_empty() {
+            lines.push(format!(
+                "Selection incoming: {}",
+                format_edge_list(&live_document.document, &registry, &boundary.incoming_edges, 3)
+            ));
+        }
+
+        if !boundary.outgoing_edges.is_empty() {
+            lines.push(format!(
+                "Selection outgoing: {}",
+                format_edge_list(&live_document.document, &registry, &boundary.outgoing_edges, 3)
+            ));
+        }
+    }
+
     if !blocked_node_ids.is_empty() {
         lines.push(format!(
             "Blocked path: {}",
@@ -617,6 +771,111 @@ fn refresh_scene_preview_summary_system(
         ),
     ]
     .join("\n");
+}
+
+fn sync_port_preview_tooltip_system(
+    summary: Res<GraphPortPreviewSummary>,
+    windows: Query<&Window>,
+    mut tooltips: Query<
+        &mut Node,
+        (
+            With<PortPreviewTooltip>,
+            Without<PortPreviewTooltipSwatch>,
+        ),
+    >,
+    mut titles: Query<
+        &mut Text,
+        (
+            With<PortPreviewTooltipTitle>,
+            Without<PortPreviewTooltipSubtitle>,
+            Without<PortPreviewTooltipValue>,
+            Without<PortPreviewTooltipDetail>,
+        ),
+    >,
+    mut subtitles: Query<
+        &mut Text,
+        (
+            With<PortPreviewTooltipSubtitle>,
+            Without<PortPreviewTooltipTitle>,
+            Without<PortPreviewTooltipValue>,
+            Without<PortPreviewTooltipDetail>,
+        ),
+    >,
+    mut values: Query<
+        &mut Text,
+        (
+            With<PortPreviewTooltipValue>,
+            Without<PortPreviewTooltipTitle>,
+            Without<PortPreviewTooltipSubtitle>,
+            Without<PortPreviewTooltipDetail>,
+        ),
+    >,
+    mut details: Query<
+        &mut Text,
+        (
+            With<PortPreviewTooltipDetail>,
+            Without<PortPreviewTooltipTitle>,
+            Without<PortPreviewTooltipSubtitle>,
+            Without<PortPreviewTooltipValue>,
+        ),
+    >,
+    mut swatches: Query<
+        (&mut Node, &mut BackgroundColor),
+        (
+            With<PortPreviewTooltipSwatch>,
+            Without<PortPreviewTooltip>,
+        ),
+    >,
+) {
+    if !summary.is_changed() {
+        return;
+    }
+
+    let Ok(window) = windows.single() else {
+        return;
+    };
+
+    for mut node in tooltips.iter_mut() {
+        node.display = if summary.visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+
+        if !summary.visible {
+            continue;
+        }
+
+        let max_left = (window.width() - 276.0).max(8.0);
+        let max_top = (window.height() - 168.0).max(8.0);
+        node.left = Val::Px(summary.screen_position.x.clamp(8.0, max_left));
+        node.top = Val::Px(summary.screen_position.y.clamp(8.0, max_top));
+    }
+
+    if !summary.visible {
+        return;
+    }
+
+    for mut text in titles.iter_mut() {
+        text.0 = summary.title.clone();
+    }
+    for mut text in subtitles.iter_mut() {
+        text.0 = summary.subtitle.clone();
+    }
+    for mut text in values.iter_mut() {
+        text.0 = summary.value_text.clone();
+    }
+    for mut text in details.iter_mut() {
+        text.0 = summary.detail.clone();
+    }
+    for (mut node, mut background) in swatches.iter_mut() {
+        if let Some(color) = summary.swatch {
+            node.display = Display::Flex;
+            *background = BackgroundColor(color);
+        } else {
+            node.display = Display::None;
+        }
+    }
 }
 
 fn sync_floating_panel_text_system(

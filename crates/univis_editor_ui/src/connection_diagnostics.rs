@@ -8,6 +8,7 @@ use univis_node_graph::prelude::{
 };
 use univis_ui::prelude::*;
 
+use crate::editor::GraphCamera;
 use crate::node_spawn::PortLabel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,14 +25,20 @@ pub struct PortDiagnosticInfo {
     pub severity: UiDiagnosticSeverity,
     pub status: String,
     pub detail: String,
-    pub preview: Option<String>,
+    pub preview: Option<PortPreviewValue>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionDiagnosticInfo {
     pub severity: UiDiagnosticSeverity,
     pub detail: String,
-    pub preview: Option<String>,
+    pub preview: Option<PortPreviewValue>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PortPreviewValue {
+    pub text: String,
+    pub swatch: Option<Color>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -48,6 +55,17 @@ pub struct GraphConnectionUiDiagnostics {
 pub struct GraphConnectionInspectorSummary {
     pub title: String,
     pub text: String,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct GraphPortPreviewSummary {
+    pub visible: bool,
+    pub screen_position: Vec2,
+    pub title: String,
+    pub subtitle: String,
+    pub value_text: String,
+    pub detail: String,
+    pub swatch: Option<Color>,
 }
 
 pub fn refresh_connection_ui_diagnostics_system(
@@ -306,7 +324,14 @@ pub fn refresh_connection_ui_diagnostics_system(
         .and_then(|(_, port, input_connection, output_connections, _)| match port.port_type {
             PortType::Input => input_connection.and_then(|connection| connection.connection_entity),
             PortType::Output => output_connections.and_then(|connections| {
-                (connections.targets.len() == 1).then_some(connections.targets[0].connection_entity)
+                if connections.targets.len() == 1 {
+                    connections
+                        .targets
+                        .first()
+                        .map(|target| target.connection_entity)
+                } else {
+                    None
+                }
             }),
         });
 }
@@ -403,7 +428,7 @@ pub fn sync_connection_inspector_summary_system(
     }
 
     if let Some(preview) = port_status.preview {
-        lines.push(format!("Value: {preview}"));
+        lines.push(format!("Value: {}", preview.text));
     }
 
     match port.port_type {
@@ -413,7 +438,7 @@ pub fn sync_connection_inspector_summary_system(
                 if let Some(info) = diagnostics.connections.get(&connection_entity) {
                     lines.push(format!("Wire: {}", info.detail));
                     if let Some(preview) = &info.preview {
-                        lines.push(format!("Wire value: {preview}"));
+                        lines.push(format!("Wire value: {}", preview.text));
                     }
                 }
             }
@@ -451,6 +476,78 @@ pub fn sync_connection_inspector_summary_system(
     summary.text = lines.join("\n");
 }
 
+pub fn sync_port_preview_summary_system(
+    diagnostics: Res<GraphConnectionUiDiagnostics>,
+    registry: Res<NodeRegistry>,
+    live_document: Res<LiveGraphDocumentState>,
+    windows: Query<&Window>,
+    q_camera: Query<(&Camera, &GlobalTransform), With<GraphCamera>>,
+    q_nodes: Query<&GraphNode>,
+    q_ports: Query<(Entity, &GraphPort, &GlobalTransform)>,
+    mut summary: ResMut<GraphPortPreviewSummary>,
+) {
+    if !diagnostics.is_changed() && !registry.is_changed() && !live_document.is_changed() {
+        return;
+    }
+
+    let Some(port_entity) = diagnostics.focused_port else {
+        *summary = GraphPortPreviewSummary::default();
+        return;
+    };
+
+    let Ok((_, port, transform)) = q_ports.get(port_entity) else {
+        *summary = GraphPortPreviewSummary::default();
+        return;
+    };
+    let Ok((camera, camera_transform)) = q_camera.single() else {
+        *summary = GraphPortPreviewSummary::default();
+        return;
+    };
+    let Ok(window) = windows.single() else {
+        *summary = GraphPortPreviewSummary::default();
+        return;
+    };
+    let Ok(screen_pos) = camera.world_to_viewport(camera_transform, transform.translation()) else {
+        *summary = GraphPortPreviewSummary::default();
+        return;
+    };
+
+    let node_label = q_nodes
+        .get(port.node_entity)
+        .ok()
+        .map(|node| format_node_label(&registry, &live_document, port.node_entity, &node.definition_id))
+        .unwrap_or_else(|| format!("Node#{:?}", port.node_entity));
+    let port_kind = match port.port_type {
+        PortType::Input => "Input",
+        PortType::Output => "Output",
+    };
+    let status = diagnostics
+        .ports
+        .get(&port_entity)
+        .cloned()
+        .unwrap_or_default();
+    let preview = status.preview.clone();
+    let max_left = (window.width() - 280.0).max(8.0);
+    let max_top = (window.height() - 160.0).max(8.0);
+    let screen_position = Vec2::new(
+        (screen_pos.x + 18.0).clamp(8.0, max_left),
+        (window.height() - screen_pos.y + 14.0).clamp(8.0, max_top),
+    );
+
+    *summary = GraphPortPreviewSummary {
+        visible: true,
+        screen_position,
+        title: format!("{port_kind} {} on {node_label}", port.index + 1),
+        subtitle: format!("{} · {}", port.value_type.display_name(), status.status),
+        value_text: preview
+            .as_ref()
+            .map(|preview| preview.text.clone())
+            .unwrap_or_else(|| "No resolved value yet.".to_string()),
+        detail: status.detail,
+        swatch: preview.and_then(|preview| preview.swatch),
+    };
+}
+
 fn parse_missing_input_index(message: &str) -> Option<usize> {
     message
         .strip_prefix("Missing input: ")
@@ -475,8 +572,14 @@ fn format_node_label(
     }
 }
 
-fn preview_if_present(value: &NodeValue) -> Option<String> {
-    (!value.is_none()).then(|| format_node_value_preview(value))
+fn preview_if_present(value: &NodeValue) -> Option<PortPreviewValue> {
+    (!value.is_none()).then(|| PortPreviewValue {
+        text: format_node_value_preview(value),
+        swatch: match value {
+            NodeValue::Color(color) => Some(*color),
+            _ => None,
+        },
+    })
 }
 
 fn format_node_value_preview(value: &NodeValue) -> String {

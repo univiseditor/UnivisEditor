@@ -46,6 +46,7 @@ impl Plugin for NodeUiPlugin {
             .init_resource::<univis_node_graph::pin::WireConnectionState>()
             .init_resource::<GraphConnectionUiDiagnostics>()
             .init_resource::<GraphConnectionInspectorSummary>()
+            .init_resource::<GraphPortPreviewSummary>()
             .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
             .init_resource::<overlay::GraphOverlayState>()
@@ -82,6 +83,7 @@ impl Plugin for NodeUiPlugin {
                     wire_visuals_system,
                     sync_port_diagnostic_visuals_system,
                     sync_connection_inspector_summary_system,
+                    sync_port_preview_summary_system,
                 )
                     .chain(),
             )

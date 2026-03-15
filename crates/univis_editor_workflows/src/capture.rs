@@ -81,8 +81,7 @@ pub(super) fn capture_subgraph_from_selection_system(
         return;
     }
 
-    let selected_count = live_document.document.selected_node_ids().len();
-    if selected_count == 0 {
+    let Some(boundary) = live_document.document.selected_subgraph_boundary_summary() else {
         set_asset_status(
             &mut status,
             GraphPersistenceStatusSeverity::Warning,
@@ -91,7 +90,8 @@ pub(super) fn capture_subgraph_from_selection_system(
             &time,
         );
         return;
-    }
+    };
+    let selected_count = boundary.selected_node_count();
 
     let name_hint = live_document
         .document
@@ -128,8 +128,13 @@ pub(super) fn capture_subgraph_from_selection_system(
         &mut status,
         GraphPersistenceStatusSeverity::Info,
         format!(
-            "Captured subgraph '{}' ({}) from {} node(s)",
-            name, id, selected_count
+            "Captured subgraph '{}' ({}) from {} node(s) with {} internal wire(s); omitted {} incoming and {} outgoing boundary wire(s).",
+            name,
+            id,
+            selected_count,
+            boundary.internal_edge_count(),
+            boundary.incoming_edge_count(),
+            boundary.outgoing_edge_count()
         ),
         &settings,
         &time,

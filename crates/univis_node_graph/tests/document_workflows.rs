@@ -93,6 +93,43 @@ fn capture_selected_subgraph_normalizes_positions_and_keeps_internal_edges() {
 }
 
 #[test]
+fn selected_subgraph_boundary_summary_tracks_internal_and_omitted_edges() {
+    let mut document = GraphDocument::default();
+    document
+        .insert_node(node(1, "tests/source", [100.0, 220.0], 1, 1))
+        .expect("node 1");
+    document
+        .insert_node(node(2, "tests/middle", [280.0, 300.0], 1, 1))
+        .expect("node 2");
+    document
+        .insert_node(node(3, "tests/outside_in", [40.0, 180.0], 0, 1))
+        .expect("node 3");
+    document
+        .insert_node(node(4, "tests/outside_out", [520.0, 360.0], 1, 0))
+        .expect("node 4");
+    document.connect(1, 0, 2, 0).expect("edge 1->2");
+    document.connect(3, 0, 1, 0).expect("edge 3->1");
+    document.connect(2, 0, 4, 0).expect("edge 2->4");
+    document.set_selected_nodes([1, 2]);
+
+    let summary = document
+        .selected_subgraph_boundary_summary()
+        .expect("summary should exist");
+
+    assert_eq!(summary.selected_node_ids, vec![1, 2]);
+    assert_eq!(summary.internal_edge_count(), 1);
+    assert_eq!(summary.incoming_edge_count(), 1);
+    assert_eq!(summary.outgoing_edge_count(), 1);
+    assert_eq!(summary.omitted_edge_count(), 2);
+    assert_eq!(summary.internal_edges[0].from_node_id, 1);
+    assert_eq!(summary.internal_edges[0].to_node_id, 2);
+    assert_eq!(summary.incoming_edges[0].from_node_id, 3);
+    assert_eq!(summary.incoming_edges[0].to_node_id, 1);
+    assert_eq!(summary.outgoing_edges[0].from_node_id, 2);
+    assert_eq!(summary.outgoing_edges[0].to_node_id, 4);
+}
+
+#[test]
 fn merged_with_subgraph_instance_offsets_nodes_and_selects_inserted_nodes() {
     let mut document = GraphDocument::default();
     document

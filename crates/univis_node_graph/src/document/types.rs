@@ -78,12 +78,42 @@ pub struct GraphDocumentNode {
     pub output_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GraphDocumentEdge {
     pub from_node_id: u64,
     pub from_index: usize,
     pub to_node_id: u64,
     pub to_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GraphDocumentSelectionBoundarySummary {
+    pub selected_node_ids: Vec<u64>,
+    pub internal_edges: Vec<GraphDocumentEdge>,
+    pub incoming_edges: Vec<GraphDocumentEdge>,
+    pub outgoing_edges: Vec<GraphDocumentEdge>,
+}
+
+impl GraphDocumentSelectionBoundarySummary {
+    pub fn selected_node_count(&self) -> usize {
+        self.selected_node_ids.len()
+    }
+
+    pub fn internal_edge_count(&self) -> usize {
+        self.internal_edges.len()
+    }
+
+    pub fn incoming_edge_count(&self) -> usize {
+        self.incoming_edges.len()
+    }
+
+    pub fn outgoing_edge_count(&self) -> usize {
+        self.outgoing_edges.len()
+    }
+
+    pub fn omitted_edge_count(&self) -> usize {
+        self.incoming_edges.len() + self.outgoing_edges.len()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

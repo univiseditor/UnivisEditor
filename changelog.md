@@ -2,6 +2,10 @@
 
 ## 2026-03-15
 
+- Added connection-aware subgraph boundary summaries in `GraphDocument`, surfaced them in editor diagnostics, and updated subgraph capture status to report internal wires plus omitted incoming/outgoing boundary links so selection capture semantics are explicit before and after saving a subgraph.
+- Fixed an output-port hover panic in the connection diagnostics path by replacing an eager `then_some(connections.targets[0])` access with a lazy checked lookup, so unconnected outputs no longer trigger an index-out-of-bounds crash.
+- Fixed the new port-preview tooltip system to use explicitly disjoint Bevy queries, removing a `B0001` runtime panic caused by overlapping mutable `Node` and `Text` access inside the tooltip sync pass.
+- Added hover/pinned port value previews as a dedicated tooltip, including resolved value text, type/status context, and live color swatches for `Color` ports so port-level debugging no longer depends entirely on the inspector panel.
 - Added structured runtime tracing with persisted settings, recent per-node execution entries, and diagnostics-panel integration so graph execution order and reprocessing reasons can be inspected without always enabling noisy logging.
 - Added an explicit `ConnectionPolicy` layer on port definitions, surfaced it in the connection inspector, and made wire creation reject unsupported multi-source declarations with a clear message instead of relying on an implicit single-input rule.
 - Added wire and port diagnostics in the editor UI, including focused-port state, per-port health styling, diagnostic wire coloring/thickness, and a new floating `Connection Inspector` panel with persisted visibility settings.
