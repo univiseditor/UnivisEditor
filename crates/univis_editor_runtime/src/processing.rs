@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use univis_node_graph::node_registry::VisualSyncNode;
 use univis_node_graph::prelude::{AuthoredNodeInputs, GraphNode, NodeRegistry, NodeValue};
 
 use crate::connectivity::{NodeInputSignature, NodeOutputSignature};
@@ -35,5 +36,9 @@ pub(super) fn initialize_node_defaults_system(
                 outputs: node.values.outputs.clone(),
             },
         ));
+
+        if definition.needs_visual_sync() {
+            commands.entity(entity).insert(VisualSyncNode);
+        }
     }
 }

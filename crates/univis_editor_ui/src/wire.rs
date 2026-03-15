@@ -1,4 +1,6 @@
 //! Wire interaction and rendering systems.
+use std::collections::HashSet;
+
 use crate::prelude::*;
 use bevy::prelude::*;
 use univis_ui::prelude::*;
@@ -11,6 +13,29 @@ const BEZIER_SEGMENT_COUNT: usize = 24;
 
 #[derive(Component)]
 pub struct WireVisualSegment;
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct WireDragFeedback {
+    pub source_port: Option<Entity>,
+    pub hovered_target: Option<Entity>,
+    pub accepted_target: Option<Entity>,
+    pub valid_targets: HashSet<Entity>,
+    pub rejection_reason: Option<String>,
+}
+
+impl WireDragFeedback {
+    pub fn clear(&mut self) {
+        self.source_port = None;
+        self.hovered_target = None;
+        self.accepted_target = None;
+        self.valid_targets.clear();
+        self.rejection_reason = None;
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.source_port.is_some()
+    }
+}
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum WireSystemsSet {
@@ -30,6 +55,7 @@ fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
 pub fn wire_start_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut wire_state: ResMut<WireConnectionState>,
+    mut wire_feedback: ResMut<WireDragFeedback>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
 ) {
     if mouse_button.just_pressed(MouseButton::Left) {
@@ -40,6 +66,8 @@ pub fn wire_start_system(
                 wire_state.index_from = Some(port.index);
                 wire_state.is_dragging = true;
                 wire_state.current_mouse_world_pos = Vec2::ZERO;
+                wire_feedback.clear();
+                wire_feedback.source_port = Some(entity);
                 break;
             }
         }
@@ -71,14 +99,104 @@ pub fn wire_update_system(
 }
 
 /// Finalizes a wire drag when the hovered input port accepts the pending connection.
-pub fn wire_complete_system(
-    mut commands: Commands,
-    mouse_button: Res<ButtonInput<MouseButton>>,
-    mut wire_state: ResMut<WireConnectionState>,
+pub fn wire_drag_feedback_system(
+    wire_state: Res<WireConnectionState>,
     registry: Res<NodeRegistry>,
     q_nodes: Query<&GraphNode>,
     q_connections: Query<&GraphConnection>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
+    mut wire_feedback: ResMut<WireDragFeedback>,
+) {
+    if !wire_state.is_dragging {
+        if wire_feedback.is_active() {
+            wire_feedback.clear();
+        }
+        return;
+    }
+
+    let (Some(from_port_entity), Some(from_index), Some(from_node)) = (
+        wire_state.dragging_from,
+        wire_state.index_from,
+        wire_state.node_from,
+    ) else {
+        wire_feedback.clear();
+        return;
+    };
+
+    let Ok((_, _, from_port_data)) = ports.get(from_port_entity) else {
+        wire_feedback.clear();
+        return;
+    };
+    let Ok(from_graph_node) = q_nodes.get(from_node) else {
+        wire_feedback.clear();
+        return;
+    };
+    let Some(from_definition) = registry.get(&from_graph_node.definition_id) else {
+        wire_feedback.clear();
+        return;
+    };
+    let source_connected_inputs = connected_input_mask(
+        from_graph_node.values.inputs.len(),
+        q_connections
+            .iter()
+            .filter(|link| link.to_node == from_node)
+            .map(|link| link.to_index),
+    );
+
+    let mut next_feedback = WireDragFeedback {
+        source_port: Some(from_port_entity),
+        ..Default::default()
+    };
+
+    for (to_port_entity, interaction, port) in ports.iter() {
+        if port.port_type != PortType::Input || port.node_entity == from_node {
+            continue;
+        }
+
+        let evaluation = evaluate_wire_target(
+            &registry,
+            &q_nodes,
+            &q_connections,
+            from_port_entity,
+            from_index,
+            from_node,
+            from_port_data,
+            from_graph_node,
+            &from_definition,
+            &source_connected_inputs,
+            to_port_entity,
+            port,
+        );
+
+        if evaluation.is_ok() {
+            next_feedback.valid_targets.insert(to_port_entity);
+        }
+
+        if !interaction_is_pointer_active(interaction) {
+            continue;
+        }
+
+        match evaluation {
+            Ok(()) => {
+                next_feedback.accepted_target = Some(to_port_entity);
+            }
+            Err(reason) => {
+                next_feedback.hovered_target = Some(to_port_entity);
+                next_feedback.rejection_reason = Some(reason);
+            }
+        }
+    }
+
+    *wire_feedback = next_feedback;
+}
+
+pub fn wire_complete_system(
+    mut commands: Commands,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    mut wire_state: ResMut<WireConnectionState>,
+    mut wire_feedback: ResMut<WireDragFeedback>,
+    mut diagnostics: ResMut<GraphConnectionUiDiagnostics>,
+    ports: Query<(Entity, &GraphPort)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if !wire_state.is_dragging || !mouse_button.just_released(MouseButton::Left) {
@@ -90,110 +208,12 @@ pub fn wire_complete_system(
         wire_state.index_from,
         wire_state.node_from,
     ) {
-        let Ok((_, _, from_port_data)) = ports.get(from_port_entity) else {
-            wire_state.clear();
-            return;
-        };
-        let Ok(from_graph_node) = q_nodes.get(from_node) else {
-            wire_state.clear();
-            return;
-        };
-        let Some(from_definition) = registry.get(&from_graph_node.definition_id) else {
-            wire_state.clear();
-            return;
-        };
-
-        for (to_port_entity, interaction, port) in ports.iter() {
-            if port.port_type != PortType::Input || port.node_entity == from_node {
-                continue;
-            }
-
-            if !matches!(
-                *interaction,
-                UInteraction::Released
-                    | UInteraction::Hovered
-                    | UInteraction::Pressed
-                    | UInteraction::Clicked
-            ) {
-                continue;
-            }
-
-            if !NodeValue::is_compatible(&from_port_data.value_type, &port.value_type) {
-                warn!(
-                    "Rejected link: incompatible types {} -> {}",
-                    from_port_data.value_type.display_name(),
-                    port.value_type.display_name()
-                );
-                break;
-            }
-
-            let Ok(to_graph_node) = q_nodes.get(port.node_entity) else {
-                break;
+        if let Some(to_port_entity) = wire_feedback.accepted_target {
+            let Ok((_, port)) = ports.get(to_port_entity) else {
+                wire_state.clear();
+                wire_feedback.clear();
+                return;
             };
-            let Some(to_definition) = registry.get(&to_graph_node.definition_id) else {
-                break;
-            };
-            let to_inputs = to_definition.inputs();
-            let Some(to_port_definition) = to_inputs.get(port.index) else {
-                break;
-            };
-            let source_connected_inputs = connected_input_mask(
-                from_graph_node.values.inputs.len(),
-                q_connections
-                    .iter()
-                    .filter(|link| link.to_node == from_node)
-                    .map(|link| link.to_index),
-            );
-
-            if !output_satisfies_requirement(
-                &from_definition,
-                from_index,
-                &source_connected_inputs,
-                to_port_definition.requirement.as_ref(),
-            ) {
-                let requirement = to_port_definition
-                    .requirement
-                    .as_ref()
-                    .map(|requirement| requirement.label.as_str())
-                    .unwrap_or("value");
-                warn!(
-                    "Rejected link: input '{}' on node {:?} requires '{}'",
-                    to_port_definition.name, port.node_entity, requirement
-                );
-                break;
-            }
-
-            match to_port_definition.connection_policy {
-                univis_node_graph::prelude::ConnectionPolicy::Single => {
-                    if q_connections.iter().any(|link| link.to_port == to_port_entity) {
-                        warn!(
-                            "Rejected link: input port {} on node {:?} already connected",
-                            port.index, port.node_entity
-                        );
-                        break;
-                    }
-                }
-                univis_node_graph::prelude::ConnectionPolicy::Multiple => {
-                    warn!(
-                        "Rejected link: input '{}' on node {:?} declares a multiple-source policy, but the current runtime only supports one source per input.",
-                        to_port_definition.name, port.node_entity
-                    );
-                    break;
-                }
-            }
-
-            if would_create_cycle(
-                q_connections.iter().map(|link| (link.from_node, link.to_node)),
-                from_node,
-                port.node_entity,
-            ) {
-                warn!(
-                    "Rejected link: connecting node {:?} to node {:?} would create a cycle",
-                    from_node, port.node_entity
-                );
-                break;
-            }
-
             commands.spawn(GraphConnection {
                 from_node,
                 to_node: port.node_entity,
@@ -203,11 +223,20 @@ pub fn wire_complete_system(
                 to_port: to_port_entity,
             });
             mutations.mark_changed();
-            break;
+            diagnostics.pinned_port = Some(to_port_entity);
+            diagnostics.focused_port = Some(to_port_entity);
+        } else if let (Some(target_port), Some(reason)) = (
+            wire_feedback.hovered_target,
+            wire_feedback.rejection_reason.as_deref(),
+        ) {
+            warn!("Rejected link: {}", reason);
+            diagnostics.pinned_port = Some(target_port);
+            diagnostics.focused_port = Some(target_port);
         }
     }
 
     wire_state.clear();
+    wire_feedback.clear();
 }
 
 pub fn wire_visuals_system(
@@ -216,6 +245,7 @@ pub fn wire_visuals_system(
     q_changed_links: Query<Entity, Or<(Added<GraphConnection>, Changed<GraphConnection>)>>,
     mut removed_links: RemovedComponents<GraphConnection>,
     wire_state: Res<WireConnectionState>,
+    wire_feedback: Res<WireDragFeedback>,
     connection_diagnostics: Res<GraphConnectionUiDiagnostics>,
     settings: Res<EditorSettings>,
     port_transforms: Query<(&GlobalTransform, &GraphPort)>,
@@ -232,6 +262,7 @@ pub fn wire_visuals_system(
     let should_refresh = !q_changed_links.is_empty()
         || removed_links.read().next().is_some()
         || wire_state.is_changed()
+        || wire_feedback.is_changed()
         || connection_diagnostics.is_changed()
         || settings.is_changed()
         || !changed_ports.is_empty();
@@ -282,17 +313,37 @@ pub fn wire_visuals_system(
         &mut commands,
         start_transform.translation().truncate(),
         wire_state.current_mouse_world_pos,
-        preview_wire_color(&settings, from_port),
-        WIRE_SEGMENT_THICKNESS,
+        preview_wire_color(&settings, from_port, &wire_feedback),
+        preview_wire_thickness(&wire_feedback),
         settings.wire_style,
     );
 }
 
-fn preview_wire_color(settings: &EditorSettings, from_port: &GraphPort) -> Color {
+fn preview_wire_color(
+    settings: &EditorSettings,
+    from_port: &GraphPort,
+    wire_feedback: &WireDragFeedback,
+) -> Color {
+    if wire_feedback.accepted_target.is_some() {
+        return Color::srgba(0.52, 0.96, 0.96, 0.96);
+    }
+    if wire_feedback.hovered_target.is_some() && wire_feedback.rejection_reason.is_some() {
+        return Color::srgba(0.97, 0.34, 0.34, 0.94);
+    }
     if settings.wire_color_from_output {
         from_port.value_type.port_color()
     } else {
         Color::srgba(1.0, 0.92, 0.35, 0.85)
+    }
+}
+
+fn preview_wire_thickness(wire_feedback: &WireDragFeedback) -> f32 {
+    if wire_feedback.accepted_target.is_some() {
+        WIRE_SEGMENT_THICKNESS + 1.5
+    } else if wire_feedback.hovered_target.is_some() && wire_feedback.rejection_reason.is_some() {
+        WIRE_SEGMENT_THICKNESS + 0.75
+    } else {
+        WIRE_SEGMENT_THICKNESS
     }
 }
 
@@ -402,4 +453,85 @@ fn stepped_points(start: Vec2, end: Vec2) -> Vec<Vec2> {
         Vec2::new(mid_x, end.y),
         end,
     ]
+}
+
+fn evaluate_wire_target(
+    registry: &NodeRegistry,
+    q_nodes: &Query<&GraphNode>,
+    q_connections: &Query<&GraphConnection>,
+    from_port_entity: Entity,
+    from_index: usize,
+    from_node: Entity,
+    from_port_data: &GraphPort,
+    from_graph_node: &GraphNode,
+    from_definition: &ArcNodeDefinition,
+    source_connected_inputs: &[bool],
+    to_port_entity: Entity,
+    port: &GraphPort,
+) -> Result<(), String> {
+    let _ = from_port_entity;
+
+    if !NodeValue::is_compatible(&from_port_data.value_type, &port.value_type) {
+        return Err(format!(
+            "Incompatible types: {} -> {}",
+            from_port_data.value_type.display_name(),
+            port.value_type.display_name()
+        ));
+    }
+
+    let to_graph_node = q_nodes
+        .get(port.node_entity)
+        .map_err(|_| "Target node is no longer available.".to_string())?;
+    let to_definition = registry
+        .get(&to_graph_node.definition_id)
+        .ok_or_else(|| "Target node definition is missing.".to_string())?;
+    let to_inputs = to_definition.inputs();
+    let to_port_definition = to_inputs
+        .get(port.index)
+        .ok_or_else(|| "Target input definition is missing.".to_string())?;
+
+    if !output_satisfies_requirement(
+        from_definition,
+        from_index,
+        source_connected_inputs,
+        to_port_definition.requirement.as_ref(),
+    ) {
+        let requirement = to_port_definition
+            .requirement
+            .as_ref()
+            .map(|requirement| requirement.label.as_str())
+            .unwrap_or("value");
+        return Err(format!(
+            "Input '{}' requires '{}'.",
+            to_port_definition.name, requirement
+        ));
+    }
+
+    match to_port_definition.connection_policy {
+        univis_node_graph::prelude::ConnectionPolicy::Single => {
+            if q_connections.iter().any(|link| link.to_port == to_port_entity) {
+                return Err(format!(
+                    "Input '{}' is already connected.",
+                    to_port_definition.name
+                ));
+            }
+        }
+        univis_node_graph::prelude::ConnectionPolicy::Multiple => {
+            return Err(format!(
+                "Input '{}' declares a multiple-source policy, but runtime fan-in is not enabled yet.",
+                to_port_definition.name
+            ));
+        }
+    }
+
+    if would_create_cycle(
+        q_connections.iter().map(|link| (link.from_node, link.to_node)),
+        from_node,
+        port.node_entity,
+    ) {
+        return Err("This link would create a cycle.".to_string());
+    }
+
+    let _ = from_graph_node;
+    Ok(())
 }

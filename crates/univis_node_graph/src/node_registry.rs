@@ -7,6 +7,9 @@ use super::node_definition::{ArcNodeDefinition, GraphNode, NodeDefinition, NodeI
 
 pub use inventory;
 
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct VisualSyncNode;
+
 /// Inventory entry used for automatic node registration.
 pub struct NodeAutoRegistration {
     pub ctor: fn() -> ArcNodeDefinition,
@@ -173,18 +176,13 @@ fn auto_register_nodes(mut registry: ResMut<NodeRegistry>) {
 
 fn sync_changed_node_visuals(world: &mut World) {
     let visual_nodes: Vec<(Entity, ArcNodeDefinition)> = {
-        let mut query = world.query::<(Entity, &GraphNode)>();
+        let mut query = world.query_filtered::<(Entity, &GraphNode), With<VisualSyncNode>>();
         let Some(registry) = world.get_resource::<NodeRegistry>() else {
             return;
         };
         query
             .iter(world)
-            .filter_map(|(entity, node)| {
-                registry
-                    .get(&node.definition_id)
-                    .filter(|definition| definition.needs_visual_sync())
-                    .map(|definition| (entity, definition))
-            })
+            .filter_map(|(entity, node)| registry.get(&node.definition_id).map(|definition| (entity, definition)))
             .collect()
     };
 

@@ -2,6 +2,10 @@
 
 ## 2026-03-15
 
+- Preserved node selection while context menus or other overlay surfaces are open by teaching click-selection to ignore non-canvas overlays, so selection now clears only from direct empty-canvas interaction instead of ordinary menu usage.
+- Added connection-focused wire coverage for valid links, occupied-input rejection, and cycle rejection, and tied the new `wire_feedback` target into `verify_workspace.sh` so wiring regressions are checked alongside other workflow smoke tests.
+- Polished editor wiring UX by introducing shared drag-time acceptance/rejection evaluation, live valid-target highlighting, rejection feedback on hovered inputs, preview-wire color/thickness feedback, and automatic inspector focus on the input that just accepted or rejected a drag.
+- Reduced runtime/editor overhead by marking only nodes that actually need `sync_visual` polling, reusing connectivity index storage during graph rebuilds, and switching several runtime input/output updates to `clone_from`-style buffer reuse instead of replacing vectors wholesale each pass.
 - Added connection-aware subgraph boundary summaries in `GraphDocument`, surfaced them in editor diagnostics, and updated subgraph capture status to report internal wires plus omitted incoming/outgoing boundary links so selection capture semantics are explicit before and after saving a subgraph.
 - Fixed an output-port hover panic in the connection diagnostics path by replacing an eager `then_some(connections.targets[0])` access with a lazy checked lookup, so unconnected outputs no longer trigger an index-out-of-bounds crash.
 - Fixed the new port-preview tooltip system to use explicitly disjoint Bevy queries, removing a `B0001` runtime panic caused by overlapping mutable `Node` and `Text` access inside the tooltip sync pass.

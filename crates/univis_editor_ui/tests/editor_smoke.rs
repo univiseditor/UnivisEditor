@@ -3,11 +3,12 @@ use bevy::prelude::*;
 use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
 use univis_editor_ui::editor::GraphCamera;
 use univis_editor_ui::interaction::{
-    box_selection_input_system, frame_selected_nodes_system, BoxSelectionState,
+    box_selection_input_system, frame_selected_nodes_system, selection_system, BoxSelectionState,
 };
-use univis_editor_ui::overlay::GraphOverlayState;
+use univis_editor_ui::overlay::{GraphOverlayState, GraphOverlaySurface};
 use univis_node_graph::document::{GraphDocumentNode, LiveGraphDocumentState};
-use univis_node_graph::node_definition::{GraphNode, NodeId};
+use univis_node_graph::node_definition::{GraphNode, NodeId, Selected};
+use univis_ui::prelude::UInteraction;
 
 fn node(id: u64, definition_id: &str, position: [f32; 2]) -> GraphDocumentNode {
     GraphDocumentNode {
@@ -167,4 +168,54 @@ fn smoke_frame_selected_moves_camera_to_selection_bounds() {
         panic!("expected orthographic graph camera");
     };
     assert!(ortho.scale > 1.0);
+}
+
+#[test]
+fn smoke_selection_is_preserved_while_overlay_surface_is_active() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<ButtonInput<MouseButton>>()
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<GraphOverlayState>()
+        .init_resource::<BoxSelectionState>()
+        .insert_resource(LiveGraphDocumentState::default())
+        .add_systems(Update, selection_system);
+
+    let selected_entity = app
+        .world_mut()
+        .spawn((
+            GraphNode::new(NodeId::new("tests/selected"), 0, 1),
+            UInteraction::default(),
+            Selected,
+        ))
+        .id();
+
+    {
+        let mut live_document = app.world_mut().resource_mut::<LiveGraphDocumentState>();
+        live_document.entity_to_node_id.insert(selected_entity, 1);
+        live_document.node_id_to_entity.insert(1, selected_entity);
+        live_document
+            .document
+            .nodes
+            .push(node(1, "tests/selected", [0.0, 0.0]));
+        live_document.document.set_selected_nodes([1]);
+    }
+
+    app.world_mut().resource_mut::<GraphOverlayState>().active_surface =
+        GraphOverlaySurface::ContextMenu;
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Left);
+
+    app.update();
+
+    let world = app.world_mut();
+    assert!(world.entity(selected_entity).contains::<Selected>());
+    assert_eq!(
+        world
+            .resource::<LiveGraphDocumentState>()
+            .document
+            .selected_node_ids(),
+        &[1]
+    );
 }

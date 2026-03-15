@@ -48,6 +48,7 @@ workflow_checks=(
 
 workflow_tests=(
   "cargo test -p univis_editor_ui --test editor_smoke --quiet"
+  "cargo test -p univis_editor_ui --test wire_feedback --quiet"
   "cargo test -p univis_editor_workflows --test workflow_assets_smoke --quiet"
 )
 

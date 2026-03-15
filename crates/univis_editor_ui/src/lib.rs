@@ -44,6 +44,7 @@ impl Plugin for NodeUiPlugin {
         app.init_resource::<univis_node_graph::pin::DragState>()
             .init_resource::<interaction::BoxSelectionState>()
             .init_resource::<univis_node_graph::pin::WireConnectionState>()
+            .init_resource::<WireDragFeedback>()
             .init_resource::<GraphConnectionUiDiagnostics>()
             .init_resource::<GraphConnectionInspectorSummary>()
             .init_resource::<GraphPortPreviewSummary>()
@@ -78,6 +79,7 @@ impl Plugin for NodeUiPlugin {
                 (
                     wire_start_system.in_set(WireSystemsSet::Start),
                     wire_update_system.in_set(WireSystemsSet::Update),
+                    wire_drag_feedback_system.in_set(WireSystemsSet::Update),
                     wire_complete_system.in_set(WireSystemsSet::Complete),
                     refresh_connection_ui_diagnostics_system,
                     wire_visuals_system,

@@ -92,10 +92,11 @@ pub(super) fn propagate_and_process_nodes_system(
         }
     }
 
-    let mut known_nodes = HashSet::new();
-    let mut dirty_nodes = HashSet::new();
-    let mut dirty_reasons = HashMap::<Entity, Vec<String>>::new();
-    let mut outputs_by_node = HashMap::<Entity, Vec<NodeValue>>::new();
+    let node_count_hint = q_nodes.p0().iter().len();
+    let mut known_nodes = HashSet::with_capacity(node_count_hint);
+    let mut dirty_nodes = HashSet::with_capacity(node_count_hint);
+    let mut dirty_reasons = HashMap::<Entity, Vec<String>>::with_capacity(node_count_hint);
+    let mut outputs_by_node = HashMap::<Entity, Vec<NodeValue>>::with_capacity(node_count_hint);
 
     {
         let nodes = q_nodes.p0();
@@ -178,7 +179,14 @@ pub(super) fn propagate_and_process_nodes_system(
                 }
             }
         }
-        resolved_inputs.by_node.insert(entity, resolved.clone());
+        match resolved_inputs.by_node.entry(entity) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().clone_from(&resolved);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(resolved.clone());
+            }
+        }
 
         let definition_id = node.definition_id.clone();
         let Some(definition) = registry.get(&definition_id) else {
@@ -251,10 +259,10 @@ pub(super) fn propagate_and_process_nodes_system(
                 outputs_changed,
             });
         }
-        node.values.inputs = resolved.clone();
-        node.values.outputs = outputs.clone();
-        input_signature.inputs = authored_inputs.values.clone();
-        output_signature.outputs = outputs.clone();
+        node.values.inputs.clone_from(&resolved);
+        node.values.outputs.clone_from(&outputs);
+        input_signature.inputs.clone_from(&authored_inputs.values);
+        output_signature.outputs.clone_from(&outputs);
         outputs_by_node.insert(entity, outputs);
 
         if outputs_changed {

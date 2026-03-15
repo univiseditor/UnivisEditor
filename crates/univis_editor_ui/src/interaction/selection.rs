@@ -13,6 +13,7 @@ pub fn selection_system(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    overlay: Res<GraphOverlayState>,
     mut box_selection: ResMut<BoxSelectionState>,
     mut live_document: ResMut<LiveGraphDocumentState>,
     nodes_interaction: Query<(Entity, &UInteraction), With<GraphNode>>,
@@ -24,6 +25,10 @@ pub fn selection_system(
 ) {
     if box_selection.suppress_click_selection {
         box_selection.suppress_click_selection = false;
+        return;
+    }
+
+    if overlay.active_surface != GraphOverlaySurface::None {
         return;
     }
 

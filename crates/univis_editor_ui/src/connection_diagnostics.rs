@@ -10,6 +10,7 @@ use univis_ui::prelude::*;
 
 use crate::editor::GraphCamera;
 use crate::node_spawn::PortLabel;
+use crate::wire::WireDragFeedback;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UiDiagnosticSeverity {
@@ -74,6 +75,7 @@ pub fn refresh_connection_ui_diagnostics_system(
     live_document: Res<LiveGraphDocumentState>,
     runtime_diagnostics: Res<GraphRuntimeDiagnostics>,
     resolved_inputs: Res<univis_editor_runtime::GraphResolvedInputs>,
+    wire_feedback: Res<WireDragFeedback>,
     q_nodes: Query<(Entity, &GraphNode, Option<&AuthoredNodeInputs>)>,
     q_ports: Query<
         (
@@ -172,7 +174,31 @@ pub fn refresh_connection_ui_diagnostics_system(
                     .and_then(|authored| authored.values.get(port.index))
                     .and_then(preview_if_present);
 
-                if blocked {
+                if wire_feedback.accepted_target == Some(entity) {
+                    PortDiagnosticInfo {
+                        severity: UiDiagnosticSeverity::Active,
+                        status: "Accepts connection".to_string(),
+                        detail: "Compatible input for the current wire drag.".to_string(),
+                        preview: resolved_preview.or(authored_preview),
+                    }
+                } else if wire_feedback.hovered_target == Some(entity) {
+                    PortDiagnosticInfo {
+                        severity: UiDiagnosticSeverity::Error,
+                        status: "Rejected".to_string(),
+                        detail: wire_feedback
+                            .rejection_reason
+                            .clone()
+                            .unwrap_or_else(|| "This input cannot accept the current wire.".to_string()),
+                        preview: resolved_preview.or(authored_preview),
+                    }
+                } else if wire_feedback.valid_targets.contains(&entity) {
+                    PortDiagnosticInfo {
+                        severity: UiDiagnosticSeverity::Active,
+                        status: "Valid target".to_string(),
+                        detail: "Ready to accept the current wire drag.".to_string(),
+                        preview: resolved_preview.or(authored_preview),
+                    }
+                } else if blocked {
                     PortDiagnosticInfo {
                         severity: UiDiagnosticSeverity::Warning,
                         status: "Blocked".to_string(),
@@ -338,17 +364,32 @@ pub fn refresh_connection_ui_diagnostics_system(
 
 pub fn sync_port_diagnostic_visuals_system(
     diagnostics: Res<GraphConnectionUiDiagnostics>,
+    wire_feedback: Res<WireDragFeedback>,
     mut q_ports: Query<(Entity, &GraphPort, &mut UNode, &mut UBorder)>,
     mut q_labels: Query<(&PortLabel, &mut UTextLabel)>,
 ) {
-    if !diagnostics.is_changed() {
+    if !diagnostics.is_changed() && !wire_feedback.is_changed() {
         return;
     }
 
     for (entity, port, mut node, mut border) in q_ports.iter_mut() {
         let info = diagnostics.ports.get(&entity).cloned().unwrap_or_default();
         let focused = diagnostics.focused_port == Some(entity);
-        let palette = palette_for_port(port.value_type.port_color(), info.severity, focused);
+        let mut palette = palette_for_port(port.value_type.port_color(), info.severity, focused);
+
+        if wire_feedback.valid_targets.contains(&entity) {
+            palette.size += 2.0;
+            palette.border_width += 0.75;
+            palette.border = Color::srgba(0.62, 0.96, 1.0, 0.98);
+            palette.label = Color::srgba(0.90, 0.98, 1.0, 1.0);
+        } else if wire_feedback.hovered_target == Some(entity)
+            && wire_feedback.rejection_reason.is_some()
+        {
+            palette.border = Color::srgba(0.98, 0.52, 0.52, 0.98);
+            palette.fill = Color::srgba(0.62, 0.14, 0.14, 0.96);
+            palette.label = Color::srgba(1.0, 0.86, 0.86, 1.0);
+            palette.border_width += 0.75;
+        }
 
         node.width = UVal::Px(palette.size);
         node.height = UVal::Px(palette.size);

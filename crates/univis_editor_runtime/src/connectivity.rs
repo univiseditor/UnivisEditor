@@ -62,16 +62,22 @@ pub fn rebuild_connectivity_index_system(
         .map(|(entity, node)| (entity, node.values.inputs.len(), node.values.outputs.len()))
         .collect();
 
-    let mut incoming_by_node_input = HashMap::new();
-    let mut outgoing_by_node_output = HashMap::new();
+    index.incoming_by_node_input.clear();
+    index.outgoing_by_node_output.clear();
+    index.incoming_by_node_input.reserve(nodes.len());
+    index.outgoing_by_node_output.reserve(nodes.len());
 
     for (entity, input_count, output_count) in &nodes {
-        incoming_by_node_input.insert(*entity, vec![None; *input_count]);
-        outgoing_by_node_output.insert(*entity, vec![Vec::new(); *output_count]);
+        index
+            .incoming_by_node_input
+            .insert(*entity, vec![None; *input_count]);
+        index
+            .outgoing_by_node_output
+            .insert(*entity, vec![Vec::new(); *output_count]);
     }
 
     for connection in q_connections.iter() {
-        if let Some(inputs) = incoming_by_node_input.get_mut(&connection.to_node) {
+        if let Some(inputs) = index.incoming_by_node_input.get_mut(&connection.to_node) {
             if connection.to_index < inputs.len() {
                 inputs[connection.to_index] = Some(GraphInputSource {
                     source_node: connection.from_node,
@@ -80,7 +86,7 @@ pub fn rebuild_connectivity_index_system(
             }
         }
 
-        if let Some(outputs) = outgoing_by_node_output.get_mut(&connection.from_node) {
+        if let Some(outputs) = index.outgoing_by_node_output.get_mut(&connection.from_node) {
             if connection.from_index < outputs.len() {
                 outputs[connection.from_index].push(GraphOutputTarget {
                     target_node: connection.to_node,
@@ -95,13 +101,12 @@ pub fn rebuild_connectivity_index_system(
         q_connections.iter().map(|connection| (connection.from_node, connection.to_node)),
     );
 
-    let known_nodes = incoming_by_node_input.keys().copied().collect::<Vec<_>>();
     resolved_inputs
         .by_node
-        .retain(|entity, _| known_nodes.contains(entity));
+        .retain(|entity, _| index.incoming_by_node_input.contains_key(entity));
 
-    index.incoming_by_node_input = incoming_by_node_input;
-    index.outgoing_by_node_output = outgoing_by_node_output;
-    index.ordered_nodes = topology.ordered_nodes;
-    index.blocked_nodes = topology.blocked_nodes;
+    index.ordered_nodes.clear();
+    index.ordered_nodes.extend(topology.ordered_nodes);
+    index.blocked_nodes.clear();
+    index.blocked_nodes.extend(topology.blocked_nodes);
 }
