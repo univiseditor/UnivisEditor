@@ -2,6 +2,8 @@ use bevy::prelude::*;
 use univis_node_graph::prelude::{GraphNode, NodeValue};
 use univis_scene::{scene_document_signature, SceneDocument, SceneStats};
 
+use crate::connectivity::GraphResolvedInputs;
+
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct GraphSceneOutputs {
     pub sinks: Vec<GraphSceneSinkOutput>,
@@ -37,6 +39,7 @@ fn scene_sink_mode(definition_id: &str) -> SceneSinkMode {
 
 pub(super) fn collect_scene_outputs_system(
     q_nodes: Query<(Entity, &GraphNode)>,
+    resolved_inputs: Res<GraphResolvedInputs>,
     mut scene_outputs: ResMut<GraphSceneOutputs>,
 ) {
     let mut next_outputs = Vec::new();
@@ -47,10 +50,11 @@ pub(super) fn collect_scene_outputs_system(
             SceneSinkMode::None => continue,
         };
 
-        let scene = node
-            .values
-            .inputs
-            .first()
+        let scene = resolved_inputs
+            .by_node
+            .get(&node_entity)
+            .and_then(|inputs| inputs.first())
+            .or_else(|| node.values.inputs.first())
             .and_then(NodeValue::as_entity)
             .cloned()
             .map(SceneDocument::from_entity_value);

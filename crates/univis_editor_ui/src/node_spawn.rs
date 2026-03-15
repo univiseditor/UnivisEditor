@@ -10,9 +10,21 @@ pub struct Header;
 #[derive(Component)]
 pub struct NodeBody(pub Entity);
 
+#[derive(Component)]
+pub struct PortLabel {
+    pub port_entity: Entity,
+}
+
 #[derive(Component, Debug, Clone)]
 pub struct MissingNodePlaceholder {
     pub original_definition_id: NodeId,
+}
+
+fn authored_inputs_from_ports(inputs: &[PortDefinition]) -> Vec<NodeValue> {
+    inputs
+        .iter()
+        .map(|port| port.default_value.clone().unwrap_or(NodeValue::None))
+        .collect()
 }
 
 /// Extension trait for spawning nodes from the registry.
@@ -60,9 +72,12 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
     let definition_id = definition.id();
     let has_custom_body = definition.has_custom_body();
     let has_popup_inputs = inputs.iter().any(|port| port.editable_in_popup);
+    let authored_inputs = authored_inputs_from_ports(&inputs);
 
     let definition_clone = Arc::clone(definition);
     let node_width = 270.0;
+    let mut graph_node = GraphNode::new(definition_id, input_count, output_count);
+    graph_node.values.inputs = authored_inputs.clone();
 
     let root_entity = commands
         .spawn((
@@ -71,7 +86,10 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                 ..default()
             },
             Transform::from_xyz(position.x, position.y, 1.0),
-            GraphNode::new(definition_id, input_count, output_count),
+            graph_node,
+            AuthoredNodeInputs {
+                values: authored_inputs,
+            },
             UInteraction::default(),
             UBorder {
                 color: Color::WHITE,
@@ -250,6 +268,9 @@ pub fn spawn_placeholder_node_entity<'w, 's>(
         .collect();
     let title = format!("Missing: {}", original_definition_id);
     let node_width = 270.0;
+    let authored_inputs = vec![NodeValue::None; input_count];
+    let mut graph_node = GraphNode::new(original_definition_id.clone(), input_count, output_count);
+    graph_node.values.inputs = authored_inputs.clone();
 
     let root_entity = commands
         .spawn((
@@ -258,7 +279,10 @@ pub fn spawn_placeholder_node_entity<'w, 's>(
                 ..default()
             },
             Transform::from_xyz(position.x, position.y, 1.0),
-            GraphNode::new(original_definition_id.clone(), input_count, output_count),
+            graph_node,
+            AuthoredNodeInputs {
+                values: authored_inputs,
+            },
             MissingNodePlaceholder {
                 original_definition_id: original_definition_id.clone(),
             },
@@ -425,6 +449,13 @@ pub fn spawn_component_mode_node_entity<'w, 's>(
     } else {
         vec![]
     };
+    let authored_inputs = authored_inputs_from_ports(&inputs);
+    let mut graph_node = GraphNode::new(
+        NodeId::new(format!("component/{}", component_kind)),
+        inputs.len(),
+        outputs.len(),
+    );
+    graph_node.values.inputs = authored_inputs.clone();
 
     let root_entity = commands
         .spawn((
@@ -433,11 +464,10 @@ pub fn spawn_component_mode_node_entity<'w, 's>(
                 ..default()
             },
             Transform::from_xyz(position.x, position.y, 1.0),
-            GraphNode::new(
-                NodeId::new(format!("component/{}", component_kind)),
-                inputs.len(),
-                outputs.len(),
-            ),
+            graph_node,
+            AuthoredNodeInputs {
+                values: authored_inputs,
+            },
             UInteraction::default(),
             UBorder {
                 color: Color::WHITE,
@@ -599,7 +629,6 @@ fn spawn_port_ui_new(
     let port_color = port_def.resolve_color();
     let is_input = port_type == PortType::Input;
     let port_name = port_def.display_label();
-
     parent
         .spawn((
             UNode::default(),
@@ -616,32 +645,70 @@ fn spawn_port_ui_new(
             },
         ))
         .with_children(|row| {
+            let port_entity = if is_input {
+                row.spawn((
+                    GraphPort {
+                        node_entity,
+                        port_type,
+                        index,
+                        value_type: port_def.value_type.clone(),
+                    },
+                    InputConnection::default(),
+                    UNode {
+                        width: UVal::Px(12.0),
+                        height: UVal::Px(12.0),
+                        background_color: port_color,
+                        border_radius: UCornerRadius::all(6.0),
+                        ..default()
+                    },
+                    UBorder {
+                        color: Color::srgba(1.0, 1.0, 1.0, 0.08),
+                        width: 1.0,
+                        radius: UCornerRadius::all(6.0),
+                        ..default()
+                    },
+                    UInteraction::default(),
+                ))
+                .id()
+            } else {
+                row.spawn((
+                    GraphPort {
+                        node_entity,
+                        port_type,
+                        index,
+                        value_type: port_def.value_type.clone(),
+                    },
+                    OutputConnections::default(),
+                    UNode {
+                        width: UVal::Px(12.0),
+                        height: UVal::Px(12.0),
+                        background_color: port_color,
+                        border_radius: UCornerRadius::all(6.0),
+                        ..default()
+                    },
+                    UBorder {
+                        color: Color::srgba(1.0, 1.0, 1.0, 0.08),
+                        width: 1.0,
+                        radius: UCornerRadius::all(6.0),
+                        ..default()
+                    },
+                    UInteraction::default(),
+                ))
+                .id()
+            };
+
             row.spawn((
-                GraphPort {
-                    node_entity,
-                    port_type,
-                    index,
-                    value_type: port_def.value_type.clone(),
-                },
-                UNode {
-                    width: UVal::Px(12.0),
-                    height: UVal::Px(12.0),
-                    background_color: port_color,
-                    border_radius: UCornerRadius::all(6.0),
+                PortLabel { port_entity },
+                UTextLabel {
+                    text: port_name,
+                    font_size: 15.0,
+                    color: if port_def.requirement.is_some() {
+                        port_color
+                    } else {
+                        Color::srgb(0.7, 0.7, 0.7)
+                    },
                     ..default()
                 },
-                UInteraction::default(),
             ));
-
-            row.spawn(UTextLabel {
-                text: port_name,
-                font_size: 15.0,
-                color: if port_def.requirement.is_some() {
-                    port_color
-                } else {
-                    Color::srgb(0.7, 0.7, 0.7)
-                },
-                ..default()
-            });
         });
 }

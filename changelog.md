@@ -2,6 +2,14 @@
 
 ## 2026-03-15
 
+- Added structured runtime tracing with persisted settings, recent per-node execution entries, and diagnostics-panel integration so graph execution order and reprocessing reasons can be inspected without always enabling noisy logging.
+- Added an explicit `ConnectionPolicy` layer on port definitions, surfaced it in the connection inspector, and made wire creation reject unsupported multi-source declarations with a clear message instead of relying on an implicit single-input rule.
+- Added wire and port diagnostics in the editor UI, including focused-port state, per-port health styling, diagnostic wire coloring/thickness, and a new floating `Connection Inspector` panel with persisted visibility settings.
+- Added a dedicated architecture note at `docs/connection-architecture.md` describing the first-class `GraphConnection` model, authored-vs-resolved input split, runtime adjacency indexing, and the propagation fixes for widget-driven source nodes.
+- Restored live value propagation after the `GraphConnection` refactor by separating authored node inputs from runtime-resolved inputs, initializing authored inputs at spawn/load time, and teaching persistence plus popup editing to read/write the authored buffer instead of serializing transient resolved values.
+- Restored propagation from custom-body source nodes such as widget-driven inputs by polling `sync_visual` nodes every frame, avoiding no-op output writes, and teaching the runtime to treat externally updated outputs as dirty so downstream nodes reprocess when source widgets change.
+- Rebuilt live graph wiring around first-class `GraphConnection` entities instead of a central `Connecting(Vec<...>)` resource, keeping save/load on `GraphDocument.edges` while moving editor state, wire rendering, and live document capture onto independent link entities.
+- Added a compiled runtime connectivity layer with per-node input/output adjacency maps plus cached resolved inputs and output signatures, so node processing now propagates dirty state through dependency order instead of scanning every edge for every node on each pass.
 - Expanded document-level coverage with a dedicated `document_workflows` target for prefab upserts, subgraph capture/instancing, and live-document entity-retention behavior, keeping structural graph tests focused on document operations instead of node-family details.
 - Added editor/workflow smoke coverage for `box select`, `frame selected`, duplicate snapshots, and prefab/subgraph capture-and-reinsert flows through new `editor_smoke` and `workflow_assets_smoke` targets.
 - Extended the staged verification script and GitHub Actions matrix with a dedicated `workflows` stage plus opt-in `fmt`, `clippy-core`, and `clippy-editor` passes, so maintenance checks stay sequential locally while CI covers formatting and lint drift.

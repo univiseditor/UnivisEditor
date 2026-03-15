@@ -79,11 +79,11 @@ pub fn delete_node_system(
     mut command_requests: MessageReader<GraphCommandRequest>,
     mut delete_requests: MessageReader<DeleteSelectedNodesRequest>,
     mut live_document: ResMut<LiveGraphDocumentState>,
-    mut connect: ResMut<Connecting>,
     mut drag_state: ResMut<DragState>,
     mut wire_state: ResMut<WireConnectionState>,
     mut popup: ResMut<NodePopupState>,
     mut overlay: ResMut<GraphOverlayState>,
+    q_connections: Query<(Entity, &GraphConnection)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
     if !graph_editing_enabled(activation.as_deref()) {
@@ -110,12 +110,15 @@ pub fn delete_node_system(
         commands.entity(entity).try_despawn();
     }
 
-    connect.connections.retain(|link| {
-        !deleted_set.contains(&link.from_node)
-            && !deleted_set.contains(&link.to_node)
-            && !deleted_set.contains(&link.from_port)
-            && !deleted_set.contains(&link.to_port)
-    });
+    for (connection_entity, link) in q_connections.iter() {
+        if deleted_set.contains(&link.from_node)
+            || deleted_set.contains(&link.to_node)
+            || deleted_set.contains(&link.from_port)
+            || deleted_set.contains(&link.to_port)
+        {
+            commands.entity(connection_entity).try_despawn();
+        }
+    }
 
     if drag_state
         .active_entity
@@ -161,7 +164,8 @@ pub fn request_delete_selected_nodes(
 pub fn disconnect_wire_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut live_document: ResMut<LiveGraphDocumentState>,
-    mut connect: ResMut<Connecting>,
+    mut commands: Commands,
+    q_connections: Query<(Entity, &GraphConnection)>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
@@ -171,9 +175,11 @@ pub fn disconnect_wire_system(
             {
                 if live_document.disconnect_input_for_entity(port_data.node_entity, port_data.index)
                 {
-                    connect
-                        .connections
-                        .retain(|link| link.to_port != port_entity);
+                    for (connection_entity, link) in q_connections.iter() {
+                        if link.to_port == port_entity {
+                            commands.entity(connection_entity).try_despawn();
+                        }
+                    }
                     mutations.mark_changed();
                 }
             }

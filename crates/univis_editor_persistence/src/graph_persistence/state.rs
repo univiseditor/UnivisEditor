@@ -216,7 +216,6 @@ impl MutationUiState<'_> {
 #[derive(SystemParam)]
 pub(super) struct LoadGraphRuntimeParams<'w> {
     pub settings: ResMut<'w, GraphPersistenceSettings>,
-    pub graph: ResMut<'w, Connecting>,
     pub live_document: ResMut<'w, LiveGraphDocumentState>,
     pub pending: ResMut<'w, PendingGraphLoad>,
     pub runtime: ResMut<'w, GraphPersistenceRuntimeState>,

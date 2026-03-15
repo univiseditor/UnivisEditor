@@ -1,3 +1,4 @@
+pub mod connection_diagnostics;
 pub mod editor;
 pub mod interaction;
 pub mod menu;
@@ -8,6 +9,7 @@ pub mod widgets;
 pub mod wire;
 
 use bevy::prelude::*;
+use connection_diagnostics::*;
 use interaction::*;
 use menu::*;
 use node_popup::NodePopupPlugin;
@@ -41,15 +43,22 @@ impl Plugin for NodeUiPlugin {
 
         app.init_resource::<univis_node_graph::pin::DragState>()
             .init_resource::<interaction::BoxSelectionState>()
-            .init_resource::<univis_node_graph::pin::Connecting>()
             .init_resource::<univis_node_graph::pin::WireConnectionState>()
+            .init_resource::<GraphConnectionUiDiagnostics>()
+            .init_resource::<GraphConnectionInspectorSummary>()
             .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
             .init_resource::<overlay::GraphOverlayState>()
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
             .add_plugins(NodePopupPlugin)
-            .add_systems(Update, sanitize_graph_editor_state)
+            .add_systems(
+                Update,
+                (
+                    sanitize_graph_editor_state,
+                    sync_port_connection_caches_system,
+                ),
+            )
             .add_systems(Update, sync_box_selection_overlay)
             .add_systems(
                 Update,
@@ -69,7 +78,10 @@ impl Plugin for NodeUiPlugin {
                     wire_start_system.in_set(WireSystemsSet::Start),
                     wire_update_system.in_set(WireSystemsSet::Update),
                     wire_complete_system.in_set(WireSystemsSet::Complete),
+                    refresh_connection_ui_diagnostics_system,
                     wire_visuals_system,
+                    sync_port_diagnostic_visuals_system,
+                    sync_connection_inspector_summary_system,
                 )
                     .chain(),
             )
@@ -90,7 +102,6 @@ impl Plugin for NodeUiPlugin {
                     selection_system,
                     request_delete_selected_nodes,
                     delete_node_system,
-                    reset_inputs,
                     disconnect_wire_system,
                 )
                     .chain(),
@@ -104,6 +115,7 @@ pub mod prelude {
     pub use univis_editor_runtime::prelude::*;
     pub use univis_node_graph::prelude::*;
 
+    pub use crate::connection_diagnostics::*;
     pub use crate::editor::*;
     pub use crate::interaction::*;
     pub use crate::menu::*;

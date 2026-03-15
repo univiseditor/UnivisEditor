@@ -14,11 +14,11 @@ use univis_editor_ui::prelude::sync_live_graph_document_state;
 use univis_node_graph::commands::GraphMutationTracker;
 use univis_node_graph::document::LiveGraphDocumentState;
 use univis_node_graph::node_definition::{
-    GraphNode, GraphPort, NodeCategory, NodeDefinition, NodeId, PortDefinition, PortType,
-    ProcessContext, ProcessResult, Selected,
+    AuthoredNodeInputs, GraphNode, GraphPort, NodeCategory, NodeDefinition, NodeId,
+    PortDefinition, PortType, ProcessContext, ProcessResult, Selected,
 };
 use univis_node_graph::node_registry::NodeRegistry;
-use univis_node_graph::pin::{Connecting, DragState, GraphLink, WireConnectionState};
+use univis_node_graph::pin::{DragState, GraphConnection, WireConnectionState};
 use univis_node_graph::value::{NodeValue, ValueType};
 
 struct WorkflowValueNode;
@@ -83,8 +83,9 @@ impl NodeDefinition for WorkflowSinkNode {
 fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<ButtonInput<MouseButton>>()
         .init_resource::<NodeRegistry>()
-        .init_resource::<Connecting>()
         .init_resource::<DragState>()
         .init_resource::<WireConnectionState>()
         .init_resource::<ContextMenuState>()
@@ -173,8 +174,7 @@ fn connect_nodes(app: &mut App, from_node: Entity, to_node: Entity) {
     };
 
     {
-        let mut graph = app.world_mut().resource_mut::<Connecting>();
-        graph.connections.push(GraphLink {
+        app.world_mut().spawn(GraphConnection {
             from_node,
             from_index: 0,
             to_node,
@@ -193,10 +193,15 @@ fn set_string_input(app: &mut App, entity: Entity, input_index: usize, value: &s
     {
         let world = app.world_mut();
         let mut entity_ref = world.entity_mut(entity);
-        let mut node = entity_ref
+        entity_ref
             .get_mut::<GraphNode>()
-            .expect("graph node should exist");
-        node.values.inputs[input_index] = NodeValue::string(value);
+            .expect("graph node should exist")
+            .values
+            .inputs[input_index] = NodeValue::string(value);
+        entity_ref
+            .get_mut::<AuthoredNodeInputs>()
+            .expect("authored inputs should exist")
+            .values[input_index] = NodeValue::string(value);
     }
     app.world_mut()
         .resource_mut::<GraphMutationTracker>()
@@ -211,7 +216,9 @@ fn node_count(app: &mut App) -> usize {
 }
 
 fn edge_count(app: &mut App) -> usize {
-    app.world().resource::<Connecting>().connections.len()
+    let world = app.world_mut();
+    let mut query = world.query::<&GraphConnection>();
+    query.iter(world).count()
 }
 
 #[test]

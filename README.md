@@ -72,6 +72,8 @@ The rule used across the workspace is:
 - authoring logic lives inside graph-facing data and node processing
 - editor operation lives outside the graph as UX, persistence, and workflow systems
 
+For a focused write-up of the new live wiring model, see [docs/connection-architecture.md](/home/abdellah/Desktop/Univis/UnivisEditor/docs/connection-architecture.md).
+
 ## Workspace Layout
 
 The workspace is split into focused crates:

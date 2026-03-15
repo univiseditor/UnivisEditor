@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+use univis_editor_runtime::GraphRuntimeTraceSettings;
 use univis_editor_persistence::graph_persistence::{
     GraphHistorySettings, GraphPersistenceRuntimeState, GraphPersistenceSettings,
     GraphPersistenceStatus, GraphPersistenceStatusSeverity, latest_backup_file,

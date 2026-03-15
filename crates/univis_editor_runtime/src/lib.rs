@@ -1,3 +1,4 @@
+mod connectivity;
 mod diagnostics;
 mod processing;
 mod scene_outputs;
@@ -5,6 +6,7 @@ mod world_sync;
 
 use bevy::prelude::*;
 
+use self::connectivity::rebuild_connectivity_index_system;
 use self::diagnostics::propagate_and_process_nodes_system;
 use self::processing::initialize_node_defaults_system;
 use self::scene_outputs::collect_scene_outputs_system;
@@ -14,6 +16,10 @@ use self::world_sync::{
 
 pub use self::diagnostics::{
     GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity, GraphRuntimeNodeIssue,
+    GraphRuntimeTrace, GraphRuntimeTraceEntry, GraphRuntimeTraceSettings,
+};
+pub use self::connectivity::{
+    GraphConnectivityIndex, GraphResolvedInputs, NodeInputSignature, NodeOutputSignature,
 };
 pub use self::scene_outputs::{GraphSceneOutputMode, GraphSceneOutputs, GraphSceneSinkOutput};
 
@@ -30,6 +36,10 @@ pub struct NodeRuntimePlugin;
 impl Plugin for NodeRuntimePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GraphRuntimeDiagnostics>()
+            .init_resource::<GraphRuntimeTraceSettings>()
+            .init_resource::<GraphRuntimeTrace>()
+            .init_resource::<connectivity::GraphConnectivityIndex>()
+            .init_resource::<connectivity::GraphResolvedInputs>()
             .init_resource::<GraphSceneOutputs>()
             .configure_sets(
                 Update,
@@ -43,7 +53,12 @@ impl Plugin for NodeRuntimePlugin {
             )
             .add_systems(
                 Update,
-                initialize_node_defaults_system.in_set(NodeRuntimeSystemSet::Prepare),
+                (
+                    initialize_node_defaults_system,
+                    rebuild_connectivity_index_system,
+                )
+                    .chain()
+                    .in_set(NodeRuntimeSystemSet::Prepare),
             )
             .add_systems(
                 Update,
@@ -67,7 +82,9 @@ impl Plugin for NodeRuntimePlugin {
 
 pub mod prelude {
     pub use crate::{
-        GraphRuntimeDiagnostics, GraphSceneOutputMode, GraphSceneOutputs, GraphSceneSinkOutput,
-        NodeRuntimePlugin, NodeRuntimeSystemSet,
+        GraphConnectivityIndex, GraphResolvedInputs, GraphRuntimeDiagnostics,
+        GraphRuntimeTrace, GraphRuntimeTraceEntry, GraphRuntimeTraceSettings,
+        GraphSceneOutputMode, GraphSceneOutputs, GraphSceneSinkOutput, NodeInputSignature,
+        NodeOutputSignature, NodeRuntimePlugin, NodeRuntimeSystemSet,
     };
 }

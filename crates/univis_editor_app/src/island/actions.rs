@@ -189,6 +189,7 @@ pub(super) fn handle_canvas_island_settings_actions_system(
     mut persistence_settings: ResMut<GraphPersistenceSettings>,
     mut history_settings: ResMut<GraphHistorySettings>,
     mut floating_panels: ResMut<FloatingPanelsSettings>,
+    mut runtime_trace_settings: ResMut<GraphRuntimeTraceSettings>,
     mut editor_settings: ResMut<EditorSettings>,
 ) {
     for (interaction, button) in buttons.iter() {
@@ -219,6 +220,13 @@ pub(super) fn handle_canvas_island_settings_actions_system(
             CanvasIslandSettingsAction::ToggleScenePreviewPanel => {
                 floating_panels.show_scene_preview = !floating_panels.show_scene_preview;
             }
+            CanvasIslandSettingsAction::ToggleConnectionInspectorPanel => {
+                floating_panels.show_connection_inspector =
+                    !floating_panels.show_connection_inspector;
+            }
+            CanvasIslandSettingsAction::ToggleRuntimeTrace => {
+                runtime_trace_settings.enabled = !runtime_trace_settings.enabled;
+            }
             CanvasIslandSettingsAction::ToggleGridDisplayMode => {
                 editor_settings.grid_display_mode = editor_settings.grid_display_mode.toggle();
             }
@@ -245,6 +253,7 @@ pub(super) fn handle_canvas_island_settings_actions_system(
                 persistence_settings.autosave_enabled = persistence_defaults.autosave_enabled;
                 *history_settings = GraphHistorySettings::default();
                 *floating_panels = FloatingPanelsSettings::default();
+                *runtime_trace_settings = GraphRuntimeTraceSettings::default();
                 *editor_settings = EditorSettings::default();
             }
         }

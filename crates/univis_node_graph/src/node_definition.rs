@@ -57,6 +57,13 @@ pub struct PortRequirement {
     pub color: Option<Color>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ConnectionPolicy {
+    #[default]
+    Single,
+    Multiple,
+}
+
 impl PortRequirement {
     pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
         Self {
@@ -83,6 +90,8 @@ pub struct PortDefinition {
     #[serde(default)]
     pub requirement: Option<PortRequirement>,
     #[serde(default)]
+    pub connection_policy: ConnectionPolicy,
+    #[serde(default)]
     pub editable_in_popup: bool,
     #[serde(default)]
     pub ui_step: Option<f64>,
@@ -101,6 +110,7 @@ impl PortDefinition {
             default_value: None,
             color: None,
             requirement: None,
+            connection_policy: ConnectionPolicy::Single,
             editable_in_popup: false,
             ui_step: None,
             ui_min: None,
@@ -125,6 +135,16 @@ impl PortDefinition {
 
     pub fn with_requirement(mut self, requirement: PortRequirement) -> Self {
         self.requirement = Some(requirement);
+        self
+    }
+
+    pub fn with_connection_policy(mut self, policy: ConnectionPolicy) -> Self {
+        self.connection_policy = policy;
+        self
+    }
+
+    pub fn allow_multiple_connections(mut self) -> Self {
+        self.connection_policy = ConnectionPolicy::Multiple;
         self
     }
 
@@ -217,6 +237,10 @@ impl PortDefinition {
 
     pub fn output_entity(name: impl Into<String>) -> Self {
         Self::new(name, ValueType::Entity)
+    }
+
+    pub fn accepts_multiple_connections(&self) -> bool {
+        self.connection_policy == ConnectionPolicy::Multiple
     }
 }
 
@@ -457,6 +481,11 @@ impl GraphNode {
     }
 }
 
+#[derive(Component, Debug, Clone, Default)]
+pub struct AuthoredNodeInputs {
+    pub values: Vec<NodeValue>,
+}
+
 #[derive(Component)]
 pub struct GraphPort {
     pub node_entity: Entity,
@@ -471,13 +500,15 @@ pub enum PortType {
     Output,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Debug, Clone, Default)]
 pub struct InputConnection {
     pub source_node: Option<Entity>,
     pub source_port_index: Option<usize>,
+    pub source_port: Option<Entity>,
+    pub connection_entity: Option<Entity>,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Debug, Clone, Default)]
 pub struct OutputConnections {
     pub targets: Vec<OutputTarget>,
 }
@@ -486,6 +517,8 @@ pub struct OutputConnections {
 pub struct OutputTarget {
     pub target_node: Entity,
     pub target_port_index: usize,
+    pub target_port: Entity,
+    pub connection_entity: Entity,
 }
 
 /// ═══════════════════════════════════════════════════════════════

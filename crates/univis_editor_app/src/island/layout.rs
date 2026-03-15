@@ -437,6 +437,18 @@ fn spawn_canvas_island_settings_panel(root: &mut ChildSpawnerCommands) {
         );
         spawn_canvas_island_setting_toggle_row(
             panel,
+            "Connection Inspector",
+            CanvasIslandSettingsAction::ToggleConnectionInspectorPanel,
+            CanvasIslandSettingsValueKind::ConnectionInspectorPanel,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
+            "Runtime Trace",
+            CanvasIslandSettingsAction::ToggleRuntimeTrace,
+            CanvasIslandSettingsValueKind::RuntimeTrace,
+        );
+        spawn_canvas_island_setting_toggle_row(
+            panel,
             "Grid Mode",
             CanvasIslandSettingsAction::ToggleGridDisplayMode,
             CanvasIslandSettingsValueKind::GridDisplayMode,

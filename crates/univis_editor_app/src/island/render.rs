@@ -381,12 +381,14 @@ pub(super) fn sync_canvas_island_settings_values_system(
     persistence_settings: Res<GraphPersistenceSettings>,
     history_settings: Res<GraphHistorySettings>,
     floating_panels: Res<FloatingPanelsSettings>,
+    runtime_trace_settings: Res<GraphRuntimeTraceSettings>,
     editor_settings: Res<EditorSettings>,
     mut texts: Query<(&CanvasIslandSettingsValueText, &mut Text)>,
 ) {
     if !persistence_settings.is_changed()
         && !history_settings.is_changed()
         && !floating_panels.is_changed()
+        && !runtime_trace_settings.is_changed()
         && !editor_settings.is_changed()
     {
         return;
@@ -429,6 +431,20 @@ pub(super) fn sync_canvas_island_settings_values_system(
                 }
                 .to_string()
             }
+            CanvasIslandSettingsValueKind::ConnectionInspectorPanel => {
+                if floating_panels.show_connection_inspector {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .to_string()
+            }
+            CanvasIslandSettingsValueKind::RuntimeTrace => if runtime_trace_settings.enabled {
+                "ON"
+            } else {
+                "OFF"
+            }
+            .to_string(),
             CanvasIslandSettingsValueKind::GridDisplayMode => {
                 editor_settings.grid_display_mode.label().to_string()
             }

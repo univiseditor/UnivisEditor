@@ -7,9 +7,12 @@ use univis_editor_persistence::graph_persistence::{
     GraphHistoryState, GraphPersistenceRuntimeState, GraphPersistenceStatus,
 };
 use univis_editor_runtime::{
-    GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity, GraphSceneOutputs,
+    GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity, GraphRuntimeTrace,
+    GraphRuntimeTraceSettings, GraphSceneOutputs,
 };
-use univis_editor_ui::prelude::{GraphCamera, Selected};
+use univis_editor_ui::prelude::{
+    GraphCamera, GraphConnectionInspectorSummary, Selected,
+};
 use univis_node_graph::prelude::{
     GraphDocument, GraphValidationIssue, LiveGraphDocumentState, NodeRegistry,
 };
@@ -18,6 +21,7 @@ use univis_node_graph::prelude::{
 pub struct FloatingPanelsSettings {
     pub show_diagnostics: bool,
     pub show_scene_preview: bool,
+    pub show_connection_inspector: bool,
 }
 
 impl Default for FloatingPanelsSettings {
@@ -25,6 +29,7 @@ impl Default for FloatingPanelsSettings {
         Self {
             show_diagnostics: true,
             show_scene_preview: true,
+            show_connection_inspector: true,
         }
     }
 }
@@ -49,10 +54,16 @@ struct DiagnosticsPanel;
 struct ScenePreviewPanel;
 
 #[derive(Component)]
+struct ConnectionInspectorPanel;
+
+#[derive(Component)]
 struct DiagnosticsPanelText;
 
 #[derive(Component)]
 struct ScenePreviewPanelText;
+
+#[derive(Component)]
+struct ConnectionInspectorPanelText;
 
 pub struct FloatingPanelsPlugin;
 
@@ -107,6 +118,13 @@ fn setup_floating_panels_system(mut commands: Commands) {
                 "No scene sink connected.",
                 ScenePreviewPanel,
                 ScenePreviewPanelText,
+            );
+            spawn_panel(
+                root,
+                "Connection Inspector",
+                "Hover a port or click one to pin its connection details.",
+                ConnectionInspectorPanel,
+                ConnectionInspectorPanelText,
             );
         });
 }
@@ -200,13 +218,25 @@ fn sync_floating_panel_visibility_system(
             Without<FloatingPanelsRoot>,
         ),
     >,
+    mut connection_inspector_panels: Query<
+        &mut Node,
+        (
+            With<ConnectionInspectorPanel>,
+            Without<DiagnosticsPanel>,
+            Without<ScenePreviewPanel>,
+            Without<FloatingPanelsRoot>,
+        ),
+    >,
 ) {
     if !settings.is_changed() {
         return;
     }
 
     for mut node in roots.iter_mut() {
-        node.display = if settings.show_diagnostics || settings.show_scene_preview {
+        node.display = if settings.show_diagnostics
+            || settings.show_scene_preview
+            || settings.show_connection_inspector
+        {
             Display::Flex
         } else {
             Display::None
@@ -223,6 +253,14 @@ fn sync_floating_panel_visibility_system(
 
     for mut node in scene_preview_panels.iter_mut() {
         node.display = if settings.show_scene_preview {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    for mut node in connection_inspector_panels.iter_mut() {
+        node.display = if settings.show_connection_inspector {
             Display::Flex
         } else {
             Display::None
@@ -336,6 +374,8 @@ fn refresh_editor_diagnostics_summary_system(
     live_document: Res<LiveGraphDocumentState>,
     registry: Res<NodeRegistry>,
     runtime_diagnostics: Res<GraphRuntimeDiagnostics>,
+    runtime_trace_settings: Res<GraphRuntimeTraceSettings>,
+    runtime_trace: Res<GraphRuntimeTrace>,
     scene_outputs: Res<GraphSceneOutputs>,
     persistence_runtime: Res<GraphPersistenceRuntimeState>,
     persistence_status: Res<GraphPersistenceStatus>,
@@ -493,6 +533,35 @@ fn refresh_editor_diagnostics_summary_system(
         lines.push(format!("Status: {}", status.text));
     }
 
+    if runtime_trace_settings.enabled {
+        lines.push(format!(
+            "Trace: ON (showing {} recent node pass(es))",
+            runtime_trace.entries.len()
+        ));
+        for entry in runtime_trace.entries.iter().rev().take(4) {
+            let node_label = live_document
+                .node_id_for_entity(entry.node)
+                .map(|node_id| format_node_label(&live_document.document, &registry, node_id))
+                .unwrap_or_else(|| entry.definition_id.clone());
+            let reasons = if entry.reasons.is_empty() {
+                "no explicit reason".to_string()
+            } else {
+                entry.reasons.join(", ")
+            };
+            lines.push(format!(
+                "Trace: {} [{}] -> {}{}",
+                node_label,
+                reasons,
+                entry.result,
+                if entry.outputs_changed {
+                    " (outputs changed)"
+                } else {
+                    ""
+                }
+            ));
+        }
+    }
+
     summary.text = lines.join("\n");
 }
 
@@ -553,11 +622,20 @@ fn refresh_scene_preview_summary_system(
 fn sync_floating_panel_text_system(
     diagnostics: Res<EditorDiagnosticsSummary>,
     scene_preview: Res<ScenePreviewSummary>,
+    connection_inspector: Res<GraphConnectionInspectorSummary>,
     mut diagnostics_text: Query<
         &mut Text,
         (With<DiagnosticsPanelText>, Without<ScenePreviewPanelText>),
     >,
     mut scene_text: Query<&mut Text, (With<ScenePreviewPanelText>, Without<DiagnosticsPanelText>)>,
+    mut connection_text: Query<
+        &mut Text,
+        (
+            With<ConnectionInspectorPanelText>,
+            Without<DiagnosticsPanelText>,
+            Without<ScenePreviewPanelText>,
+        ),
+    >,
 ) {
     if diagnostics.is_changed() {
         for mut text in diagnostics_text.iter_mut() {
@@ -568,6 +646,12 @@ fn sync_floating_panel_text_system(
     if scene_preview.is_changed() {
         for mut text in scene_text.iter_mut() {
             text.0 = scene_preview.text.clone();
+        }
+    }
+
+    if connection_inspector.is_changed() {
+        for mut text in connection_text.iter_mut() {
+            text.0 = connection_inspector.text.clone();
         }
     }
 }

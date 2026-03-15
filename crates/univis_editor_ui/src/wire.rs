@@ -72,11 +72,12 @@ pub fn wire_update_system(
 
 /// Finalizes a wire drag when the hovered input port accepts the pending connection.
 pub fn wire_complete_system(
+    mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut wire_state: ResMut<WireConnectionState>,
-    mut connect: ResMut<Connecting>,
     registry: Res<NodeRegistry>,
     q_nodes: Query<&GraphNode>,
+    q_connections: Query<&GraphConnection>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
@@ -138,8 +139,7 @@ pub fn wire_complete_system(
             };
             let source_connected_inputs = connected_input_mask(
                 from_graph_node.values.inputs.len(),
-                connect
-                    .connections
+                q_connections
                     .iter()
                     .filter(|link| link.to_node == from_node)
                     .map(|link| link.to_index),
@@ -163,23 +163,27 @@ pub fn wire_complete_system(
                 break;
             }
 
-            if connect
-                .connections
-                .iter()
-                .any(|link| link.to_port == to_port_entity)
-            {
-                warn!(
-                    "Rejected link: input port {} on node {:?} already connected",
-                    port.index, port.node_entity
-                );
-                break;
+            match to_port_definition.connection_policy {
+                univis_node_graph::prelude::ConnectionPolicy::Single => {
+                    if q_connections.iter().any(|link| link.to_port == to_port_entity) {
+                        warn!(
+                            "Rejected link: input port {} on node {:?} already connected",
+                            port.index, port.node_entity
+                        );
+                        break;
+                    }
+                }
+                univis_node_graph::prelude::ConnectionPolicy::Multiple => {
+                    warn!(
+                        "Rejected link: input '{}' on node {:?} declares a multiple-source policy, but the current runtime only supports one source per input.",
+                        to_port_definition.name, port.node_entity
+                    );
+                    break;
+                }
             }
 
             if would_create_cycle(
-                connect
-                    .connections
-                    .iter()
-                    .map(|link| (link.from_node, link.to_node)),
+                q_connections.iter().map(|link| (link.from_node, link.to_node)),
                 from_node,
                 port.node_entity,
             ) {
@@ -190,7 +194,7 @@ pub fn wire_complete_system(
                 break;
             }
 
-            connect.connections.push(GraphLink {
+            commands.spawn(GraphConnection {
                 from_node,
                 to_node: port.node_entity,
                 from_index,
@@ -208,8 +212,11 @@ pub fn wire_complete_system(
 
 pub fn wire_visuals_system(
     mut commands: Commands,
-    links: Res<Connecting>,
+    q_links: Query<(Entity, &GraphConnection)>,
+    q_changed_links: Query<Entity, Or<(Added<GraphConnection>, Changed<GraphConnection>)>>,
+    mut removed_links: RemovedComponents<GraphConnection>,
     wire_state: Res<WireConnectionState>,
+    connection_diagnostics: Res<GraphConnectionUiDiagnostics>,
     settings: Res<EditorSettings>,
     port_transforms: Query<(&GlobalTransform, &GraphPort)>,
     changed_ports: Query<
@@ -222,15 +229,17 @@ pub fn wire_visuals_system(
     existing_visuals: Query<Entity, With<WireVisualSegment>>,
 ) {
     // Refresh only when graph links, preview drag state, or visible port transforms actually change.
-    let should_refresh = links.is_changed()
+    let should_refresh = !q_changed_links.is_empty()
+        || removed_links.read().next().is_some()
         || wire_state.is_changed()
+        || connection_diagnostics.is_changed()
         || settings.is_changed()
         || !changed_ports.is_empty();
     if !should_refresh {
         return;
     }
 
-    if links.connections.is_empty() && !wire_state.is_dragging && existing_visuals.is_empty() {
+    if q_links.is_empty() && !wire_state.is_dragging && existing_visuals.is_empty() {
         return;
     }
 
@@ -238,19 +247,22 @@ pub fn wire_visuals_system(
         commands.entity(entity).try_despawn();
     }
 
-    for link in &links.connections {
+    for (connection_entity, link) in q_links.iter() {
         let Ok((start_transform, from_port)) = port_transforms.get(link.from_port) else {
             continue;
         };
         let Ok((end_transform, _)) = port_transforms.get(link.to_port) else {
             continue;
         };
+        let connection_info = connection_diagnostics.connections.get(&connection_entity);
+        let focused = connection_diagnostics.focused_connection == Some(connection_entity);
 
         spawn_wire_segments(
             &mut commands,
             start_transform.translation().truncate(),
             end_transform.translation().truncate(),
-            resolved_wire_color(&settings, from_port),
+            resolved_wire_color(&settings, from_port, connection_info, focused),
+            resolved_wire_thickness(connection_info, focused),
             settings.wire_style,
         );
     }
@@ -271,6 +283,7 @@ pub fn wire_visuals_system(
         start_transform.translation().truncate(),
         wire_state.current_mouse_world_pos,
         preview_wire_color(&settings, from_port),
+        WIRE_SEGMENT_THICKNESS,
         settings.wire_style,
     );
 }
@@ -283,11 +296,41 @@ fn preview_wire_color(settings: &EditorSettings, from_port: &GraphPort) -> Color
     }
 }
 
-fn resolved_wire_color(settings: &EditorSettings, from_port: &GraphPort) -> Color {
-    if settings.wire_color_from_output {
-        from_port.value_type.port_color()
+fn resolved_wire_color(
+    settings: &EditorSettings,
+    from_port: &GraphPort,
+    connection_info: Option<&ConnectionDiagnosticInfo>,
+    focused: bool,
+) -> Color {
+    if focused {
+        return Color::srgba(0.74, 0.95, 1.0, 0.98);
+    }
+
+    match connection_info.map(|info| info.severity) {
+        Some(UiDiagnosticSeverity::Warning) => Color::srgba(0.98, 0.68, 0.25, 0.92),
+        Some(UiDiagnosticSeverity::Error) => Color::srgba(0.97, 0.32, 0.32, 0.95),
+        _ => {
+            if settings.wire_color_from_output {
+                from_port.value_type.port_color()
+            } else {
+                Color::WHITE
+            }
+        }
+    }
+}
+
+fn resolved_wire_thickness(
+    connection_info: Option<&ConnectionDiagnosticInfo>,
+    focused: bool,
+) -> f32 {
+    if focused {
+        WIRE_SEGMENT_THICKNESS + 2.5
     } else {
-        Color::WHITE
+        match connection_info.map(|info| info.severity) {
+            Some(UiDiagnosticSeverity::Warning) => WIRE_SEGMENT_THICKNESS + 1.0,
+            Some(UiDiagnosticSeverity::Error) => WIRE_SEGMENT_THICKNESS + 1.5,
+            _ => WIRE_SEGMENT_THICKNESS,
+        }
     }
 }
 
@@ -296,6 +339,7 @@ fn spawn_wire_segments(
     start: Vec2,
     end: Vec2,
     color: Color,
+    thickness: f32,
     style: WireStyle,
 ) {
     // The wire mesh is rebuilt as short sprites so styles can stay lightweight and z-ordered under nodes.
@@ -315,7 +359,7 @@ fn spawn_wire_segments(
         commands.spawn((
             Sprite {
                 color,
-                custom_size: Some(Vec2::new(length, WIRE_SEGMENT_THICKNESS)),
+                custom_size: Some(Vec2::new(length, thickness)),
                 ..default()
             },
             Transform {

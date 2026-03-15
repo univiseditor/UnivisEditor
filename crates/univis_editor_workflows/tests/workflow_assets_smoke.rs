@@ -16,7 +16,7 @@ use univis_node_graph::node_definition::{
     ProcessContext, ProcessResult, Selected,
 };
 use univis_node_graph::node_registry::NodeRegistry;
-use univis_node_graph::pin::{Connecting, DragState, GraphLink, WireConnectionState};
+use univis_node_graph::pin::{DragState, GraphConnection, WireConnectionState};
 use univis_node_graph::value::{NodeValue, ValueType};
 use univis_scene::EntityValue;
 
@@ -136,8 +136,9 @@ impl NodeDefinition for WorkflowPrefabInstanceNode {
 fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<ButtonInput<MouseButton>>()
         .init_resource::<NodeRegistry>()
-        .init_resource::<Connecting>()
         .init_resource::<DragState>()
         .init_resource::<WireConnectionState>()
         .init_resource::<ContextMenuState>()
@@ -235,8 +236,7 @@ fn connect_nodes(app: &mut App, from_node: Entity, to_node: Entity) {
     };
 
     {
-        let mut graph = app.world_mut().resource_mut::<Connecting>();
-        graph.connections.push(GraphLink {
+        app.world_mut().spawn(GraphConnection {
             from_node,
             from_index: 0,
             to_node,
@@ -293,7 +293,9 @@ fn node_count(app: &mut App) -> usize {
 }
 
 fn edge_count(app: &mut App) -> usize {
-    app.world().resource::<Connecting>().connections.len()
+    let world = app.world_mut();
+    let mut query = world.query::<&GraphConnection>();
+    query.iter(world).count()
 }
 
 #[test]
@@ -307,7 +309,7 @@ fn smoke_duplicate_selected_nodes_applies_snapshot_and_offsets_selection() {
     app.world_mut()
         .write_message(GraphCommandRequest::DuplicateSelectedNodes)
         .expect("duplicate request should enqueue");
-    update_frames(&mut app, 2);
+    update_frames(&mut app, 3);
 
     assert_eq!(node_count(&mut app), 4);
     assert_eq!(edge_count(&mut app), 2);
@@ -373,7 +375,7 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
             position: Vec2::new(420.0, 260.0),
         })
         .expect("insert subgraph request should enqueue");
-    update_frames(&mut app, 2);
+    update_frames(&mut app, 3);
 
     assert_eq!(node_count(&mut app), 5);
     let live_document = &app.world().resource::<LiveGraphDocumentState>().document;

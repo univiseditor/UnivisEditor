@@ -79,6 +79,29 @@ struct NodePopupAdjustButton {
     channel: Option<ColorChannel>,
 }
 
+fn set_node_input_value(
+    graph_node: &mut GraphNode,
+    authored_inputs: Option<&mut AuthoredNodeInputs>,
+    input_index: usize,
+    value: NodeValue,
+) -> bool {
+    if input_index >= graph_node.values.inputs.len() {
+        return false;
+    }
+
+    graph_node.values.inputs[input_index] = value.clone();
+    if let Some(authored_inputs) = authored_inputs {
+        if authored_inputs.values.len() < graph_node.values.inputs.len() {
+            authored_inputs
+                .values
+                .resize(graph_node.values.inputs.len(), NodeValue::None);
+        }
+        authored_inputs.values[input_index] = value;
+    }
+
+    true
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 struct NodePopupBoolToggleButton {
     input_index: usize,
@@ -343,7 +366,7 @@ fn handle_popup_adjust_buttons_system(
     buttons: Query<(&Interaction, &NodePopupAdjustButton), (Changed<Interaction>, With<Button>)>,
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
-    mut q_nodes: Query<&mut GraphNode>,
+    mut q_nodes: Query<(&mut GraphNode, Option<&mut AuthoredNodeInputs>)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let Some(node_entity) = popup.open_for else {
@@ -355,7 +378,7 @@ fn handle_popup_adjust_buttons_system(
             continue;
         }
 
-        let Ok(mut graph_node) = q_nodes.get_mut(node_entity) else {
+        let Ok((mut graph_node, mut authored_inputs)) = q_nodes.get_mut(node_entity) else {
             continue;
         };
         let Some(definition) = registry.get(&graph_node.definition_id) else {
@@ -401,13 +424,17 @@ fn handle_popup_adjust_buttons_system(
                 None => {}
             }
 
-            if button.input_index < graph_node.values.inputs.len() {
-                graph_node.values.inputs[button.input_index] = NodeValue::Color(Color::srgba(
+            if set_node_input_value(
+                &mut graph_node,
+                authored_inputs.as_deref_mut(),
+                button.input_index,
+                NodeValue::Color(Color::srgba(
                     srgba.red,
                     srgba.green,
                     srgba.blue,
                     srgba.alpha,
-                ));
+                )),
+            ) {
                 mutations.mark_changed();
             }
             continue;
@@ -437,8 +464,12 @@ fn handle_popup_adjust_buttons_system(
                     next = next.min(max);
                 }
 
-                if button.input_index < graph_node.values.inputs.len() {
-                    graph_node.values.inputs[button.input_index] = NodeValue::Float(next);
+                if set_node_input_value(
+                    &mut graph_node,
+                    authored_inputs.as_deref_mut(),
+                    button.input_index,
+                    NodeValue::Float(next),
+                ) {
                     mutations.mark_changed();
                 }
             }
@@ -460,9 +491,12 @@ fn handle_popup_adjust_buttons_system(
                     next = next.min(max);
                 }
 
-                if button.input_index < graph_node.values.inputs.len() {
-                    graph_node.values.inputs[button.input_index] =
-                        NodeValue::Int(next.round() as i64);
+                if set_node_input_value(
+                    &mut graph_node,
+                    authored_inputs.as_deref_mut(),
+                    button.input_index,
+                    NodeValue::Int(next.round() as i64),
+                ) {
                     mutations.mark_changed();
                 }
             }
@@ -478,7 +512,7 @@ fn handle_popup_bool_toggle_buttons_system(
     >,
     popup: Res<NodePopupState>,
     registry: Res<NodeRegistry>,
-    mut q_nodes: Query<&mut GraphNode>,
+    mut q_nodes: Query<(&mut GraphNode, Option<&mut AuthoredNodeInputs>)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let Some(node_entity) = popup.open_for else {
@@ -490,7 +524,7 @@ fn handle_popup_bool_toggle_buttons_system(
             continue;
         }
 
-        let Ok(mut graph_node) = q_nodes.get_mut(node_entity) else {
+        let Ok((mut graph_node, mut authored_inputs)) = q_nodes.get_mut(node_entity) else {
             continue;
         };
         let Some(definition) = registry.get(&graph_node.definition_id) else {
@@ -512,8 +546,12 @@ fn handle_popup_bool_toggle_buttons_system(
             .or_else(|| port_def.default_value.as_ref().and_then(NodeValue::as_bool))
             .unwrap_or(false);
 
-        if button.input_index < graph_node.values.inputs.len() {
-            graph_node.values.inputs[button.input_index] = NodeValue::Bool(!current);
+        if set_node_input_value(
+            &mut graph_node,
+            authored_inputs.as_deref_mut(),
+            button.input_index,
+            NodeValue::Bool(!current),
+        ) {
             mutations.mark_changed();
         }
     }
@@ -574,7 +612,7 @@ fn handle_popup_text_field_keyboard_input_system(
     mut keyboard: MessageReader<KeyboardInput>,
     popup: Res<NodePopupState>,
     mut fields: Query<(&NodePopupTextFieldInput, &mut NodePopupTextFieldState)>,
-    mut q_nodes: Query<&mut GraphNode>,
+    mut q_nodes: Query<(&mut GraphNode, Option<&mut AuthoredNodeInputs>)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
     let Some(node_entity) = popup.open_for else {
@@ -586,7 +624,7 @@ fn handle_popup_text_field_keyboard_input_system(
         return;
     };
 
-    let Ok(mut graph_node) = q_nodes.get_mut(node_entity) else {
+    let Ok((mut graph_node, mut authored_inputs)) = q_nodes.get_mut(node_entity) else {
         return;
     };
 
@@ -621,9 +659,14 @@ fn handle_popup_text_field_keyboard_input_system(
         }
     }
 
-    if changed && field_input.input_index < graph_node.values.inputs.len() {
-        graph_node.values.inputs[field_input.input_index] =
-            NodeValue::string(field_state.text.clone());
+    if changed
+        && set_node_input_value(
+            &mut graph_node,
+            authored_inputs.as_deref_mut(),
+            field_input.input_index,
+            NodeValue::string(field_state.text.clone()),
+        )
+    {
         mutations.mark_changed();
     }
 }

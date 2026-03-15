@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
@@ -18,8 +18,8 @@ pub(super) fn handle_apply_graph_document_requests_system(
     mut apply_requests: MessageReader<ApplyGraphDocumentRequest>,
     activation: Option<Res<GraphPersistenceActivation>>,
     registry: Res<NodeRegistry>,
-    mut graph: ResMut<Connecting>,
     q_existing_nodes: Query<Entity, With<GraphNode>>,
+    q_existing_connections: Query<Entity, With<GraphConnection>>,
     mut live_document: ResMut<LiveGraphDocumentState>,
     mut pending: ResMut<PendingGraphLoad>,
     mut history: ResMut<GraphHistoryState>,
@@ -44,8 +44,8 @@ pub(super) fn handle_apply_graph_document_requests_system(
     stage_graph_document_apply(
         &mut commands,
         &registry,
-        &mut graph,
         &q_existing_nodes,
+        &q_existing_connections,
         &mut pending,
         request.document,
         PendingGraphApplyOrigin::Mutation,
@@ -75,9 +75,8 @@ pub(super) fn finalize_pending_graph_load_system(
     mut commands: Commands,
     mut pending: ResMut<PendingGraphLoad>,
     activation: Option<Res<GraphPersistenceActivation>>,
-    mut graph: ResMut<Connecting>,
     q_ports: Query<(Entity, &GraphPort)>,
-    mut q_nodes: Query<&mut GraphNode>,
+    mut q_nodes: Query<(&mut GraphNode, Option<&mut AuthoredNodeInputs>)>,
     mut q_camera: Query<(&mut Transform, &mut Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatus>,
@@ -95,6 +94,7 @@ pub(super) fn finalize_pending_graph_load_system(
     let mut skipped_link_count = 0usize;
     let mut input_ports: HashMap<(Entity, usize), Entity> = HashMap::new();
     let mut output_ports: HashMap<(Entity, usize), Entity> = HashMap::new();
+    let mut claimed_inputs = HashSet::new();
 
     for (port_entity, graph_port) in q_ports.iter() {
         match graph_port.port_type {
@@ -107,7 +107,6 @@ pub(super) fn finalize_pending_graph_load_system(
         }
     }
 
-    graph.connections.clear();
     for edge in &pending.edges {
         let Some(from_node) = pending.node_map.get(&edge.from_node_id).copied() else {
             skipped_link_count += 1;
@@ -152,11 +151,7 @@ pub(super) fn finalize_pending_graph_load_system(
             continue;
         }
 
-        if graph
-            .connections
-            .iter()
-            .any(|existing| existing.to_port == to_port)
-        {
+        if !claimed_inputs.insert((to_node, edge.to_index)) {
             warn!(
                 "Skipping loaded link: input port already connected (node {:?}, input {})",
                 to_node, edge.to_index
@@ -165,7 +160,7 @@ pub(super) fn finalize_pending_graph_load_system(
             continue;
         }
 
-        graph.connections.push(GraphLink {
+        commands.spawn(GraphConnection {
             from_node,
             from_index: edge.from_index,
             to_node,
@@ -176,13 +171,21 @@ pub(super) fn finalize_pending_graph_load_system(
     }
 
     for (entity, inputs) in pending.node_inputs.drain(..) {
-        let Ok(mut node) = q_nodes.get_mut(entity) else {
+        let Ok((mut node, mut authored_inputs)) = q_nodes.get_mut(entity) else {
             continue;
         };
 
         for (index, value) in inputs.into_iter().enumerate() {
             if index < node.values.inputs.len() {
-                node.values.inputs[index] = value;
+                node.values.inputs[index] = value.clone();
+                if let Some(authored_inputs) = authored_inputs.as_deref_mut() {
+                    if authored_inputs.values.len() < node.values.inputs.len() {
+                        authored_inputs
+                            .values
+                            .resize(node.values.inputs.len(), NodeValue::None);
+                    }
+                    authored_inputs.values[index] = value;
+                }
             }
         }
     }
@@ -265,8 +268,8 @@ fn pending_completion_success(origin: PendingGraphApplyOrigin, source_label: &st
 pub(super) fn stage_graph_document_apply(
     commands: &mut Commands,
     registry: &NodeRegistry,
-    graph: &mut Connecting,
     q_existing_nodes: &Query<Entity, With<GraphNode>>,
+    q_existing_connections: &Query<Entity, With<GraphConnection>>,
     pending: &mut PendingGraphLoad,
     document: GraphDocument,
     origin: PendingGraphApplyOrigin,
@@ -278,7 +281,9 @@ pub(super) fn stage_graph_document_apply(
     for entity in q_existing_nodes.iter() {
         commands.entity(entity).try_despawn();
     }
-    graph.connections.clear();
+    for entity in q_existing_connections.iter() {
+        commands.entity(entity).try_despawn();
+    }
 
     let GraphDocument {
         nodes, edges, view, ..

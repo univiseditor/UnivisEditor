@@ -24,14 +24,24 @@ impl DragState {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct GraphLink {
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GraphConnection {
     pub from_node: Entity,
     pub from_index: usize,
     pub to_node: Entity,
     pub to_index: usize,
     pub from_port: Entity,
     pub to_port: Entity,
+}
+
+impl GraphConnection {
+    pub fn references_node(&self, entity: Entity) -> bool {
+        self.from_node == entity || self.to_node == entity
+    }
+
+    pub fn references_port(&self, entity: Entity) -> bool {
+        self.from_port == entity || self.to_port == entity
+    }
 }
 
 #[derive(Resource, Default)]
@@ -55,9 +65,4 @@ impl WireConnectionState {
     pub fn references_node(&self, entity: Entity) -> bool {
         self.node_from == Some(entity)
     }
-}
-
-#[derive(Resource, Debug, Default)]
-pub struct Connecting {
-    pub connections: Vec<GraphLink>,
 }

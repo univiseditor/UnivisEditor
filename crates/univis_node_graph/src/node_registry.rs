@@ -172,9 +172,8 @@ fn auto_register_nodes(mut registry: ResMut<NodeRegistry>) {
 }
 
 fn sync_changed_node_visuals(world: &mut World) {
-    let changed_nodes: Vec<(Entity, ArcNodeDefinition)> = {
-        let mut query = world
-            .query_filtered::<(Entity, &GraphNode), Or<(Added<GraphNode>, Changed<GraphNode>)>>();
+    let visual_nodes: Vec<(Entity, ArcNodeDefinition)> = {
+        let mut query = world.query::<(Entity, &GraphNode)>();
         let Some(registry) = world.get_resource::<NodeRegistry>() else {
             return;
         };
@@ -189,7 +188,9 @@ fn sync_changed_node_visuals(world: &mut World) {
             .collect()
     };
 
-    for (entity, definition) in changed_nodes {
+    // Custom node bodies can change through widget state without mutating GraphNode directly,
+    // so visual sync needs to poll those nodes instead of relying on Changed<GraphNode>.
+    for (entity, definition) in visual_nodes {
         definition.sync_visual(world, entity);
     }
 }

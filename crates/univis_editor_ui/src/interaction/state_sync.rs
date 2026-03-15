@@ -1,15 +1,15 @@
 use crate::prelude::*;
-use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 
 pub fn sanitize_graph_editor_state(
+    mut commands: Commands,
     mut live_document: ResMut<LiveGraphDocumentState>,
-    mut connect: ResMut<Connecting>,
     mut drag_state: ResMut<DragState>,
     mut wire_state: ResMut<WireConnectionState>,
     mut popup: ResMut<NodePopupState>,
     mut overlay: ResMut<GraphOverlayState>,
     q_nodes: Query<(), With<GraphNode>>,
+    q_connections: Query<(Entity, &GraphConnection)>,
     q_ports: Query<&GraphPort>,
 ) {
     let node_exists = |entity: Entity| q_nodes.get(entity).is_ok();
@@ -24,8 +24,8 @@ pub fn sanitize_graph_editor_state(
         })
     };
 
-    connect.connections.retain(|link| {
-        node_exists(link.from_node)
+    for (entity, link) in q_connections.iter() {
+        let is_valid = node_exists(link.from_node)
             && node_exists(link.to_node)
             && port_matches(
                 link.from_port,
@@ -33,8 +33,12 @@ pub fn sanitize_graph_editor_state(
                 PortType::Output,
                 link.from_index,
             )
-            && port_matches(link.to_port, link.to_node, PortType::Input, link.to_index)
-    });
+            && port_matches(link.to_port, link.to_node, PortType::Input, link.to_index);
+
+        if !is_valid {
+            commands.entity(entity).try_despawn();
+        }
+    }
 
     live_document.retain_existing_entities(|entity| q_nodes.get(entity).is_ok());
 
@@ -64,37 +68,71 @@ pub fn sanitize_graph_editor_state(
     }
 }
 
-/// Clears transient input values for ports that are no longer connected by a wire.
-pub fn reset_inputs(mut q_nodes: Query<(Entity, &mut GraphNode)>, graph: Res<Connecting>) {
-    let mut connected_pins: HashSet<(Entity, usize)> = HashSet::new();
-
-    for link in &graph.connections {
-        connected_pins.insert((link.to_node, link.to_index));
+/// Rebuilds per-port connection caches whenever live connection entities change.
+pub fn sync_port_connection_caches_system(
+    q_all_connections: Query<(Entity, &GraphConnection)>,
+    q_changed_connections: Query<Entity, Or<(Added<GraphConnection>, Changed<GraphConnection>)>>,
+    q_added_ports: Query<Entity, Added<GraphPort>>,
+    mut removed_connections: RemovedComponents<GraphConnection>,
+    mut q_inputs: Query<&mut InputConnection>,
+    mut q_outputs: Query<&mut OutputConnections>,
+) {
+    let should_refresh = !q_changed_connections.is_empty()
+        || !q_added_ports.is_empty()
+        || removed_connections.read().next().is_some();
+    if !should_refresh {
+        return;
     }
 
-    for (entity, mut node) in q_nodes.iter_mut() {
-        for (index, input) in node.values.inputs.iter_mut().enumerate() {
-            if !connected_pins.contains(&(entity, index)) {
-                *input = NodeValue::None;
-            }
+    for mut input in q_inputs.iter_mut() {
+        *input = InputConnection::default();
+    }
+
+    for mut output in q_outputs.iter_mut() {
+        output.targets.clear();
+    }
+
+    for (connection_entity, link) in q_all_connections.iter() {
+        if let Ok(mut input) = q_inputs.get_mut(link.to_port) {
+            input.source_node = Some(link.from_node);
+            input.source_port_index = Some(link.from_index);
+            input.source_port = Some(link.from_port);
+            input.connection_entity = Some(connection_entity);
+        }
+
+        if let Ok(mut output) = q_outputs.get_mut(link.from_port) {
+            output.targets.push(OutputTarget {
+                target_node: link.to_node,
+                target_port_index: link.to_index,
+                target_port: link.to_port,
+                connection_entity,
+            });
         }
     }
 }
 
 /// Rebuilds the live graph document snapshot from the current editor world.
 pub fn sync_live_graph_document_state(
-    graph: Res<Connecting>,
-    q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_nodes: Query<(
+        Entity,
+        &GraphNode,
+        Option<&AuthoredNodeInputs>,
+        &Transform,
+        Option<&Selected>,
+    )>,
+    q_connections: Query<&GraphConnection>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     mut live_document: ResMut<LiveGraphDocumentState>,
 ) {
     let mut nodes_data = Vec::new();
-    for (entity, node, transform, selected) in q_nodes.iter() {
+    for (entity, node, authored_inputs, transform, selected) in q_nodes.iter() {
         nodes_data.push(GraphDocumentNodeSnapshot {
             entity,
             definition_id: node.definition_id.clone(),
             position: [transform.translation.x, transform.translation.y],
-            inputs: node.values.inputs.clone(),
+            inputs: authored_inputs
+                .map(|inputs| inputs.values.clone())
+                .unwrap_or_else(|| node.values.inputs.clone()),
             input_count: node.values.inputs.len(),
             output_count: node.values.outputs.len(),
             selected: selected.is_some(),
@@ -116,9 +154,18 @@ pub fn sync_live_graph_document_state(
             },
         });
 
-    let edge_snapshots = graph
-        .connections
-        .iter()
+    let mut live_connections = q_connections.iter().copied().collect::<Vec<_>>();
+    live_connections.sort_by_key(|link| {
+        (
+            link.from_node.index(),
+            link.from_index,
+            link.to_node.index(),
+            link.to_index,
+        )
+    });
+
+    let edge_snapshots = live_connections
+        .into_iter()
         .map(|link| GraphDocumentEdgeSnapshot {
             from_entity: link.from_node,
             from_index: link.from_index,

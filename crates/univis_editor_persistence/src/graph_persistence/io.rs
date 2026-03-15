@@ -27,8 +27,14 @@ pub(super) fn handle_save_graph_requests_system(
     activation: Option<Res<GraphPersistenceActivation>>,
     mut settings: ResMut<GraphPersistenceSettings>,
     registry: Res<NodeRegistry>,
-    graph: Res<Connecting>,
-    q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_connections: Query<&GraphConnection>,
+    q_nodes: Query<(
+        Entity,
+        &GraphNode,
+        Option<&AuthoredNodeInputs>,
+        &Transform,
+        Option<&Selected>,
+    )>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     live_document: Res<LiveGraphDocumentState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
@@ -76,7 +82,7 @@ pub(super) fn handle_save_graph_requests_system(
             &path,
             settings.pretty_json,
             &registry,
-            &graph,
+            &q_connections,
             &q_nodes,
             &q_camera,
             &live_document.document,
@@ -131,6 +137,7 @@ pub(super) fn handle_load_graph_requests_system(
     activation: Option<Res<GraphPersistenceActivation>>,
     registry: Res<NodeRegistry>,
     q_existing_nodes: Query<Entity, With<GraphNode>>,
+    q_existing_connections: Query<Entity, With<GraphConnection>>,
     mut load_runtime: LoadGraphRuntimeParams,
     mut ui_state: MutationUiState,
     time: Res<Time>,
@@ -248,8 +255,8 @@ pub(super) fn handle_load_graph_requests_system(
     stage_graph_document_apply(
         &mut commands,
         &registry,
-        &mut load_runtime.graph,
         &q_existing_nodes,
+        &q_existing_connections,
         &mut load_runtime.pending,
         save_file.clone(),
         PendingGraphApplyOrigin::Load,
@@ -281,9 +288,15 @@ pub(super) fn handle_load_graph_requests_system(
 }
 
 pub(super) fn refresh_dirty_state_system(
-    graph: Res<Connecting>,
     activation: Option<Res<GraphPersistenceActivation>>,
-    q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_connections: Query<&GraphConnection>,
+    q_nodes: Query<(
+        Entity,
+        &GraphNode,
+        Option<&AuthoredNodeInputs>,
+        &Transform,
+        Option<&Selected>,
+    )>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     live_document: Res<LiveGraphDocumentState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
@@ -295,7 +308,7 @@ pub(super) fn refresh_dirty_state_system(
     }
 
     let current_document =
-        build_graph_document(&graph, &q_nodes, &q_camera, &live_document.document);
+        build_graph_document(&q_connections, &q_nodes, &q_camera, &live_document.document);
     let Ok(current_signature) = crate::format::graph_document_signature(&current_document) else {
         return;
     };
@@ -320,8 +333,14 @@ pub(super) fn autosave_dirty_graph_system(
     settings: Res<GraphPersistenceSettings>,
     activation: Option<Res<GraphPersistenceActivation>>,
     registry: Res<NodeRegistry>,
-    graph: Res<Connecting>,
-    q_nodes: Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_connections: Query<&GraphConnection>,
+    q_nodes: Query<(
+        Entity,
+        &GraphNode,
+        Option<&AuthoredNodeInputs>,
+        &Transform,
+        Option<&Selected>,
+    )>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     live_document: Res<LiveGraphDocumentState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
@@ -351,7 +370,7 @@ pub(super) fn autosave_dirty_graph_system(
         &settings.file_path,
         settings.pretty_json,
         &registry,
-        &graph,
+        &q_connections,
         &q_nodes,
         &q_camera,
         &live_document.document,
@@ -435,30 +454,44 @@ fn persist_graph_to_path(
     path: &str,
     pretty_json: bool,
     registry: &NodeRegistry,
-    graph: &Connecting,
-    q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_connections: &Query<&GraphConnection>,
+    q_nodes: &Query<(
+        Entity,
+        &GraphNode,
+        Option<&AuthoredNodeInputs>,
+        &Transform,
+        Option<&Selected>,
+    )>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
     source_document: &GraphDocument,
 ) -> Result<PreparedGraphWrite, String> {
-    let document = build_graph_document(graph, q_nodes, q_camera, source_document);
+    let document = build_graph_document(q_connections, q_nodes, q_camera, source_document);
     let prepared = prepare_graph_document_write(document, pretty_json, registry)?;
     write_graph_payload(path, &prepared.payload)?;
     Ok(prepared)
 }
 
 fn build_graph_document(
-    graph: &Connecting,
-    q_nodes: &Query<(Entity, &GraphNode, &Transform, Option<&Selected>)>,
+    q_connections: &Query<&GraphConnection>,
+    q_nodes: &Query<(
+        Entity,
+        &GraphNode,
+        Option<&AuthoredNodeInputs>,
+        &Transform,
+        Option<&Selected>,
+    )>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
     source_document: &GraphDocument,
 ) -> GraphDocument {
     let mut nodes_data = Vec::new();
-    for (entity, node, transform, selected) in q_nodes.iter() {
+    for (entity, node, authored_inputs, transform, selected) in q_nodes.iter() {
         nodes_data.push(GraphDocumentNodeSnapshot {
             entity,
             definition_id: node.definition_id.clone(),
             position: [transform.translation.x, transform.translation.y],
-            inputs: node.values.inputs.clone(),
+            inputs: authored_inputs
+                .map(|inputs| inputs.values.clone())
+                .unwrap_or_else(|| node.values.inputs.clone()),
             input_count: node.values.inputs.len(),
             output_count: node.values.outputs.len(),
             selected: selected.is_some(),
@@ -480,9 +513,18 @@ fn build_graph_document(
             },
         });
 
-    let edge_snapshots = graph
-        .connections
-        .iter()
+    let mut live_connections = q_connections.iter().copied().collect::<Vec<_>>();
+    live_connections.sort_by_key(|link| {
+        (
+            link.from_node.index(),
+            link.from_index,
+            link.to_node.index(),
+            link.to_index,
+        )
+    });
+
+    let edge_snapshots = live_connections
+        .into_iter()
         .map(|link| GraphDocumentEdgeSnapshot {
             from_entity: link.from_node,
             from_index: link.from_index,

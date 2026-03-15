@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use univis_editor_runtime::GraphRuntimeTraceSettings;
 use univis_editor_persistence::graph_persistence::{
     GraphHistorySettings, GraphPersistenceSettings,
 };
 use univis_editor_ui::prelude::EditorSettings;
 
 const DEFAULT_EDITOR_SETTINGS_PATH: &str = ".univis/editor_settings.json";
-const EDITOR_SETTINGS_VERSION: u32 = 2;
+const EDITOR_SETTINGS_VERSION: u32 = 4;
 const MAX_RECENT_FILES: usize = 6;
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -55,6 +56,7 @@ struct EditorSettingsSnapshot {
     history: HistorySettingsSnapshot,
     workflow: EditorWorkflowState,
     panels: FloatingPanelsSettings,
+    runtime_trace: RuntimeTraceSettingsSnapshot,
     editor: EditorSettings,
 }
 
@@ -66,6 +68,7 @@ impl Default for EditorSettingsSnapshot {
             history: HistorySettingsSnapshot::default(),
             workflow: EditorWorkflowState::default(),
             panels: FloatingPanelsSettings::default(),
+            runtime_trace: RuntimeTraceSettingsSnapshot::default(),
             editor: EditorSettings::default(),
         }
     }
@@ -77,6 +80,7 @@ impl EditorSettingsSnapshot {
         history: &GraphHistorySettings,
         workflow: &EditorWorkflowState,
         panels: &FloatingPanelsSettings,
+        runtime_trace: &GraphRuntimeTraceSettings,
         editor: &EditorSettings,
     ) -> Self {
         Self {
@@ -85,6 +89,7 @@ impl EditorSettingsSnapshot {
             history: HistorySettingsSnapshot::capture(history),
             workflow: workflow.clone(),
             panels: panels.clone(),
+            runtime_trace: RuntimeTraceSettingsSnapshot::capture(runtime_trace),
             editor: editor.clone(),
         }
     }
@@ -95,12 +100,14 @@ impl EditorSettingsSnapshot {
         history: &mut GraphHistorySettings,
         workflow: &mut EditorWorkflowState,
         panels: &mut FloatingPanelsSettings,
+        runtime_trace: &mut GraphRuntimeTraceSettings,
         editor: &mut EditorSettings,
     ) {
         self.persistence.apply(persistence);
         self.history.apply(history);
         *workflow = self.workflow.clone();
         *panels = self.panels.clone();
+        self.runtime_trace.apply(runtime_trace);
         *editor = self.editor.clone();
     }
 }
@@ -166,6 +173,37 @@ impl HistorySettingsSnapshot {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+struct RuntimeTraceSettingsSnapshot {
+    enabled: bool,
+    max_entries: usize,
+}
+
+impl Default for RuntimeTraceSettingsSnapshot {
+    fn default() -> Self {
+        let defaults = GraphRuntimeTraceSettings::default();
+        Self {
+            enabled: defaults.enabled,
+            max_entries: defaults.max_entries,
+        }
+    }
+}
+
+impl RuntimeTraceSettingsSnapshot {
+    fn capture(settings: &GraphRuntimeTraceSettings) -> Self {
+        Self {
+            enabled: settings.enabled,
+            max_entries: settings.max_entries,
+        }
+    }
+
+    fn apply(&self, settings: &mut GraphRuntimeTraceSettings) {
+        settings.enabled = self.enabled;
+        settings.max_entries = self.max_entries;
+    }
+}
+
 pub struct EditorSettingsPersistencePlugin;
 
 impl Plugin for EditorSettingsPersistencePlugin {
@@ -190,6 +228,7 @@ fn load_editor_settings_system(
     mut history_settings: ResMut<GraphHistorySettings>,
     mut workflow_state: ResMut<EditorWorkflowState>,
     mut panel_settings: ResMut<FloatingPanelsSettings>,
+    mut runtime_trace_settings: ResMut<GraphRuntimeTraceSettings>,
     mut editor_settings: ResMut<EditorSettings>,
 ) {
     let path = storage.path.clone();
@@ -201,6 +240,7 @@ fn load_editor_settings_system(
                 &history_settings,
                 &workflow_state,
                 &panel_settings,
+                &runtime_trace_settings,
                 &editor_settings,
             ));
             return;
@@ -216,6 +256,7 @@ fn load_editor_settings_system(
                 &history_settings,
                 &workflow_state,
                 &panel_settings,
+                &runtime_trace_settings,
                 &editor_settings,
             ));
             return;
@@ -235,6 +276,7 @@ fn load_editor_settings_system(
                 &history_settings,
                 &workflow_state,
                 &panel_settings,
+                &runtime_trace_settings,
                 &editor_settings,
             ));
             return;
@@ -246,6 +288,7 @@ fn load_editor_settings_system(
         &mut history_settings,
         &mut workflow_state,
         &mut panel_settings,
+        &mut runtime_trace_settings,
         &mut editor_settings,
     );
     storage.last_saved = Some(EditorSettingsSnapshot::capture(
@@ -253,6 +296,7 @@ fn load_editor_settings_system(
         &history_settings,
         &workflow_state,
         &panel_settings,
+        &runtime_trace_settings,
         &editor_settings,
     ));
 }
@@ -278,6 +322,7 @@ fn persist_editor_settings_system(
     history_settings: Res<GraphHistorySettings>,
     workflow_state: Res<EditorWorkflowState>,
     panel_settings: Res<FloatingPanelsSettings>,
+    runtime_trace_settings: Res<GraphRuntimeTraceSettings>,
     editor_settings: Res<EditorSettings>,
     mut storage: ResMut<EditorSettingsStorage>,
 ) {
@@ -285,6 +330,7 @@ fn persist_editor_settings_system(
         && !history_settings.is_changed()
         && !workflow_state.is_changed()
         && !panel_settings.is_changed()
+        && !runtime_trace_settings.is_changed()
         && !editor_settings.is_changed()
     {
         return;
@@ -295,6 +341,7 @@ fn persist_editor_settings_system(
         &history_settings,
         &workflow_state,
         &panel_settings,
+        &runtime_trace_settings,
         &editor_settings,
     );
     if storage.last_saved.as_ref() == Some(&snapshot) {
