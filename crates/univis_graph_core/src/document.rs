@@ -1,12 +1,157 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{graph_validation::would_create_cycle, node_definition::NodeId, value::NodeValue};
+use serde::{Deserialize, Serialize};
 
-use super::{
-    GraphDocument, GraphDocumentEdge, GraphDocumentNode, GraphDocumentPrefab,
-    GraphDocumentSelectionBoundarySummary, GraphDocumentSubgraph, GraphDocumentViewState,
-    GRAPH_DOCUMENT_VERSION,
-};
+use crate::identity::NodeId;
+use crate::topology::would_create_cycle;
+
+pub const GRAPH_DOCUMENT_VERSION: u32 = 1;
+
+fn default_graph_document_version() -> u32 {
+    GRAPH_DOCUMENT_VERSION
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "Value: Serialize, Prefab: Serialize",
+    deserialize = "Value: Deserialize<'de> + Clone, Prefab: Deserialize<'de> + Clone"
+))]
+pub struct GraphDocument<Value, Prefab> {
+    #[serde(default = "default_graph_document_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub nodes: Vec<GraphDocumentNode<Value>>,
+    #[serde(default)]
+    pub edges: Vec<GraphDocumentEdge>,
+    #[serde(default)]
+    pub prefabs: Vec<GraphDocumentPrefab<Prefab>>,
+    #[serde(default)]
+    pub subgraphs: Vec<GraphDocumentSubgraph<Value, Prefab>>,
+    #[serde(default)]
+    pub view: GraphDocumentViewState,
+}
+
+impl<Value, Prefab> Default for GraphDocument<Value, Prefab> {
+    fn default() -> Self {
+        Self {
+            version: GRAPH_DOCUMENT_VERSION,
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            prefabs: Vec::new(),
+            subgraphs: Vec::new(),
+            view: GraphDocumentViewState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "Prefab: Serialize",
+    deserialize = "Prefab: Deserialize<'de>"
+))]
+pub struct GraphDocumentPrefab<Prefab> {
+    pub id: String,
+    pub name: String,
+    pub root: Prefab,
+}
+
+impl<Prefab> GraphDocumentPrefab<Prefab> {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, root: Prefab) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            root,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "Value: Serialize, Prefab: Serialize",
+    deserialize = "Value: Deserialize<'de> + Clone, Prefab: Deserialize<'de> + Clone"
+))]
+pub struct GraphDocumentSubgraph<Value, Prefab> {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub document: Box<GraphDocument<Value, Prefab>>,
+}
+
+impl<Value, Prefab> Default for GraphDocumentSubgraph<Value, Prefab> {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            document: Box::new(GraphDocument::default()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "Value: Serialize",
+    deserialize = "Value: Deserialize<'de> + Clone"
+))]
+pub struct GraphDocumentNode<Value> {
+    pub id: u64,
+    pub definition_id: NodeId,
+    pub position: [f32; 2],
+    #[serde(default)]
+    pub inputs: Vec<Value>,
+    pub input_count: usize,
+    pub output_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphDocumentEdge {
+    pub from_node_id: u64,
+    pub from_index: usize,
+    pub to_node_id: u64,
+    pub to_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GraphDocumentSelectionBoundarySummary {
+    pub selected_node_ids: Vec<u64>,
+    pub internal_edges: Vec<GraphDocumentEdge>,
+    pub incoming_edges: Vec<GraphDocumentEdge>,
+    pub outgoing_edges: Vec<GraphDocumentEdge>,
+}
+
+impl GraphDocumentSelectionBoundarySummary {
+    pub fn selected_node_count(&self) -> usize {
+        self.selected_node_ids.len()
+    }
+
+    pub fn internal_edge_count(&self) -> usize {
+        self.internal_edges.len()
+    }
+
+    pub fn incoming_edge_count(&self) -> usize {
+        self.incoming_edges.len()
+    }
+
+    pub fn outgoing_edge_count(&self) -> usize {
+        self.outgoing_edges.len()
+    }
+
+    pub fn omitted_edge_count(&self) -> usize {
+        self.incoming_edges.len() + self.outgoing_edges.len()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GraphDocumentViewState {
+    pub camera: Option<GraphDocumentCameraState>,
+    #[serde(default)]
+    pub selected_node_ids: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphDocumentCameraState {
+    pub translation: [f32; 3],
+    pub ortho_scale: f32,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphDocumentOperationError {
@@ -78,7 +223,11 @@ impl std::fmt::Display for GraphDocumentOperationError {
 
 impl std::error::Error for GraphDocumentOperationError {}
 
-impl GraphDocument {
+impl<Value, Prefab> GraphDocument<Value, Prefab>
+where
+    Value: Clone + Default,
+    Prefab: Clone,
+{
     pub fn prefab_count(&self) -> usize {
         self.prefabs.len()
     }
@@ -87,15 +236,15 @@ impl GraphDocument {
         self.subgraphs.len()
     }
 
-    pub fn prefab(&self, id: &str) -> Option<&GraphDocumentPrefab> {
+    pub fn prefab(&self, id: &str) -> Option<&GraphDocumentPrefab<Prefab>> {
         self.prefabs.iter().find(|prefab| prefab.id == id)
     }
 
-    pub fn subgraph(&self, id: &str) -> Option<&GraphDocumentSubgraph> {
+    pub fn subgraph(&self, id: &str) -> Option<&GraphDocumentSubgraph<Value, Prefab>> {
         self.subgraphs.iter().find(|subgraph| subgraph.id == id)
     }
 
-    pub fn upsert_prefab(&mut self, prefab: GraphDocumentPrefab) {
+    pub fn upsert_prefab(&mut self, prefab: GraphDocumentPrefab<Prefab>) {
         if let Some(existing) = self
             .prefabs
             .iter_mut()
@@ -107,7 +256,7 @@ impl GraphDocument {
         }
     }
 
-    pub fn upsert_subgraph(&mut self, subgraph: GraphDocumentSubgraph) {
+    pub fn upsert_subgraph(&mut self, subgraph: GraphDocumentSubgraph<Value, Prefab>) {
         if let Some(existing) = self
             .subgraphs
             .iter_mut()
@@ -123,11 +272,11 @@ impl GraphDocument {
         self.nodes.iter().map(|node| node.id).max().unwrap_or(0) + 1
     }
 
-    pub fn node(&self, id: u64) -> Option<&GraphDocumentNode> {
+    pub fn node(&self, id: u64) -> Option<&GraphDocumentNode<Value>> {
         self.nodes.iter().find(|node| node.id == id)
     }
 
-    pub fn node_mut(&mut self, id: u64) -> Option<&mut GraphDocumentNode> {
+    pub fn node_mut(&mut self, id: u64) -> Option<&mut GraphDocumentNode<Value>> {
         self.nodes.iter_mut().find(|node| node.id == id)
     }
 
@@ -143,7 +292,7 @@ impl GraphDocument {
             id: node_id,
             definition_id,
             position,
-            inputs: vec![NodeValue::None; input_count],
+            inputs: vec![Value::default(); input_count],
             input_count,
             output_count,
         });
@@ -152,7 +301,7 @@ impl GraphDocument {
 
     pub fn insert_node(
         &mut self,
-        node: GraphDocumentNode,
+        node: GraphDocumentNode<Value>,
     ) -> Result<(), GraphDocumentOperationError> {
         if self.node(node.id).is_some() {
             return Err(GraphDocumentOperationError::DuplicateNodeId(node.id));
@@ -320,7 +469,7 @@ impl GraphDocument {
         self.delete_nodes(self.view.selected_node_ids.clone())
     }
 
-    pub fn set_camera(&mut self, camera: Option<super::GraphDocumentCameraState>) {
+    pub fn set_camera(&mut self, camera: Option<GraphDocumentCameraState>) {
         self.view.camera = camera;
     }
 
@@ -379,7 +528,7 @@ impl GraphDocument {
             .copied()
             .collect::<HashSet<u64>>();
 
-        let selected_nodes: Vec<GraphDocumentNode> = self
+        let selected_nodes: Vec<GraphDocumentNode<Value>> = self
             .nodes
             .iter()
             .filter(|node| selected.contains(&node.id))
@@ -427,13 +576,12 @@ impl GraphDocument {
         &self,
         subgraph_id: &str,
         origin: [f32; 2],
-    ) -> Option<GraphDocument> {
+    ) -> Option<GraphDocument<Value, Prefab>> {
         let subgraph = self.subgraph(subgraph_id)?;
         if subgraph.document.nodes.is_empty() {
             return None;
         }
 
-        // Subgraph nodes are offset from their local top-left corner so instancing stays predictable.
         let min_x = subgraph
             .document
             .nodes

@@ -22,7 +22,7 @@ In practice, that means nodes are used for things like values, transforms, sprit
 The repository currently provides:
 
 - a canvas-first node editor built on Bevy
-- a node graph core with registry, port definitions, validation, and document operations
+- a reusable graph kernel with generic identities, topology, port schema, processing contracts, and document operations
 - a pure scene data model centered on `EntityValue`
 - built-in input, math, logic, and scene nodes
 - runtime systems that evaluate graphs and sync scene output into the world
@@ -78,8 +78,10 @@ For a focused write-up of the new live wiring model, see [docs/connection-archit
 
 The workspace is split into focused crates:
 
+- `univis_graph_core`
+  - engine-independent graph identities, topology, generic port/schema contracts, pure `GraphNodeDefinition` contracts, pure registries, and pure graph document model intended to stay reusable outside the editor
 - `univis_node_graph`
-  - graph types, node definitions, registry, values, validation, and document helpers
+  - Bevy-facing graph adapter with styled ports, adapter-owned `NodeValue` / `ValueType`, `BevyNodeDefinition` hooks, specialized registries, live graph ECS components, schema-backed validation hooks, visual hooks, and live document projection/state
 - `univis_editor_commands`
   - editor-facing command messages for spawn, save/load, history, duplicate, frame, and prefab/subgraph workflows
 - `univis_scene`
@@ -100,7 +102,7 @@ The workspace is split into focused crates:
 You can read the same layout through the three product axes:
 
 - `Graph Core`
-  - `univis_node_graph`
+  - `univis_graph_core` plus the `univis_node_graph` adapter layer
 - `Scene Authoring`
   - `univis_scene`, `univis_editor_runtime`, `univis_editor_nodes_builtin`
 - `Editor UX`
@@ -127,6 +129,11 @@ The graph is not intended to cover:
 - validation scheduling
 
 Those remain normal systems because they are editor infrastructure, not authored scene content.
+
+At the crate boundary this now means:
+
+- `univis_graph_core` owns generic graph structure, validation primitives, and pure document operations
+- `univis_node_graph` owns the Bevy-facing schema, adapter values, live ECS state, and editor/runtime adaptation for that generic core
 
 ## Built-In Node Families
 
@@ -197,6 +204,8 @@ GitHub Actions runs the same script through `.github/workflows/verify-workspace.
 Focused test targets currently maintained in the workspace:
 
 - `cargo test -p univis_node_graph --test core_api`
+- `cargo test -p univis_graph_core --lib`
+- `cargo test -p univis_node_graph --test core_api`
 - `cargo test -p univis_node_graph --test document_ops`
 - `cargo test -p univis_node_graph --test document_workflows`
 - `cargo test -p univis_node_graph --test graph_validation`
@@ -219,15 +228,20 @@ Custom nodes are added by implementing `NodeDefinition` and registering them in 
 
 Relevant examples:
 
+- [crates/univis_graph_core/examples/minimal_schema.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/minimal_schema.rs)
 - [examples/custom_nodes.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_nodes.rs)
 - [examples/custom_visual_node.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_visual_node.rs)
 - [examples/custom_scene_node.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_scene_node.rs)
 
+For a guide to building a custom schema on top of `univis_graph_core`, see [docs/custom-graph-schema.md](/home/abdellah/Desktop/Univis/UnivisEditor/docs/custom-graph-schema.md).
+
 The core extension points live in:
 
+- [processing.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/src/processing.rs)
+- [registry.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/src/registry.rs)
 - [node_definition.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_node_graph/src/node_definition.rs)
 - [node_registry.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_node_graph/src/node_registry.rs)
-- [document.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_node_graph/src/document.rs)
+- [document.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/src/document.rs)
 
 ## Project Status
 

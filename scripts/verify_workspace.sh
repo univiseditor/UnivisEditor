@@ -6,12 +6,15 @@ export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 mode="${1:-all}"
 
 core_checks=(
+  "cargo check -p univis_graph_core --lib --quiet"
+  "cargo check -p univis_graph_core --example minimal_schema --quiet"
   "cargo check -p univis_node_graph --lib --quiet"
   "cargo check -p univis_scene --lib --quiet"
   "cargo check -p univis_editor_runtime --lib --quiet"
 )
 
 core_tests=(
+  "cargo test -p univis_graph_core --lib --quiet"
   "cargo test -p univis_node_graph --test core_api --quiet"
   "cargo test -p univis_node_graph --test document_ops --quiet"
   "cargo test -p univis_node_graph --test document_workflows --quiet"
@@ -54,6 +57,10 @@ workflow_tests=(
 
 app_checks=(
   "cargo check -p univis_editor_app --lib --quiet"
+  "cargo check -p univis_editor_app --example simple_editor --quiet"
+  "cargo check -p univis_editor_app --example custom_nodes --quiet"
+  "cargo check -p univis_editor_app --example custom_visual_node --quiet"
+  "cargo check -p univis_editor_app --example custom_scene_node --quiet"
 )
 
 fmt_checks=(
@@ -61,7 +68,7 @@ fmt_checks=(
 )
 
 clippy_core_checks=(
-  "cargo clippy -p univis_node_graph -p univis_scene -p univis_editor_runtime --lib --tests -- -D warnings"
+  "cargo clippy -p univis_graph_core -p univis_node_graph -p univis_scene -p univis_editor_runtime --lib --tests -- -D warnings"
 )
 
 clippy_editor_checks=(

@@ -1,4 +1,4 @@
-//! Generic runtime values for node-graph execution.
+//! Adapter-owned runtime values for the Bevy-facing node-graph layer.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -7,8 +7,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use univis_scene::EntityValue;
 
-/// Supported value kinds.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Supported value kinds for the Bevy-facing node-graph adapter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValueType {
     Float,
     Int,
@@ -53,6 +53,26 @@ impl ValueType {
             ValueType::Entity => Color::srgb(0.68, 0.56, 0.24),
             ValueType::CustomTag(tag) => custom_tag_color(tag),
             ValueType::Any => Color::srgb(0.7, 0.7, 0.7),
+        }
+    }
+
+    pub fn is_compatible_with(&self, other: &Self) -> bool {
+        match (self, other) {
+            (a, b) if a == b => true,
+            (_, ValueType::Any) => true,
+            (ValueType::Any, _) => true,
+            (ValueType::CustomTag(from_tag), ValueType::CustomTag(to_tag)) => from_tag == to_tag,
+            (ValueType::Int, ValueType::Float) => true,
+            (ValueType::Float, ValueType::Int) => true,
+            (ValueType::Vec2, ValueType::Vec3) => true,
+            (ValueType::Vec2, ValueType::Vec4) => true,
+            (ValueType::Vec3, ValueType::Vec2) => true,
+            (ValueType::Vec3, ValueType::Vec4) => true,
+            (ValueType::Vec4, ValueType::Vec2) => true,
+            (ValueType::Vec4, ValueType::Vec3) => true,
+            (ValueType::Color, ValueType::Vec4) => true,
+            (ValueType::Vec4, ValueType::Color) => true,
+            _ => false,
         }
     }
 }
@@ -235,23 +255,7 @@ impl NodeValue {
     }
 
     pub fn is_compatible(from: &ValueType, to: &ValueType) -> bool {
-        match (from, to) {
-            (a, b) if a == b => true,
-            (_, ValueType::Any) => true,
-            (ValueType::Any, _) => true,
-            (ValueType::CustomTag(from_tag), ValueType::CustomTag(to_tag)) => from_tag == to_tag,
-            (ValueType::Int, ValueType::Float) => true,
-            (ValueType::Float, ValueType::Int) => true,
-            (ValueType::Vec2, ValueType::Vec3) => true,
-            (ValueType::Vec2, ValueType::Vec4) => true,
-            (ValueType::Vec3, ValueType::Vec2) => true,
-            (ValueType::Vec3, ValueType::Vec4) => true,
-            (ValueType::Vec4, ValueType::Vec2) => true,
-            (ValueType::Vec4, ValueType::Vec3) => true,
-            (ValueType::Color, ValueType::Vec4) => true,
-            (ValueType::Vec4, ValueType::Color) => true,
-            _ => false,
-        }
+        from.is_compatible_with(to)
     }
 
     pub fn to_display_string(&self) -> String {

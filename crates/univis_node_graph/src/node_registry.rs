@@ -2,8 +2,15 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
+use univis_graph_core::prelude::{
+    ArcGraphNodeDefinition as ArcCoreNodeDefinition, GraphNodeRegistry, PortDefinition as CorePortDefinition,
+};
 
-use super::node_definition::{ArcNodeDefinition, GraphNode, NodeDefinition, NodeId};
+use super::live_graph::GraphNode;
+use super::node_definition::{
+    ArcNodeDefinition, NodeDefinition, NodeGraphSchema, NodeId, OwnedBevyNodeDefinitionAdapter,
+};
+use super::value::NodeValue;
 
 pub use inventory;
 
@@ -17,22 +24,24 @@ pub struct NodeAutoRegistration {
 
 inventory::collect!(NodeAutoRegistration);
 
-/// Runtime registry of all node definitions known to the app.
-#[derive(Resource, Default)]
+/// Bevy-facing registry of all adapter node definitions known to the app.
+#[derive(Resource)]
 pub struct NodeRegistry {
     definitions: HashMap<NodeId, ArcNodeDefinition>,
-    by_category: HashMap<String, Vec<NodeId>>,
-    ordered_ids: Vec<NodeId>,
-    menu_nodes: Vec<NodeId>,
+    core_registry: GraphNodeRegistry<NodeValue, CorePortDefinition<NodeGraphSchema>>,
+}
+
+impl Default for NodeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NodeRegistry {
     pub fn new() -> Self {
         Self {
             definitions: HashMap::new(),
-            by_category: HashMap::new(),
-            ordered_ids: Vec::new(),
-            menu_nodes: Vec::new(),
+            core_registry: GraphNodeRegistry::new(),
         }
     }
 
@@ -46,21 +55,11 @@ impl NodeRegistry {
             return;
         }
 
-        let category = definition.category().as_str().to_string();
-        let show_in_menu = definition.show_in_menu();
+        let core_definition: ArcCoreNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>> =
+            Arc::new(OwnedBevyNodeDefinitionAdapter::new(definition.clone()));
 
-        self.definitions.insert(id.clone(), definition);
-
-        self.by_category
-            .entry(category)
-            .or_insert_with(Vec::new)
-            .push(id.clone());
-
-        self.ordered_ids.push(id.clone());
-
-        if show_in_menu {
-            self.menu_nodes.push(id);
-        }
+        self.definitions.insert(id, definition);
+        self.core_registry.register_arc(core_definition);
     }
 
     pub fn get(&self, id: &NodeId) -> Option<ArcNodeDefinition> {
@@ -76,83 +75,69 @@ impl NodeRegistry {
     }
 
     pub fn get_all_ids(&self) -> &[NodeId] {
-        &self.ordered_ids
+        self.core_registry.get_all_ids()
     }
 
     pub fn get_menu_nodes(&self) -> Vec<ArcNodeDefinition> {
-        self.menu_nodes
-            .iter()
-            .filter_map(|id| self.definitions.get(id).cloned())
-            .collect()
+        self.lookup_definitions(
+            self.core_registry
+                .get_menu_nodes()
+                .into_iter()
+                .map(|definition| definition.id()),
+        )
     }
 
     pub fn get_menu_nodes_sorted(&self) -> Vec<ArcNodeDefinition> {
-        let mut nodes: Vec<_> = self
-            .menu_nodes
-            .iter()
-            .filter_map(|id| self.definitions.get(id).cloned())
-            .collect();
-
-        nodes.sort_by(|a, b| {
-            let cat_cmp = a.category().as_str().cmp(b.category().as_str());
-            if cat_cmp != std::cmp::Ordering::Equal {
-                cat_cmp
-            } else {
-                a.menu_order().cmp(&b.menu_order())
-            }
-        });
-
-        nodes
+        self.lookup_definitions(
+            self.core_registry
+                .get_menu_nodes_sorted()
+                .into_iter()
+                .map(|definition| definition.id()),
+        )
     }
 
     pub fn get_by_category(&self, category: &str) -> Vec<ArcNodeDefinition> {
-        self.by_category
-            .get(category)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.definitions.get(id).cloned())
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.lookup_definitions(
+            self.core_registry
+                .get_by_category(category)
+                .into_iter()
+                .map(|definition| definition.id()),
+        )
     }
 
     pub fn get_categories(&self) -> impl Iterator<Item = &String> {
-        self.by_category.keys()
+        self.core_registry.get_categories()
     }
 
     pub fn len(&self) -> usize {
-        self.definitions.len()
+        self.core_registry.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.definitions.is_empty()
+        self.core_registry.is_empty()
     }
 
     pub fn search(&self, query: &str) -> Vec<ArcNodeDefinition> {
-        let query_lower = query.to_lowercase();
-        self.definitions
-            .values()
-            .filter(|def| {
-                def.display_name().to_lowercase().contains(&query_lower)
-                    || def.id().as_str().to_lowercase().contains(&query_lower)
-                    || def
-                        .description()
-                        .map(|d| d.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
-                    || def
-                        .keywords()
-                        .iter()
-                        .any(|k| k.to_lowercase().contains(&query_lower))
-            })
-            .cloned()
-            .collect()
+        self.lookup_definitions(
+            self.core_registry
+                .search(query)
+                .into_iter()
+                .map(|definition| definition.id()),
+        )
     }
 
     pub fn clear(&mut self) {
         self.definitions.clear();
-        self.by_category.clear();
-        self.ordered_ids.clear();
-        self.menu_nodes.clear();
+        self.core_registry.clear();
+    }
+
+    fn lookup_definitions(
+        &self,
+        ids: impl IntoIterator<Item = NodeId>,
+    ) -> Vec<ArcNodeDefinition> {
+        ids.into_iter()
+            .filter_map(|id| self.definitions.get(&id).cloned())
+            .collect()
     }
 }
 

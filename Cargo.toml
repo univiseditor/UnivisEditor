@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/univis_graph_core",
   "crates/univis_node_graph",
   "crates/univis_editor_commands",
   "crates/univis_scene",

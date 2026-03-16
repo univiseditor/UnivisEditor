@@ -1,7 +1,25 @@
 # Changelog
 
+## 2026-03-16
+
+- Restored backward-compatible access to live graph ECS types through `univis_node_graph::node_definition`, documented the `Default` expectation for custom schema values, extended staged app verification to build every shipped editor example, and rewired the Bevy-side `NodeRegistry` to delegate ordering/search/category bookkeeping through the pure `GraphNodeRegistry` so adapter and core registration logic no longer drift separately.
+- Moved the live ECS component set (`GraphNode`, ports, authored inputs, selection/drag markers, and related adapter state) out of `node_definition.rs` into a dedicated `live_graph` module, making the Bevy adapter boundary clearer and keeping pure node-definition concerns separate from live world state.
+- Added `docs/custom-graph-schema.md` plus a pure `univis_graph_core/examples/minimal_schema.rs` example to show how to define custom values, tags, schema rules, registry usage, documents, and processing without depending on Bevy.
+- Extended the staged core verification path to build the new pure-core example so the reusable-kernel story is checked alongside the library crates.
+- Added a pure generic `GraphNodeRegistry` plus `ArcGraphNodeDefinition` to `univis_graph_core`, giving the reusable kernel its own registration/lookup layer without pulling in Bevy-facing visual hooks or adapter values.
+- Clarified the node-definition boundary by renaming the engine-independent contract to `GraphNodeDefinition` in `univis_graph_core` and the adapter contract to `BevyNodeDefinition` in `univis_node_graph`, while keeping compatibility aliases so the workspace can migrate incrementally.
+- Explicitly kept `NodeValue` and `ValueType` owned by `univis_node_graph`, documenting that adapter/runtime value semantics stay outside the reusable core instead of drifting back into the generic kernel.
+- Moved the pure generic `GraphDocument` model and its structural operations into `univis_graph_core`, then reduced `univis_node_graph::document` to typed aliases plus live Bevy projection/state so the reusable kernel now owns document semantics while the adapter owns entity mapping and snapshot sync.
+- Switched `univis_node_graph` validation to use the adapter-owned `NodeGraphSchema` compatibility hook instead of calling `ValueType` rules directly, so port compatibility now flows through schema contracts that other graph adapters can replace.
+- Added an explicit `GraphSchema` contract to `univis_graph_core` for validation-level compatibility and requirement matching, then implemented it in the Bevy adapter so schema rules are now centralized instead of being split between port types and ad-hoc validation helpers.
+- Removed the stale `univis_node_graph::document::operations` module after moving pure graph document behavior into `univis_graph_core`, leaving the adapter side focused on live state and snapshot projection only.
+
 ## 2026-03-15
 
+- Started extracting a reusable engine-independent graph kernel by adding a new `univis_graph_core` crate for node identities, connection policies, and generic topology helpers, then re-exporting those pieces through `univis_node_graph` so the workspace can migrate incrementally without breaking editor/runtime callers.
+- Moved the base processing contract into `univis_graph_core` by introducing a reusable generic `ProcessContext`, `ProcessResult`, `ProcessValueAccess`, and engine-independent `NodeDefinition<Value, Port>` trait, while keeping `univis_node_graph` as the Bevy adapter that layers visual hooks and ECS-specific behavior on top.
+- Moved `ValueType` plus a color-free `PortRequirement` / `PortDefinition<Value>` schema into `univis_graph_core`, then taught `univis_node_graph` to adapt styled ports back into the pure core shape so the reusable kernel now owns graph semantics while Bevy-facing color and runtime-value behavior stays in the adapter layer.
+- Corrected the kernel boundary by making `univis_graph_core::PortDefinition` generic over a `PortSchema` trait and moving `ValueType` ownership back into `univis_node_graph`, so the core now defines only reusable port structure while the Bevy adapter owns compatibility rules, styled requirements, and concrete value semantics.
 - Preserved node selection while context menus or other overlay surfaces are open by teaching click-selection to ignore non-canvas overlays, so selection now clears only from direct empty-canvas interaction instead of ordinary menu usage.
 - Added connection-focused wire coverage for valid links, occupied-input rejection, and cycle rejection, and tied the new `wire_feedback` target into `verify_workspace.sh` so wiring regressions are checked alongside other workflow smoke tests.
 - Polished editor wiring UX by introducing shared drag-time acceptance/rejection evaluation, live valid-target highlighting, rejection feedback on hovered inputs, preview-wire color/thickness feedback, and automatic inspector focus on the input that just accepted or rejected a drag.

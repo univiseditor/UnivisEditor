@@ -2,52 +2,17 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::any::Any;
 use std::sync::Arc;
+pub use univis_graph_core::prelude::{ConnectionPolicy, NodeCategory, NodeId};
+pub use univis_graph_core::prelude::ProcessResult;
+use univis_graph_core::prelude::{
+    GraphNodeDefinition as CoreGraphNodeDefinition, GraphSchema,
+    PortDefinition as CorePortDefinition, PortSchema, ProcessContext as CoreProcessContext,
+    ProcessValueAccess,
+};
 use univis_scene::EntityValue;
 
-use super::value::{NodeValue, NodeValues, ValueType};
-
-/// Stable identifier for a node definition.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NodeId(pub String);
-
-impl NodeId {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self(id.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for NodeId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Display category used for grouping nodes in menus.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NodeCategory(pub String);
-
-impl NodeCategory {
-    pub fn new(name: impl Into<String>) -> Self {
-        Self(name.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub const MATH: &'static str = "Math";
-    pub const LOGIC: &'static str = "Logic";
-    pub const INPUT: &'static str = "Input";
-    pub const OUTPUT: &'static str = "Output";
-    pub const SCENE: &'static str = "Scene";
-    pub const ADVANCED: &'static str = "Advanced";
-}
+use super::value::{NodeValue, ValueType};
 
 /// Optional semantic requirement for a specialized port.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,13 +20,6 @@ pub struct PortRequirement {
     pub id: String,
     pub label: String,
     pub color: Option<Color>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum ConnectionPolicy {
-    #[default]
-    Single,
-    Multiple,
 }
 
 impl PortRequirement {
@@ -77,7 +35,56 @@ impl PortRequirement {
         self.color = Some(color);
         self
     }
+
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NodeGraphSchema;
+
+impl PortSchema for NodeGraphSchema {
+    type TypeTag = ValueType;
+    type Requirement = PortRequirement;
+    type DefaultValue = NodeValue;
+
+    fn ports_compatible(from: &Self::TypeTag, to: &Self::TypeTag) -> bool {
+        from.is_compatible_with(to)
+    }
+}
+
+impl GraphSchema for NodeGraphSchema {
+    fn requirement_satisfied(
+        requirement: Option<&Self::Requirement>,
+        output_requirement_token: Option<&str>,
+    ) -> bool {
+        match requirement {
+            Some(requirement) => output_requirement_token == Some(requirement.id.as_str()),
+            None => true,
+        }
+    }
+
+    fn requirement_label(requirement: &Self::Requirement) -> String {
+        requirement.label.clone()
+    }
+}
+
+impl NodeGraphSchema {
+    pub fn ports_compatible(from: &ValueType, to: &ValueType) -> bool {
+        <Self as PortSchema>::ports_compatible(from, to)
+    }
+
+    pub fn requirement_satisfied(
+        requirement: Option<&PortRequirement>,
+        output_requirement_token: Option<&str>,
+    ) -> bool {
+        <Self as GraphSchema>::requirement_satisfied(requirement, output_requirement_token)
+    }
+
+    pub fn requirement_label(requirement: &PortRequirement) -> String {
+        <Self as GraphSchema>::requirement_label(requirement)
+    }
+}
+
+pub type NodeGraphPortSchema = NodeGraphSchema;
 
 /// Definition of a node input or output port.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,113 +249,107 @@ impl PortDefinition {
     pub fn accepts_multiple_connections(&self) -> bool {
         self.connection_policy == ConnectionPolicy::Multiple
     }
-}
 
-/// Runtime context passed to a node during processing.
-pub struct ProcessContext<'a> {
-    pub inputs: &'a [NodeValue],
-    pub outputs: &'a mut [NodeValue],
-    pub delta_time: f32,
-    pub custom_data: &'a mut Option<Box<dyn Any + Send + Sync>>,
-}
+    pub fn as_core(&self) -> CorePortDefinition<NodeGraphSchema> {
+        let mut core =
+            CorePortDefinition::new(self.name.clone(), self.value_type.clone())
+                .with_connection_policy(self.connection_policy);
 
-impl<'a> ProcessContext<'a> {
-    // ═════════════════════════════════════════════════════
-    // ═════════════════════════════════════════════════════
-
-    pub fn get_float(&self, index: usize) -> Option<f64> {
-        self.inputs.get(index)?.as_float()
-    }
-
-    pub fn get_float_or(&self, index: usize, default: f64) -> f64 {
-        self.get_float(index).unwrap_or(default)
-    }
-
-    pub fn get_int(&self, index: usize) -> Option<i64> {
-        self.inputs.get(index)?.as_int()
-    }
-
-    pub fn get_int_or(&self, index: usize, default: i64) -> i64 {
-        self.get_int(index).unwrap_or(default)
-    }
-
-    pub fn get_bool(&self, index: usize) -> Option<bool> {
-        self.inputs.get(index)?.as_bool()
-    }
-
-    pub fn get_bool_or(&self, index: usize, default: bool) -> bool {
-        self.get_bool(index).unwrap_or(default)
-    }
-
-    pub fn get_vec2(&self, index: usize) -> Option<Vec2> {
-        self.inputs.get(index)?.as_vec2()
-    }
-
-    pub fn get_vec3(&self, index: usize) -> Option<Vec3> {
-        self.inputs.get(index)?.as_vec3()
-    }
-
-    pub fn get_string(&self, index: usize) -> Option<&str> {
-        self.inputs.get(index)?.as_string()
-    }
-
-    pub fn get_tagged(&self, index: usize) -> Option<(&str, &JsonValue)> {
-        self.inputs.get(index)?.as_tagged()
-    }
-
-    pub fn get_entity(&self, index: usize) -> Option<EntityValue> {
-        self.inputs.get(index)?.as_entity().cloned()
-    }
-
-    pub fn set(&mut self, index: usize, value: NodeValue) {
-        if let Some(out) = self.outputs.get_mut(index) {
-            *out = value;
+        if let Some(description) = &self.description {
+            core = core.with_description(description.clone());
         }
-    }
 
-    pub fn set_float(&mut self, index: usize, value: f64) {
-        self.set(index, NodeValue::float(value));
-    }
+        if let Some(default_value) = &self.default_value {
+            core = core.with_default(default_value.clone());
+        }
 
-    pub fn set_int(&mut self, index: usize, value: i64) {
-        self.set(index, NodeValue::int(value));
-    }
+        if let Some(requirement) = &self.requirement {
+            core = core.with_requirement(requirement.clone());
+        }
 
-    pub fn set_bool(&mut self, index: usize, value: bool) {
-        self.set(index, NodeValue::bool(value));
-    }
-
-    pub fn set_vec2(&mut self, index: usize, value: Vec2) {
-        self.set(index, NodeValue::Vec2(value));
-    }
-
-    pub fn set_vec3(&mut self, index: usize, value: Vec3) {
-        self.set(index, NodeValue::Vec3(value));
-    }
-
-    pub fn set_string(&mut self, index: usize, value: impl Into<String>) {
-        self.set(index, NodeValue::string(value));
-    }
-
-    pub fn set_tagged(&mut self, index: usize, tag: impl Into<String>, payload: JsonValue) {
-        self.set(index, NodeValue::tagged(tag, payload));
-    }
-
-    pub fn set_entity(&mut self, index: usize, value: EntityValue) {
-        self.set(index, NodeValue::entity(value));
+        core
     }
 }
 
-/// Result of a node processing pass.
-#[derive(Debug)]
-pub enum ProcessResult {
-    Success,
-    Error(String),
-    MissingInput(usize),
+pub type ProcessContext<'a> = CoreProcessContext<'a, NodeValue>;
+
+impl ProcessValueAccess for NodeValue {
+    type Vec2 = Vec2;
+    type Vec3 = Vec3;
+    type TaggedPayload = JsonValue;
+    type Entity = EntityValue;
+
+    fn is_none(&self) -> bool {
+        self.is_none()
+    }
+
+    fn as_float(&self) -> Option<f64> {
+        self.as_float()
+    }
+
+    fn as_int(&self) -> Option<i64> {
+        self.as_int()
+    }
+
+    fn as_bool(&self) -> Option<bool> {
+        self.as_bool()
+    }
+
+    fn as_string(&self) -> Option<&str> {
+        self.as_string()
+    }
+
+    fn as_vec2(&self) -> Option<<Self as ProcessValueAccess>::Vec2> {
+        self.as_vec2()
+    }
+
+    fn as_vec3(&self) -> Option<<Self as ProcessValueAccess>::Vec3> {
+        self.as_vec3()
+    }
+
+    fn as_tagged(&self) -> Option<(&str, &Self::TaggedPayload)> {
+        self.as_tagged()
+    }
+
+    fn as_entity(&self) -> Option<&<Self as ProcessValueAccess>::Entity> {
+        self.as_entity()
+    }
+
+    fn from_float(value: f64) -> Self {
+        Self::float(value)
+    }
+
+    fn from_int(value: i64) -> Self {
+        Self::int(value)
+    }
+
+    fn from_bool(value: bool) -> Self {
+        Self::bool(value)
+    }
+
+    fn from_string(value: String) -> Self {
+        Self::string(value)
+    }
+
+    fn from_vec2(value: <Self as ProcessValueAccess>::Vec2) -> Self {
+        Self::Vec2(value)
+    }
+
+    fn from_vec3(value: <Self as ProcessValueAccess>::Vec3) -> Self {
+        Self::Vec3(value)
+    }
+
+    fn from_tagged(tag: String, payload: Self::TaggedPayload) -> Self {
+        Self::tagged(tag, payload)
+    }
+
+    fn from_entity(value: <Self as ProcessValueAccess>::Entity) -> Self {
+        Self::entity(value)
+    }
 }
 
-/// Trait implemented by every node definition.
-pub trait NodeDefinition: Send + Sync {
+/// Bevy-facing node definition with editor/runtime hooks.
+pub trait BevyNodeDefinition: Send + Sync {
     fn id(&self) -> NodeId;
 
     fn display_name(&self) -> &str;
@@ -462,122 +463,144 @@ pub trait NodeDefinition: Send + Sync {
     fn sync_visual(&self, _world: &mut World, _node_entity: Entity) {}
 }
 
-pub type ArcNodeDefinition = Arc<dyn NodeDefinition>;
+pub use BevyNodeDefinition as NodeDefinition;
+pub use crate::live_graph::{
+    AuthoredNodeInputs, Dragging, GraphNode, GraphPort, InputConnection, InputPort,
+    OutputConnections, OutputPort, OutputTarget, PortRef, PortType, Selected, ValueDisplayLabel,
+};
 
-#[derive(Component)]
-pub struct GraphNode {
-    pub definition_id: NodeId,
-    pub values: NodeValues,
-    pub custom_data: Option<Box<dyn Any + Send + Sync>>,
+pub struct BevyNodeDefinitionAdapterRef<'a> {
+    inner: &'a dyn BevyNodeDefinition,
 }
 
-impl GraphNode {
-    pub fn new(definition_id: NodeId, input_count: usize, output_count: usize) -> Self {
-        Self {
-            definition_id,
-            values: NodeValues::new(input_count, output_count),
-            custom_data: None,
-        }
+impl<'a> BevyNodeDefinitionAdapterRef<'a> {
+    pub fn new(inner: &'a dyn BevyNodeDefinition) -> Self {
+        Self { inner }
     }
 }
 
-#[derive(Component, Debug, Clone, Default)]
-pub struct AuthoredNodeInputs {
-    pub values: Vec<NodeValue>,
-}
+impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
+    for BevyNodeDefinitionAdapterRef<'_>
+{
+    fn id(&self) -> NodeId {
+        self.inner.id()
+    }
 
-#[derive(Component)]
-pub struct GraphPort {
-    pub node_entity: Entity,
-    pub port_type: PortType,
-    pub index: usize,
-    pub value_type: ValueType,
-}
+    fn display_name(&self) -> &str {
+        self.inner.display_name()
+    }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PortType {
-    Input,
-    Output,
-}
+    fn category(&self) -> NodeCategory {
+        self.inner.category()
+    }
 
-#[derive(Component, Debug, Clone, Default)]
-pub struct InputConnection {
-    pub source_node: Option<Entity>,
-    pub source_port_index: Option<usize>,
-    pub source_port: Option<Entity>,
-    pub connection_entity: Option<Entity>,
-}
+    fn description(&self) -> Option<&str> {
+        self.inner.description()
+    }
 
-#[derive(Component, Debug, Clone, Default)]
-pub struct OutputConnections {
-    pub targets: Vec<OutputTarget>,
-}
+    fn inputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
+        self.inner
+            .inputs()
+            .into_iter()
+            .map(|port| port.as_core())
+            .collect()
+    }
 
-#[derive(Debug, Clone, Copy)]
-pub struct OutputTarget {
-    pub target_node: Entity,
-    pub target_port_index: usize,
-    pub target_port: Entity,
-    pub connection_entity: Entity,
-}
+    fn outputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
+        self.inner
+            .outputs()
+            .into_iter()
+            .map(|port| port.as_core())
+            .collect()
+    }
 
-/// ═══════════════════════════════════════════════════════════════
-/// ═══════════════════════════════════════════════════════════════
-///
-///
-///
-///
-/// ═══════════════════════════════════════════════════════════════
+    fn process(&self, context: &mut CoreProcessContext<'_, NodeValue>) -> ProcessResult {
+        self.inner.process(context)
+    }
 
-#[derive(Component)]
-pub struct InputPort {
-    pub node_entity: Entity,
-    pub index: usize,
-    pub value_type: ValueType,
+    fn show_in_menu(&self) -> bool {
+        self.inner.show_in_menu()
+    }
 
-    pub source: Option<PortRef>,
-}
+    fn menu_order(&self) -> i32 {
+        self.inner.menu_order()
+    }
 
-#[derive(Component)]
-pub struct OutputPort {
-    pub node_entity: Entity,
-    pub index: usize,
-    pub value_type: ValueType,
+    fn keywords(&self) -> Vec<&str> {
+        self.inner.keywords()
+    }
 
-    pub value: NodeValue,
-
-    pub targets: Vec<PortRef>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PortRef {
-    pub node: Entity,
-    pub port_index: usize,
-}
-
-impl InputPort {
-    pub fn get_value(
-        &self,
-        outputs: &std::collections::HashMap<Entity, Vec<NodeValue>>,
-    ) -> NodeValue {
-        if let Some(ref source) = self.source {
-            if let Some(node_outputs) = outputs.get(&source.node) {
-                if source.port_index < node_outputs.len() {
-                    return node_outputs[source.port_index].clone();
-                }
-            }
-        }
-        NodeValue::None
+    fn can_have_children(&self) -> bool {
+        self.inner.can_have_children()
     }
 }
 
-#[derive(Component)]
-pub struct Selected;
-
-#[derive(Component)]
-pub struct ValueDisplayLabel {
-    pub node_entity: Entity,
+pub struct OwnedBevyNodeDefinitionAdapter {
+    inner: ArcNodeDefinition,
 }
 
-#[derive(Component)]
-pub struct Dragging;
+impl OwnedBevyNodeDefinitionAdapter {
+    pub fn new(inner: ArcNodeDefinition) -> Self {
+        Self { inner }
+    }
+}
+
+impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
+    for OwnedBevyNodeDefinitionAdapter
+{
+    fn id(&self) -> NodeId {
+        self.inner.id()
+    }
+
+    fn display_name(&self) -> &str {
+        self.inner.display_name()
+    }
+
+    fn category(&self) -> NodeCategory {
+        self.inner.category()
+    }
+
+    fn description(&self) -> Option<&str> {
+        self.inner.description()
+    }
+
+    fn inputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
+        self.inner
+            .inputs()
+            .into_iter()
+            .map(|port| port.as_core())
+            .collect()
+    }
+
+    fn outputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
+        self.inner
+            .outputs()
+            .into_iter()
+            .map(|port| port.as_core())
+            .collect()
+    }
+
+    fn process(&self, context: &mut CoreProcessContext<'_, NodeValue>) -> ProcessResult {
+        self.inner.process(context)
+    }
+
+    fn show_in_menu(&self) -> bool {
+        self.inner.show_in_menu()
+    }
+
+    fn menu_order(&self) -> i32 {
+        self.inner.menu_order()
+    }
+
+    fn keywords(&self) -> Vec<&str> {
+        self.inner.keywords()
+    }
+
+    fn can_have_children(&self) -> bool {
+        self.inner.can_have_children()
+    }
+}
+
+pub type CoreNodeDefinitionRef<'a> = BevyNodeDefinitionAdapterRef<'a>;
+pub type ArcBevyNodeDefinition = Arc<dyn BevyNodeDefinition>;
+pub type ArcNodeDefinition = ArcBevyNodeDefinition;

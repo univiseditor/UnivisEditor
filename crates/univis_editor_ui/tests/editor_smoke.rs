@@ -7,7 +7,8 @@ use univis_editor_ui::interaction::{
 };
 use univis_editor_ui::overlay::{GraphOverlayState, GraphOverlaySurface};
 use univis_node_graph::document::{GraphDocumentNode, LiveGraphDocumentState};
-use univis_node_graph::node_definition::{GraphNode, NodeId, Selected};
+use univis_node_graph::live_graph::{GraphNode, Selected};
+use univis_node_graph::node_definition::NodeId;
 use univis_ui::prelude::UInteraction;
 
 fn node(id: u64, definition_id: &str, position: [f32; 2]) -> GraphDocumentNode {

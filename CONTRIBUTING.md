@@ -2,7 +2,8 @@
 
 This workspace is organized around a clear authoring/runtime split:
 
-- `crates/univis_node_graph`: graph document model, validation, registry, generic node values, and mutation tracking.
+- `crates/univis_graph_core`: engine-independent graph identities, topology, generic port/schema contracts, pure `GraphNodeDefinition` contracts, pure registries, and pure graph document model/operations.
+- `crates/univis_node_graph`: Bevy adapter layer for live graph ECS state, adapter-owned value kinds/runtime node values, styled ports, `BevyNodeDefinition` hooks, schema-driven validation, registry, and mutation tracking.
 - `crates/univis_editor_commands`: editor-facing command messages for spawn/save/load/history/workflow actions.
 - `crates/univis_scene`: Scene IR types plus helpers that materialize scene data into Bevy entities.
 - `crates/univis_editor_runtime`: graph execution, diagnostics, scene-output collection, and world sync.
@@ -16,7 +17,7 @@ This workspace is organized around a clear authoring/runtime split:
 
 The active product should stay inside three axes:
 
-- `Graph Core`: graph types, node definitions, values, validation, and document operations.
+- `Graph Core`: pure graph identities/topology plus the Bevy adapter that hosts live graph ECS state.
 - `Scene Authoring`: scene data, scene nodes, prefabs, subgraphs, and scene materialization.
 - `Editor UX`: canvas interaction, persistence, history, diagnostics, settings, and editor workflow actions.
 
@@ -24,12 +25,18 @@ When a change does not clearly strengthen one of these axes, it should usually b
 
 The main boundary to preserve is:
 
+- engine-independent graph rules in `univis_graph_core`
+- pure reusable document state and structural graph operations in `univis_graph_core`
+- pure node contracts and generic registries in `univis_graph_core`
+- Bevy-facing live graph state in `univis_node_graph`
+- adapter values such as `NodeValue` and `ValueType` in `univis_node_graph`
 - authoring logic inside graph-facing data and node processing
 - editor operation outside the graph in commands, UI, persistence, or workflow crates
 
 ## Adding A Node
 
 1. Implement `NodeDefinition` in the most appropriate crate.
+   For a pure graph integration, prefer `GraphNodeDefinition` in `univis_graph_core`.
 2. Register the node in the crate that owns that family, usually `univis_editor_nodes_builtin`.
 3. Add crate-local tests near the node family instead of only relying on workspace-level coverage.
 4. If the node emits or consumes scene data, prefer `univis_scene::EntityValue` / `SceneDocument` instead of editor-specific data.
@@ -58,3 +65,8 @@ bash scripts/verify_workspace.sh clippy-editor
 ```
 
 The verification script runs sequentially with `CARGO_BUILD_JOBS=1` by default, which keeps the workflow usable on lower-memory machines.
+
+For a pure-core schema guide and a Bevy-free example, see:
+
+- [docs/custom-graph-schema.md](/home/abdellah/Desktop/Univis/UnivisEditor/docs/custom-graph-schema.md)
+- [crates/univis_graph_core/examples/minimal_schema.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/minimal_schema.rs)

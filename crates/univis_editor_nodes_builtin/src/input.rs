@@ -1,7 +1,8 @@
 //! Built-in input nodes.
 use bevy::prelude::*;
+use univis_node_graph::live_graph::GraphNode;
 use univis_node_graph::node_definition::{
-    GraphNode, NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
+    NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
 use univis_node_graph::register_node;
 use univis_node_graph::value::{NodeValue, ValueType};

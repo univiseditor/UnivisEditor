@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use crate::prelude::*;
 use bevy::prelude::*;
 use univis_ui::prelude::*;
+use univis_node_graph::node_definition::NodeGraphSchema;
 
 use crate::editor::{EditorSettings, WireStyle};
 
@@ -471,7 +472,7 @@ fn evaluate_wire_target(
 ) -> Result<(), String> {
     let _ = from_port_entity;
 
-    if !NodeValue::is_compatible(&from_port_data.value_type, &port.value_type) {
+    if !NodeGraphSchema::ports_compatible(&from_port_data.value_type, &port.value_type) {
         return Err(format!(
             "Incompatible types: {} -> {}",
             from_port_data.value_type.display_name(),
@@ -490,17 +491,18 @@ fn evaluate_wire_target(
         .get(port.index)
         .ok_or_else(|| "Target input definition is missing.".to_string())?;
 
-    if !output_satisfies_requirement(
-        from_definition,
-        from_index,
-        source_connected_inputs,
+    let output_requirement_token = from_definition
+        .output_requirement_token(from_index, source_connected_inputs);
+
+    if !NodeGraphSchema::requirement_satisfied(
         to_port_definition.requirement.as_ref(),
+        output_requirement_token.as_deref(),
     ) {
         let requirement = to_port_definition
             .requirement
             .as_ref()
-            .map(|requirement| requirement.label.as_str())
-            .unwrap_or("value");
+            .map(NodeGraphSchema::requirement_label)
+            .unwrap_or_else(|| "value".to_string());
         return Err(format!(
             "Input '{}' requires '{}'.",
             to_port_definition.name, requirement

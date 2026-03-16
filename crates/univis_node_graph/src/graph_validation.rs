@@ -1,11 +1,12 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::hash::Hash;
+use std::collections::{HashMap, HashSet};
+pub use univis_graph_core::prelude::{
+    GraphTopologyAnalysis, analyze_graph_topology, connected_input_mask, would_create_cycle,
+};
 
 use crate::{
     document::GraphDocument,
-    node_definition::{ArcNodeDefinition, PortRequirement},
+    node_definition::NodeGraphSchema,
     node_registry::NodeRegistry,
-    value::NodeValue,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,144 +30,6 @@ pub struct GraphValidationIssue {
     pub edge_index: Option<usize>,
     pub node_ids: Vec<u64>,
     pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GraphTopologyAnalysis<T> {
-    pub ordered_nodes: Vec<T>,
-    pub blocked_nodes: Vec<T>,
-}
-
-pub fn connected_input_mask(
-    input_count: usize,
-    edges: impl IntoIterator<Item = usize>,
-) -> Vec<bool> {
-    let mut connected = vec![false; input_count];
-    for input_index in edges {
-        if let Some(slot) = connected.get_mut(input_index) {
-            *slot = true;
-        }
-    }
-    connected
-}
-
-pub fn output_satisfies_requirement(
-    definition: &ArcNodeDefinition,
-    output_index: usize,
-    connected_inputs: &[bool],
-    requirement: Option<&PortRequirement>,
-) -> bool {
-    let Some(requirement) = requirement else {
-        return true;
-    };
-
-    definition.output_requirement_token(output_index, connected_inputs)
-        == Some(requirement.id.clone())
-}
-
-impl<T> GraphTopologyAnalysis<T> {
-    pub fn has_cycle_or_blocked_nodes(&self) -> bool {
-        !self.blocked_nodes.is_empty()
-    }
-}
-
-pub fn analyze_graph_topology<T, NI, EI>(nodes: NI, edges: EI) -> GraphTopologyAnalysis<T>
-where
-    T: Copy + Eq + Hash,
-    NI: IntoIterator<Item = T>,
-    EI: IntoIterator<Item = (T, T)>,
-{
-    let ordered_input_nodes: Vec<T> = nodes.into_iter().collect();
-    let mut adjacency: HashMap<T, HashSet<T>> = HashMap::new();
-    let mut in_degree: HashMap<T, usize> = HashMap::new();
-
-    for node in &ordered_input_nodes {
-        adjacency.entry(*node).or_default();
-        in_degree.entry(*node).or_insert(0);
-    }
-
-    for (from, to) in edges {
-        if !in_degree.contains_key(&from) || !in_degree.contains_key(&to) {
-            continue;
-        }
-
-        if adjacency.entry(from).or_default().insert(to) {
-            *in_degree.entry(to).or_insert(0) += 1;
-        }
-    }
-
-    let mut queue = VecDeque::new();
-    for node in &ordered_input_nodes {
-        if in_degree.get(node).copied().unwrap_or_default() == 0 {
-            queue.push_back(*node);
-        }
-    }
-
-    let mut ordered_nodes = Vec::with_capacity(ordered_input_nodes.len());
-    let mut processed = HashSet::with_capacity(ordered_input_nodes.len());
-
-    while let Some(node) = queue.pop_front() {
-        if !processed.insert(node) {
-            continue;
-        }
-
-        ordered_nodes.push(node);
-
-        if let Some(dependents) = adjacency.get(&node) {
-            for dependent in dependents {
-                if let Some(degree) = in_degree.get_mut(dependent) {
-                    *degree -= 1;
-                    if *degree == 0 {
-                        queue.push_back(*dependent);
-                    }
-                }
-            }
-        }
-    }
-
-    let blocked_nodes = ordered_input_nodes
-        .into_iter()
-        .filter(|node| !processed.contains(node))
-        .collect();
-
-    GraphTopologyAnalysis {
-        ordered_nodes,
-        blocked_nodes,
-    }
-}
-
-pub fn would_create_cycle<T, EI>(edges: EI, from: T, to: T) -> bool
-where
-    T: Copy + Eq + Hash,
-    EI: IntoIterator<Item = (T, T)>,
-{
-    if from == to {
-        return true;
-    }
-
-    let mut adjacency: HashMap<T, Vec<T>> = HashMap::new();
-    for (edge_from, edge_to) in edges {
-        adjacency.entry(edge_from).or_default().push(edge_to);
-    }
-
-    let mut queue = VecDeque::from([to]);
-    let mut visited = HashSet::new();
-
-    while let Some(current) = queue.pop_front() {
-        if !visited.insert(current) {
-            continue;
-        }
-
-        if current == from {
-            return true;
-        }
-
-        if let Some(next_nodes) = adjacency.get(&current) {
-            queue.extend(next_nodes.iter().copied());
-        }
-    }
-
-    false
 }
 
 pub fn validate_graph_document(
@@ -307,7 +170,7 @@ pub fn validate_graph_document(
 
             match (from_type, to_type) {
                 (Some(from_type), Some(to_type)) => {
-                    if !NodeValue::is_compatible(from_type, to_type) {
+                    if !NodeGraphSchema::ports_compatible(from_type, to_type) {
                         issues.push(GraphValidationIssue {
                             kind: GraphValidationIssueKind::IncompatiblePortTypes,
                             edge_index: Some(edge_index),
@@ -328,18 +191,18 @@ pub fn validate_graph_document(
                                 .flatten()
                                 .copied(),
                         );
+                        let output_requirement_token = from_definition
+                            .output_requirement_token(edge.from_index, &source_connected_inputs);
 
-                        if !output_satisfies_requirement(
-                            &from_definition,
-                            edge.from_index,
-                            &source_connected_inputs,
+                        if !NodeGraphSchema::requirement_satisfied(
                             to_port.requirement.as_ref(),
+                            output_requirement_token.as_deref(),
                         ) {
                             let requirement = to_port
                                 .requirement
                                 .as_ref()
-                                .map(|requirement| requirement.label.as_str())
-                                .unwrap_or("value");
+                                .map(NodeGraphSchema::requirement_label)
+                                .unwrap_or_else(|| "value".to_string());
                             issues.push(GraphValidationIssue {
                                 kind: GraphValidationIssueKind::UnsatisfiedPortRequirement,
                                 edge_index: Some(edge_index),
