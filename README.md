@@ -52,6 +52,8 @@ Current examples of deferred or intentionally excluded scope:
 - embedding full render viewports directly inside nodes
 - widening the product into a general-purpose node editor outside scene authoring
 
+For the current delivery plan, see [docs/roadmap.md](docs/roadmap.md).
+
 ## Architectural Model
 
 The project is organized around four layers:
