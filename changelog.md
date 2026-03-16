@@ -2,6 +2,7 @@
 
 ## 2026-03-16
 
+- Fixed live wire creation in the editor by making drag-time target detection fall back to world-space port proximity and by preserving the last accepted target through the mouse-release frame, which restores new valid connections, rejected-target feedback, and the expected data flow for links created after loading a graph.
 - Restored backward-compatible access to live graph ECS types through `univis_node_graph::node_definition`, documented the `Default` expectation for custom schema values, extended staged app verification to build every shipped editor example, and rewired the Bevy-side `NodeRegistry` to delegate ordering/search/category bookkeeping through the pure `GraphNodeRegistry` so adapter and core registration logic no longer drift separately.
 - Moved the live ECS component set (`GraphNode`, ports, authored inputs, selection/drag markers, and related adapter state) out of `node_definition.rs` into a dedicated `live_graph` module, making the Bevy adapter boundary clearer and keeping pure node-definition concerns separate from live world state.
 - Added `docs/custom-graph-schema.md` plus a pure `univis_graph_core/examples/minimal_schema.rs` example to show how to define custom values, tags, schema rules, registry usage, documents, and processing without depending on Bevy.

@@ -149,11 +149,45 @@ fn spawn_input_port(world: &mut World, node_entity: Entity, hovered: bool) -> En
         .id()
 }
 
+fn spawn_input_port_at(
+    world: &mut World,
+    node_entity: Entity,
+    hovered: bool,
+    position: Vec2,
+) -> Entity {
+    world
+        .spawn((
+            GraphPort {
+                node_entity,
+                port_type: PortType::Input,
+                index: 0,
+                value_type: ValueType::String,
+            },
+            InputConnection::default(),
+            GlobalTransform::from(Transform::from_translation(position.extend(0.0))),
+            if hovered {
+                UInteraction::Hovered
+            } else {
+                UInteraction::default()
+            },
+        ))
+        .id()
+}
+
 fn start_wire_drag(app: &mut App, from_port: Entity, from_node: Entity) {
     let mut wire_state = app.world_mut().resource_mut::<WireConnectionState>();
     wire_state.dragging_from = Some(from_port);
     wire_state.node_from = Some(from_node);
     wire_state.index_from = Some(0);
+    wire_state.is_dragging = true;
+}
+
+fn start_wire_drag_at(app: &mut App, from_port: Entity, from_node: Entity, cursor_world: Vec2) {
+    let mut wire_state = app.world_mut().resource_mut::<WireConnectionState>();
+    wire_state.dragging_from = Some(from_port);
+    wire_state.node_from = Some(from_node);
+    wire_state.index_from = Some(0);
+    wire_state.current_mouse_world_pos = cursor_world;
     wire_state.is_dragging = true;
 }
 
@@ -203,6 +237,44 @@ fn wire_feedback_accepts_valid_hovered_input_and_pins_it_on_connect() {
             .pinned_port,
         Some(sink_port)
     );
+}
+
+#[test]
+fn wire_complete_keeps_last_accepted_target_when_hover_drops_on_release() {
+    let mut app = build_test_app();
+
+    let source = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/wire_source"), 0, 1))
+        .id();
+    let sink = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/wire_sink"), 1, 0))
+        .id();
+    let source_port = spawn_output_port(app.world_mut(), source);
+    let sink_port = spawn_input_port(app.world_mut(), sink, true);
+
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Left);
+    start_wire_drag(&mut app, source_port, source);
+    app.update();
+
+    app.world_mut()
+        .entity_mut(sink_port)
+        .insert(UInteraction::default());
+
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .clear();
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .release(MouseButton::Left);
+    app.update();
+
+    let world = app.world_mut();
+    let mut connections = world.query::<&GraphConnection>();
+    assert_eq!(connections.iter(world).count(), 1);
 }
 
 #[test]
@@ -286,4 +358,27 @@ fn wire_feedback_rejects_cycle_creating_hovered_input() {
             .as_deref()
             .is_some_and(|reason| reason.contains("cycle"))
     );
+}
+
+#[test]
+fn wire_feedback_accepts_nearby_input_without_ui_hover_state() {
+    let mut app = build_test_app();
+
+    let source = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/wire_source"), 0, 1))
+        .id();
+    let sink = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/wire_sink"), 1, 0))
+        .id();
+    let source_port = spawn_output_port(app.world_mut(), source);
+    let sink_port = spawn_input_port_at(app.world_mut(), sink, false, Vec2::new(128.0, 64.0));
+
+    start_wire_drag_at(&mut app, source_port, source, Vec2::new(130.0, 65.0));
+    app.update();
+
+    let feedback = app.world().resource::<WireDragFeedback>();
+    assert_eq!(feedback.accepted_target, Some(sink_port));
+    assert!(feedback.valid_targets.contains(&sink_port));
 }

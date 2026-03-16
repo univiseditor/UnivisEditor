@@ -11,6 +11,7 @@ use crate::editor::{EditorSettings, WireStyle};
 const WIRE_SEGMENT_Z: f32 = 0.25;
 const WIRE_SEGMENT_THICKNESS: f32 = 5.0;
 const BEZIER_SEGMENT_COUNT: usize = 24;
+const WIRE_TARGET_SNAP_RADIUS: f32 = 18.0;
 
 #[derive(Component)]
 pub struct WireVisualSegment;
@@ -101,17 +102,25 @@ pub fn wire_update_system(
 
 /// Finalizes a wire drag when the hovered input port accepts the pending connection.
 pub fn wire_drag_feedback_system(
+    mouse_button: Res<ButtonInput<MouseButton>>,
     wire_state: Res<WireConnectionState>,
     registry: Res<NodeRegistry>,
     q_nodes: Query<&GraphNode>,
     q_connections: Query<&GraphConnection>,
     ports: Query<(Entity, &UInteraction, &GraphPort)>,
+    q_port_transforms: Query<&GlobalTransform, With<GraphPort>>,
     mut wire_feedback: ResMut<WireDragFeedback>,
 ) {
     if !wire_state.is_dragging {
         if wire_feedback.is_active() {
             wire_feedback.clear();
         }
+        return;
+    }
+
+    // Keep the last accepted target alive through the release frame so completion can
+    // consume it even if the UI hover state drops the moment the button is released.
+    if mouse_button.just_released(MouseButton::Left) {
         return;
     }
 
@@ -148,6 +157,7 @@ pub fn wire_drag_feedback_system(
         source_port: Some(from_port_entity),
         ..Default::default()
     };
+    let mut best_target: Option<(Entity, Result<(), String>, f32)> = None;
 
     for (to_port_entity, interaction, port) in ports.iter() {
         if port.port_type != PortType::Input || port.node_entity == from_node {
@@ -173,16 +183,46 @@ pub fn wire_drag_feedback_system(
             next_feedback.valid_targets.insert(to_port_entity);
         }
 
-        if !interaction_is_pointer_active(interaction) {
+        let proximity_distance = q_port_transforms
+            .get(to_port_entity)
+            .ok()
+            .map(|transform| {
+                transform
+                    .translation()
+                    .truncate()
+                    .distance(wire_state.current_mouse_world_pos)
+            });
+
+        let targeted_by_interaction = interaction_is_pointer_active(interaction);
+        let targeted_by_proximity =
+            proximity_distance.is_some_and(|distance| distance <= WIRE_TARGET_SNAP_RADIUS);
+
+        if !targeted_by_interaction && !targeted_by_proximity {
             continue;
         }
 
+        let candidate_distance = if targeted_by_interaction {
+            0.0
+        } else {
+            proximity_distance.unwrap_or(f32::MAX)
+        };
+
+        let replace_best = best_target
+            .as_ref()
+            .is_none_or(|(_, _, best_distance)| candidate_distance < *best_distance);
+
+        if replace_best {
+            best_target = Some((to_port_entity, evaluation, candidate_distance));
+        }
+    }
+
+    if let Some((target_port, evaluation, _)) = best_target {
         match evaluation {
             Ok(()) => {
-                next_feedback.accepted_target = Some(to_port_entity);
+                next_feedback.accepted_target = Some(target_port);
             }
             Err(reason) => {
-                next_feedback.hovered_target = Some(to_port_entity);
+                next_feedback.hovered_target = Some(target_port);
                 next_feedback.rejection_reason = Some(reason);
             }
         }
