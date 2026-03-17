@@ -473,7 +473,9 @@ where
         self.view.camera = camera;
     }
 
-    pub fn selected_subgraph_boundary_summary(&self) -> Option<GraphDocumentSelectionBoundarySummary> {
+    pub fn selected_subgraph_boundary_summary(
+        &self,
+    ) -> Option<GraphDocumentSelectionBoundarySummary> {
         self.subgraph_boundary_summary(self.selected_node_ids().iter().copied())
     }
 

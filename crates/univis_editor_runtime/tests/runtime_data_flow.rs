@@ -2,8 +2,7 @@ use bevy::prelude::*;
 use univis_editor_runtime::{GraphResolvedInputs, NodeRuntimePlugin};
 use univis_node_graph::prelude::{
     AuthoredNodeInputs, GraphConnection, GraphNode, NodeCategory, NodeDefinition, NodeId,
-    NodeRegistry, NodeRegistryPlugin,
-    PortDefinition, ProcessContext, ProcessResult,
+    NodeRegistry, NodeRegistryPlugin, PortDefinition, ProcessContext, ProcessResult,
 };
 use univis_node_graph::value::{NodeValue, ValueType};
 
@@ -28,8 +27,10 @@ impl NodeDefinition for RuntimeSourceNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::new("Value", ValueType::String)
-            .with_default(NodeValue::string("default"))]
+        vec![
+            PortDefinition::new("Value", ValueType::String)
+                .with_default(NodeValue::string("default")),
+        ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
@@ -126,18 +127,14 @@ fn runtime_propagates_values_through_graph_connections() {
         registry.register(RuntimeVisualSourceNode);
     }
 
-    let source = app.world_mut().spawn(GraphNode::new(
-        NodeId::new("tests/runtime_source"),
-        1,
-        1,
-    ))
-    .id();
-    let sink = app.world_mut().spawn(GraphNode::new(
-        NodeId::new("tests/runtime_sink"),
-        1,
-        1,
-    ))
-    .id();
+    let source = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/runtime_source"), 1, 1))
+        .id();
+    let sink = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/runtime_sink"), 1, 1))
+        .id();
 
     app.world_mut().spawn(GraphConnection {
         from_node: source,
@@ -169,7 +166,10 @@ fn runtime_propagates_values_through_graph_connections() {
 
     let world = app.world_mut();
     let sink_node = world.entity(sink).get::<GraphNode>().expect("sink node");
-    assert_eq!(sink_node.values.outputs.first(), Some(&NodeValue::string("hello")));
+    assert_eq!(
+        sink_node.values.outputs.first(),
+        Some(&NodeValue::string("hello"))
+    );
 
     let resolved = world
         .resource::<GraphResolvedInputs>()

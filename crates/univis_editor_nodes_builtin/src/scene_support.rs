@@ -4,9 +4,9 @@ use univis_node_graph::node_definition::{
 };
 use univis_node_graph::value::{NodeValue, ValueType};
 use univis_scene::{
+    EntityComponentValue, EntityValue, TRANSFORM_COMPONENT_KEY, TransformComponentValue,
     component_display_name, component_port_color,
-    pure_entity_requirement_token as scene_pure_entity_requirement_token, EntityComponentValue,
-    EntityValue, TransformComponentValue, TRANSFORM_COMPONENT_KEY,
+    pure_entity_requirement_token as scene_pure_entity_requirement_token,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

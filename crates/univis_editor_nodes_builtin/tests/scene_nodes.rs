@@ -10,8 +10,8 @@ use univis_editor_nodes_builtin::scene_support::pure_entity_requirement_token;
 use univis_node_graph::node_definition::{NodeDefinition, ProcessResult};
 use univis_node_graph::value::NodeValue;
 use univis_scene::{
-    EntityComponentValue, EntityValue, TransformComponentValue, ANCHOR_COMPONENT_KEY,
-    CAMERA2D_COMPONENT_KEY, SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY,
+    ANCHOR_COMPONENT_KEY, CAMERA2D_COMPONENT_KEY, EntityComponentValue, EntityValue,
+    SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY, TransformComponentValue,
     VISIBILITY_COMPONENT_KEY,
 };
 

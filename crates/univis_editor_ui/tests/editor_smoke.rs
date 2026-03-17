@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
 use univis_editor_ui::editor::GraphCamera;
 use univis_editor_ui::interaction::{
-    box_selection_input_system, frame_selected_nodes_system, selection_system, BoxSelectionState,
+    BoxSelectionState, box_selection_input_system, frame_selected_nodes_system, selection_system,
 };
 use univis_editor_ui::overlay::{GraphOverlayState, GraphOverlaySurface};
 use univis_node_graph::document::{GraphDocumentNode, LiveGraphDocumentState};
@@ -91,13 +91,12 @@ fn smoke_box_select_marks_nodes_inside_drag_rect() {
     spawn_window(app.world_mut(), 800.0, 600.0);
     spawn_box_select_camera(app.world_mut());
 
-    app.world_mut().resource_scope(
-        |world, mut live_document: Mut<LiveGraphDocumentState>| {
+    app.world_mut()
+        .resource_scope(|world, mut live_document: Mut<LiveGraphDocumentState>| {
             register_live_node(world, &mut live_document, 1, Vec3::new(-120.0, 60.0, 0.0));
             register_live_node(world, &mut live_document, 2, Vec3::new(140.0, -80.0, 0.0));
             register_live_node(world, &mut live_document, 3, Vec3::new(320.0, 220.0, 0.0));
-        },
-    );
+        });
 
     {
         let world = app.world_mut();
@@ -202,8 +201,9 @@ fn smoke_selection_is_preserved_while_overlay_surface_is_active() {
         live_document.document.set_selected_nodes([1]);
     }
 
-    app.world_mut().resource_mut::<GraphOverlayState>().active_surface =
-        GraphOverlaySurface::ContextMenu;
+    app.world_mut()
+        .resource_mut::<GraphOverlayState>()
+        .active_surface = GraphOverlaySurface::ContextMenu;
     app.world_mut()
         .resource_mut::<ButtonInput<MouseButton>>()
         .press(MouseButton::Left);

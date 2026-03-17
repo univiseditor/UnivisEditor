@@ -1,7 +1,7 @@
 use serde_json::json;
 use univis_editor_persistence::format::{
-    graph_document_signature, parse_graph_document_payload, prepare_graph_document_write,
-    serialize_graph_document,
+    graph_document_signature, parse_graph_document_payload, parse_graph_save_metadata,
+    prepare_graph_document_write, serialize_graph_document,
 };
 use univis_node_graph::document::{GraphDocument, GraphDocumentEdge, GraphDocumentNode};
 use univis_node_graph::node_definition::{
@@ -76,6 +76,8 @@ fn prepare_graph_document_write_generates_payload_signature_and_validation_count
     let document = sample_document("tests/value");
     let prepared = prepare_graph_document_write(document.clone(), true, &registry)
         .expect("document should serialize");
+    let payload: serde_json::Value =
+        serde_json::from_str(&prepared.payload).expect("save payload should be valid JSON");
 
     assert!(prepared.payload.contains('\n'));
     assert_eq!(
@@ -89,13 +91,26 @@ fn prepare_graph_document_write_generates_payload_signature_and_validation_count
         prepared.document.nodes[0].definition_id.as_str(),
         "tests/value"
     );
+    assert_eq!(payload["format"], "univis.graph");
+    assert_eq!(payload["format_version"], 1);
+    assert!(payload["meta"]["created_at"].is_string());
+    assert!(payload["meta"]["updated_at"].is_string());
+    assert_eq!(
+        payload["document"]["nodes"][0]["authored_inputs"][0]["kind"],
+        "string"
+    );
 }
 
 #[test]
 fn format_helpers_round_trip_documents_and_support_compact_json() {
     let document = sample_document("tests/value");
     let compact = serialize_graph_document(&document, false).expect("compact JSON");
+    let payload: serde_json::Value =
+        serde_json::from_str(&compact).expect("compact payload should be valid JSON");
     assert!(!compact.contains('\n'));
+    assert_eq!(payload["format"], "univis.graph");
+    assert!(payload["meta"]["created_at"].is_string());
+    assert!(payload["meta"]["updated_at"].is_string());
 
     let parsed = parse_graph_document_payload(&compact).expect("valid payload");
     assert_eq!(parsed.document.nodes.len(), document.nodes.len());
@@ -132,7 +147,7 @@ fn parse_graph_document_payload_migrates_v0_documents() {
     assert_eq!(parsed.document.view.selected_node_ids, vec![7]);
     assert_eq!(
         parsed.migration_note.as_deref(),
-        Some("Migrated graph document schema from v0 to v1.")
+        Some("Migrated legacy graph document schema from v0 into save-file v1.")
     );
 }
 
@@ -144,4 +159,37 @@ fn prepare_graph_document_write_reports_validation_issues_for_unknown_nodes() {
     let prepared = prepare_graph_document_write(document, true, &registry)
         .expect("serialization should still succeed");
     assert_eq!(prepared.validation_issue_count, 2);
+}
+
+#[test]
+fn parse_graph_document_payload_migrates_legacy_raw_graph_documents() {
+    let legacy = serde_json::to_string(&sample_document("tests/value"))
+        .expect("legacy raw graph document should serialize");
+
+    let parsed =
+        parse_graph_document_payload(&legacy).expect("legacy raw payload should migrate cleanly");
+    assert_eq!(parsed.document.nodes.len(), 2);
+    assert_eq!(parsed.document.edges.len(), 1);
+    assert_eq!(
+        parsed.migration_note.as_deref(),
+        Some("Migrated legacy raw graph document into save-file v1.")
+    );
+}
+
+#[test]
+fn parse_graph_save_metadata_reads_envelope_timestamps() {
+    let payload = serialize_graph_document(&sample_document("tests/value"), false)
+        .expect("graph should serialize with metadata");
+
+    let meta = parse_graph_save_metadata(&payload)
+        .expect("metadata parse should succeed")
+        .expect("save payload should contain metadata");
+    assert!(meta
+        .created_at
+        .as_deref()
+        .is_some_and(|value| !value.is_empty()));
+    assert!(meta
+        .updated_at
+        .as_deref()
+        .is_some_and(|value| !value.is_empty()));
 }

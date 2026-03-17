@@ -14,10 +14,10 @@ use univis_node_graph::node_definition::{
 use univis_node_graph::register_node;
 use univis_node_graph::value::NodeValue;
 use univis_scene::{
-    AnchorComponentValue, Camera2DComponentValue, EntityComponentValue, EntityValue,
-    SpriteComponentValue, Text2DComponentValue, VisibilityComponentValue,
-    ANCHOR_COMPONENT_KEY, CAMERA2D_COMPONENT_KEY, SPRITE_COMPONENT_KEY, TEXT2D_COMPONENT_KEY,
-    TRANSFORM_COMPONENT_KEY, VISIBILITY_COMPONENT_KEY,
+    ANCHOR_COMPONENT_KEY, AnchorComponentValue, CAMERA2D_COMPONENT_KEY, Camera2DComponentValue,
+    EntityComponentValue, EntityValue, SPRITE_COMPONENT_KEY, SpriteComponentValue,
+    TEXT2D_COMPONENT_KEY, TRANSFORM_COMPONENT_KEY, Text2DComponentValue, VISIBILITY_COMPONENT_KEY,
+    VisibilityComponentValue,
 };
 
 const SCENE_NODE_COLOR: Color = Color::srgb(0.72, 0.55, 0.24);
@@ -983,8 +983,10 @@ impl NodeDefinition for SceneNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![scene_entity_input("Entity")
-            .with_description("EntityValue that becomes the graph scene output")]
+        vec![
+            scene_entity_input("Entity")
+                .with_description("EntityValue that becomes the graph scene output"),
+        ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {

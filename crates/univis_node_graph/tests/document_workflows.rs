@@ -39,7 +39,9 @@ fn upsert_prefab_replaces_existing_prefab_by_id() {
     });
 
     assert_eq!(document.prefab_count(), 1);
-    let prefab = document.prefab("prefab_actor").expect("prefab should exist");
+    let prefab = document
+        .prefab("prefab_actor")
+        .expect("prefab should exist");
     assert_eq!(prefab.name, "Updated Actor");
     assert_eq!(prefab.root.name.as_deref(), Some("Updated Actor"));
 }
@@ -65,10 +67,7 @@ fn capture_selected_subgraph_normalizes_positions_and_keeps_internal_edges() {
     });
     document.set_selected_nodes([1, 2]);
 
-    assert!(document.capture_selected_subgraph(
-        "subgraph_pair".to_string(),
-        "Pair".to_string()
-    ));
+    assert!(document.capture_selected_subgraph("subgraph_pair".to_string(), "Pair".to_string()));
 
     let subgraph = document
         .subgraph("subgraph_pair")
@@ -191,8 +190,14 @@ fn retain_existing_entities_prunes_dead_mappings_nodes_edges_and_selection() {
         node(2, "tests/b", [120.0, 0.0], 1, 1),
         node(3, "tests/c", [240.0, 0.0], 1, 0),
     ];
-    live_document.document.connect(1, 0, 2, 0).expect("edge 1->2");
-    live_document.document.connect(2, 0, 3, 0).expect("edge 2->3");
+    live_document
+        .document
+        .connect(1, 0, 2, 0)
+        .expect("edge 1->2");
+    live_document
+        .document
+        .connect(2, 0, 3, 0)
+        .expect("edge 2->3");
     live_document.document.set_selected_nodes([2, 3]);
     live_document.entity_to_node_id.insert(entity_a, 1);
     live_document.entity_to_node_id.insert(entity_b, 2);

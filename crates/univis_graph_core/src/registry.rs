@@ -44,7 +44,10 @@ impl<Value, Port> GraphNodeRegistry<Value, Port> {
         let show_in_menu = definition.show_in_menu();
 
         self.definitions.insert(id.clone(), definition);
-        self.by_category.entry(category).or_default().push(id.clone());
+        self.by_category
+            .entry(category)
+            .or_default()
+            .push(id.clone());
         self.ordered_ids.push(id.clone());
 
         if show_in_menu {
@@ -116,8 +119,15 @@ impl<Value, Port> GraphNodeRegistry<Value, Port> {
         self.definitions
             .values()
             .filter(|definition| {
-                definition.display_name().to_lowercase().contains(&query_lower)
-                    || definition.id().as_str().to_lowercase().contains(&query_lower)
+                definition
+                    .display_name()
+                    .to_lowercase()
+                    .contains(&query_lower)
+                    || definition
+                        .id()
+                        .as_str()
+                        .to_lowercase()
+                        .contains(&query_lower)
                     || definition
                         .description()
                         .map(|description| description.to_lowercase().contains(&query_lower))

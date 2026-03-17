@@ -5,7 +5,7 @@ use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
 use univis_editor_persistence::graph_persistence::{
     GraphPersistencePlugin, GraphPersistenceSettings, GraphPersistenceStatus,
 };
-use univis_editor_ui::menu::{execute_spawn_node_commands_system, ContextMenuState};
+use univis_editor_ui::menu::{ContextMenuState, execute_spawn_node_commands_system};
 use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::prelude::sync_live_graph_document_state;
 use univis_editor_workflows::GraphAssetWorkflowPlugin;
@@ -39,8 +39,10 @@ impl NodeDefinition for WorkflowValueNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::new("Value", ValueType::String)
-            .with_default(NodeValue::string("default"))]
+        vec![
+            PortDefinition::new("Value", ValueType::String)
+                .with_default(NodeValue::string("default")),
+        ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
@@ -160,7 +162,9 @@ fn build_test_app() -> App {
     {
         let mut settings = app.world_mut().resource_mut::<GraphPersistenceSettings>();
         settings.autosave_enabled = false;
-        settings.file_path = unique_temp_path("workflow_assets").to_string_lossy().into_owned();
+        settings.file_path = unique_temp_path("workflow_assets")
+            .to_string_lossy()
+            .into_owned();
         settings.backup_directory = unique_temp_path("workflow_assets_backups")
             .to_string_lossy()
             .into_owned();
@@ -264,7 +268,10 @@ fn set_output_entity(app: &mut App, entity: Entity, name: &str) {
 }
 
 fn select_nodes(app: &mut App, entities: &[Entity]) {
-    let selected_set = entities.iter().copied().collect::<std::collections::HashSet<_>>();
+    let selected_set = entities
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
     let existing = {
         let world = app.world_mut();
         let mut query = world.query_filtered::<(Entity, Option<&Selected>), With<GraphNode>>();
@@ -321,10 +328,7 @@ fn smoke_duplicate_selected_nodes_applies_snapshot_and_offsets_selection() {
         .filter_map(|node_id| live_document.node(*node_id))
         .map(|node| node.position)
         .collect::<Vec<_>>();
-    selected_positions.sort_by(|a, b| {
-        a[0].partial_cmp(&b[0])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    selected_positions.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal));
 
     assert_eq!(selected_positions.len(), 2);
     assert_eq!(selected_positions[0], [64.0, -24.0]);
@@ -345,7 +349,10 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
 
     let prefab_id = {
         let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
-        let prefab = live_document.prefabs.last().expect("prefab should be captured");
+        let prefab = live_document
+            .prefabs
+            .last()
+            .expect("prefab should be captured");
         assert_eq!(prefab.root.name.as_deref(), Some("Hero"));
         prefab.id.clone()
     };

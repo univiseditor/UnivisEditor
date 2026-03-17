@@ -46,6 +46,7 @@ pub struct GraphPersistenceRuntimeState {
     pub autosave_elapsed_secs: f32,
     pub open_confirm_until_secs: Option<f64>,
     pub needs_rebaseline: bool,
+    pub requires_resave_after_migration: bool,
 }
 
 impl Default for GraphPersistenceRuntimeState {
@@ -57,6 +58,7 @@ impl Default for GraphPersistenceRuntimeState {
             autosave_elapsed_secs: 0.0,
             open_confirm_until_secs: None,
             needs_rebaseline: false,
+            requires_resave_after_migration: false,
         }
     }
 }
@@ -168,6 +170,8 @@ pub struct ApplyGraphDocumentRequest {
 pub(super) struct PendingGraphLoad {
     pub is_pending: bool,
     pub source_label: Option<String>,
+    pub migration_note: Option<String>,
+    pub requires_resave_after_migration: bool,
     pub origin: PendingGraphApplyOrigin,
     pub node_map: HashMap<u64, Entity>,
     pub node_inputs: Vec<(Entity, Vec<NodeValue>)>,
@@ -182,6 +186,8 @@ impl PendingGraphLoad {
     pub fn reset(&mut self) {
         self.is_pending = false;
         self.source_label = None;
+        self.migration_note = None;
+        self.requires_resave_after_migration = false;
         self.origin = PendingGraphApplyOrigin::Load;
         self.node_map.clear();
         self.node_inputs.clear();

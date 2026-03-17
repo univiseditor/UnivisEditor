@@ -4,8 +4,8 @@ use bevy::prelude::*;
 use univis_ui::prelude::*;
 
 use super::{
-    graph_editing_enabled, interaction_is_pointer_active, pointer_target_node,
-    selection_additive_modifier, BoxSelectionState,
+    BoxSelectionState, graph_editing_enabled, interaction_is_pointer_active, pointer_target_node,
+    selection_additive_modifier,
 };
 
 /// Selects the node under the pointer and mirrors that selection into the live document.

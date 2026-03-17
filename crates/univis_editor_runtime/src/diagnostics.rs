@@ -5,7 +5,9 @@ use univis_node_graph::prelude::{
     AuthoredNodeInputs, GraphNode, NodeRegistry, NodeValue, ProcessContext, ProcessResult,
 };
 
-use crate::connectivity::{GraphConnectivityIndex, GraphResolvedInputs, NodeInputSignature, NodeOutputSignature};
+use crate::connectivity::{
+    GraphConnectivityIndex, GraphResolvedInputs, NodeInputSignature, NodeOutputSignature,
+};
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct GraphRuntimeDiagnostics {
@@ -275,8 +277,7 @@ pub(super) fn propagate_and_process_nodes_system(
                             .or_default()
                             .push(format!(
                                 "upstream output changed: {} -> input {}",
-                                definition_id,
-                                target.target_index
+                                definition_id, target.target_index
                             ));
                     }
                 }
@@ -295,6 +296,12 @@ fn sorted_issues(
     issues_by_node: HashMap<Entity, GraphRuntimeNodeIssue>,
 ) -> Vec<GraphRuntimeNodeIssue> {
     let mut issues = issues_by_node.into_values().collect::<Vec<_>>();
-    issues.sort_by_key(|issue| (issue.node.index(), issue.definition_id.clone(), issue.message.clone()));
+    issues.sort_by_key(|issue| {
+        (
+            issue.node.index(),
+            issue.definition_id.clone(),
+            issue.message.clone(),
+        )
+    });
     issues
 }

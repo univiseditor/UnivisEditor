@@ -119,6 +119,9 @@ pub mod prelude {
     pub use univis_editor_runtime::prelude::*;
     pub use univis_node_graph::prelude::*;
 
+    pub use crate::DeleteSelectedNodesRequest;
+    pub use crate::GraphEditingUiActivation;
+    pub use crate::NodeUiPlugin;
     pub use crate::connection_diagnostics::*;
     pub use crate::editor::*;
     pub use crate::interaction::*;
@@ -128,7 +131,4 @@ pub mod prelude {
     pub use crate::overlay::*;
     pub use crate::widgets::prelude::*;
     pub use crate::wire::*;
-    pub use crate::DeleteSelectedNodesRequest;
-    pub use crate::GraphEditingUiActivation;
-    pub use crate::NodeUiPlugin;
 }

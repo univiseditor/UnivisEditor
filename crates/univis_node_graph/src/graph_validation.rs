@@ -4,9 +4,7 @@ pub use univis_graph_core::prelude::{
 };
 
 use crate::{
-    document::GraphDocument,
-    node_definition::NodeGraphSchema,
-    node_registry::NodeRegistry,
+    document::GraphDocument, node_definition::NodeGraphSchema, node_registry::NodeRegistry,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

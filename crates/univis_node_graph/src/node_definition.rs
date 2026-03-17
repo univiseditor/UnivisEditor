@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
-pub use univis_graph_core::prelude::{ConnectionPolicy, NodeCategory, NodeId};
 pub use univis_graph_core::prelude::ProcessResult;
+pub use univis_graph_core::prelude::{ConnectionPolicy, NodeCategory, NodeId};
 use univis_graph_core::prelude::{
     GraphNodeDefinition as CoreGraphNodeDefinition, GraphSchema,
     PortDefinition as CorePortDefinition, PortSchema, ProcessContext as CoreProcessContext,
@@ -35,7 +35,6 @@ impl PortRequirement {
         self.color = Some(color);
         self
     }
-
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -251,9 +250,8 @@ impl PortDefinition {
     }
 
     pub fn as_core(&self) -> CorePortDefinition<NodeGraphSchema> {
-        let mut core =
-            CorePortDefinition::new(self.name.clone(), self.value_type.clone())
-                .with_connection_policy(self.connection_policy);
+        let mut core = CorePortDefinition::new(self.name.clone(), self.value_type.clone())
+            .with_connection_policy(self.connection_policy);
 
         if let Some(description) = &self.description {
             core = core.with_description(description.clone());
@@ -463,11 +461,11 @@ pub trait BevyNodeDefinition: Send + Sync {
     fn sync_visual(&self, _world: &mut World, _node_entity: Entity) {}
 }
 
-pub use BevyNodeDefinition as NodeDefinition;
 pub use crate::live_graph::{
     AuthoredNodeInputs, Dragging, GraphNode, GraphPort, InputConnection, InputPort,
     OutputConnections, OutputPort, OutputTarget, PortRef, PortType, Selected, ValueDisplayLabel,
 };
+pub use BevyNodeDefinition as NodeDefinition;
 
 pub struct BevyNodeDefinitionAdapterRef<'a> {
     inner: &'a dyn BevyNodeDefinition,

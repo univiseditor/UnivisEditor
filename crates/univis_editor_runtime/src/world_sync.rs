@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use univis_node_graph::prelude::GraphNode;
-use univis_scene::{spawn_scene_document_recursive, EntitySpawnOptions};
+use univis_scene::{EntitySpawnOptions, spawn_scene_document_recursive};
 
 use crate::scene_outputs::{GraphSceneOutputMode, GraphSceneOutputs};
 

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use univis_editor_ui::prelude::{
-    wire_complete_system, wire_drag_feedback_system, GraphConnectionUiDiagnostics,
-    WireDragFeedback,
+    GraphConnectionUiDiagnostics, WireDragFeedback, wire_complete_system, wire_drag_feedback_system,
 };
 use univis_node_graph::commands::GraphMutationTracker;
 use univis_node_graph::pin::{GraphConnection, WireConnectionState};
@@ -103,7 +102,10 @@ fn build_test_app() -> App {
         .init_resource::<WireDragFeedback>()
         .init_resource::<GraphConnectionUiDiagnostics>()
         .init_resource::<GraphMutationTracker>()
-        .add_systems(Update, (wire_drag_feedback_system, wire_complete_system).chain());
+        .add_systems(
+            Update,
+            (wire_drag_feedback_system, wire_complete_system).chain(),
+        );
 
     {
         let mut registry = app.world_mut().resource_mut::<NodeRegistry>();
@@ -232,9 +234,7 @@ fn wire_feedback_accepts_valid_hovered_input_and_pins_it_on_connect() {
     let mut connections = world.query::<&GraphConnection>();
     assert_eq!(connections.iter(world).count(), 1);
     assert_eq!(
-        world
-            .resource::<GraphConnectionUiDiagnostics>()
-            .pinned_port,
+        world.resource::<GraphConnectionUiDiagnostics>().pinned_port,
         Some(sink_port)
     );
 }

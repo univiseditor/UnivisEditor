@@ -218,19 +218,50 @@ pub(super) fn finalize_pending_graph_load_system(
         .source_label
         .clone()
         .unwrap_or_else(|| settings.file_path.clone());
+    let requires_warning = pending.requires_resave_after_migration
+        || pending.placeholder_count > 0
+        || skipped_link_count > 0
+        || pending.validation_issue_count > 0;
 
-    if pending.placeholder_count > 0 || skipped_link_count > 0 || pending.validation_issue_count > 0
-    {
-        set_persistence_status(
-            &mut status,
-            GraphPersistenceStatusSeverity::Warning,
+    if requires_warning {
+        let message = if pending.requires_resave_after_migration {
+            let migration_note = pending
+                .migration_note
+                .as_deref()
+                .unwrap_or("Loaded a legacy graph payload");
+
+            if pending.placeholder_count > 0
+                || skipped_link_count > 0
+                || pending.validation_issue_count > 0
+            {
+                format!(
+                    "{}. Save the graph to rewrite it in the current format. Loaded {} with {} placeholder node(s), {} skipped link(s), and {} validation issue(s).",
+                    migration_note,
+                    source_label,
+                    pending.placeholder_count,
+                    skipped_link_count,
+                    pending.validation_issue_count
+                )
+            } else {
+                format!(
+                    "{}. Save the graph to rewrite it in the current format.",
+                    migration_note
+                )
+            }
+        } else {
             format!(
                 "{} with {} placeholder node(s), {} skipped link(s), and {} validation issue(s).",
                 pending_completion_prefix(pending.origin, &source_label),
                 pending.placeholder_count,
                 skipped_link_count,
                 pending.validation_issue_count
-            ),
+            )
+        };
+
+        set_persistence_status(
+            &mut status,
+            GraphPersistenceStatusSeverity::Warning,
+            message,
             time.elapsed_secs_f64(),
             settings.status_duration_secs,
         );

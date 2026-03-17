@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use univis_editor_runtime::GraphRuntimeTraceSettings;
 use univis_editor_persistence::graph_persistence::{
     GraphHistorySettings, GraphPersistenceSettings,
 };
+use univis_editor_runtime::GraphRuntimeTraceSettings;
 use univis_editor_ui::prelude::EditorSettings;
 
 const DEFAULT_EDITOR_SETTINGS_PATH: &str = ".univis/editor_settings.json";
@@ -213,11 +213,7 @@ impl Plugin for EditorSettingsPersistencePlugin {
             .add_systems(PreStartup, load_editor_settings_system)
             .add_systems(
                 PostUpdate,
-                (
-                    track_recent_files_system,
-                    persist_editor_settings_system,
-                )
-                    .chain(),
+                (track_recent_files_system, persist_editor_settings_system).chain(),
             );
     }
 }

@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use bevy::prelude::{Entity, Resource};
 pub use univis_graph_core::document::{
     GRAPH_DOCUMENT_VERSION, GraphDocumentCameraState, GraphDocumentEdge,
-    GraphDocumentOperationError, GraphDocumentSelectionBoundarySummary,
-    GraphDocumentViewState,
+    GraphDocumentOperationError, GraphDocumentSelectionBoundarySummary, GraphDocumentViewState,
 };
 use univis_graph_core::document::{
     GraphDocument as CoreGraphDocument, GraphDocumentNode as CoreGraphDocumentNode,

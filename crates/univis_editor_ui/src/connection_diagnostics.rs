@@ -77,15 +77,13 @@ pub fn refresh_connection_ui_diagnostics_system(
     resolved_inputs: Res<univis_editor_runtime::GraphResolvedInputs>,
     wire_feedback: Res<WireDragFeedback>,
     q_nodes: Query<(Entity, &GraphNode, Option<&AuthoredNodeInputs>)>,
-    q_ports: Query<
-        (
-            Entity,
-            &GraphPort,
-            Option<&InputConnection>,
-            Option<&OutputConnections>,
-            &UInteraction,
-        ),
-    >,
+    q_ports: Query<(
+        Entity,
+        &GraphPort,
+        Option<&InputConnection>,
+        Option<&OutputConnections>,
+        &UInteraction,
+    )>,
     q_connections: Query<(Entity, &GraphConnection)>,
     mut diagnostics: ResMut<GraphConnectionUiDiagnostics>,
 ) {
@@ -185,10 +183,9 @@ pub fn refresh_connection_ui_diagnostics_system(
                     PortDiagnosticInfo {
                         severity: UiDiagnosticSeverity::Error,
                         status: "Rejected".to_string(),
-                        detail: wire_feedback
-                            .rejection_reason
-                            .clone()
-                            .unwrap_or_else(|| "This input cannot accept the current wire.".to_string()),
+                        detail: wire_feedback.rejection_reason.clone().unwrap_or_else(|| {
+                            "This input cannot accept the current wire.".to_string()
+                        }),
                         preview: resolved_preview.or(authored_preview),
                     }
                 } else if wire_feedback.valid_targets.contains(&entity) {
@@ -205,7 +202,8 @@ pub fn refresh_connection_ui_diagnostics_system(
                         detail: "Blocked by a cycle or dependency path.".to_string(),
                         preview: resolved_preview.or(authored_preview),
                     }
-                } else if let Some(connection) = input_connection.and_then(|connection| connection.connection_entity)
+                } else if let Some(connection) =
+                    input_connection.and_then(|connection| connection.connection_entity)
                 {
                     let source_label = input_connection
                         .and_then(|connection| connection.source_node)
@@ -347,19 +345,23 @@ pub fn refresh_connection_ui_diagnostics_system(
     diagnostics.focused_connection = diagnostics
         .focused_port
         .and_then(|port_entity| q_ports.get(port_entity).ok())
-        .and_then(|(_, port, input_connection, output_connections, _)| match port.port_type {
-            PortType::Input => input_connection.and_then(|connection| connection.connection_entity),
-            PortType::Output => output_connections.and_then(|connections| {
-                if connections.targets.len() == 1 {
-                    connections
-                        .targets
-                        .first()
-                        .map(|target| target.connection_entity)
-                } else {
-                    None
+        .and_then(
+            |(_, port, input_connection, output_connections, _)| match port.port_type {
+                PortType::Input => {
+                    input_connection.and_then(|connection| connection.connection_entity)
                 }
-            }),
-        });
+                PortType::Output => output_connections.and_then(|connections| {
+                    if connections.targets.len() == 1 {
+                        connections
+                            .targets
+                            .first()
+                            .map(|target| target.connection_entity)
+                    } else {
+                        None
+                    }
+                }),
+            },
+        );
 }
 
 pub fn sync_port_diagnostic_visuals_system(
@@ -412,7 +414,12 @@ pub fn sync_connection_inspector_summary_system(
     registry: Res<NodeRegistry>,
     live_document: Res<LiveGraphDocumentState>,
     q_nodes: Query<&GraphNode>,
-    q_ports: Query<(Entity, &GraphPort, Option<&InputConnection>, Option<&OutputConnections>)>,
+    q_ports: Query<(
+        Entity,
+        &GraphPort,
+        Option<&InputConnection>,
+        Option<&OutputConnections>,
+    )>,
     mut summary: ResMut<GraphConnectionInspectorSummary>,
 ) {
     if !diagnostics.is_changed() && !registry.is_changed() && !live_document.is_changed() {
@@ -434,7 +441,14 @@ pub fn sync_connection_inspector_summary_system(
     let node_label = q_nodes
         .get(port.node_entity)
         .ok()
-        .map(|node| format_node_label(&registry, &live_document, port.node_entity, &node.definition_id))
+        .map(|node| {
+            format_node_label(
+                &registry,
+                &live_document,
+                port.node_entity,
+                &node.definition_id,
+            )
+        })
         .unwrap_or_else(|| format!("Node#{:?}", port.node_entity));
     let port_kind = match port.port_type {
         PortType::Input => "Input",
@@ -461,7 +475,9 @@ pub fn sync_connection_inspector_summary_system(
             .and_then(|definition| definition.inputs().get(port.index).cloned())
             .map(|definition| match definition.connection_policy {
                 ConnectionPolicy::Single => "single source".to_string(),
-                ConnectionPolicy::Multiple => "multiple sources (declared, not yet runtime-enabled)".to_string(),
+                ConnectionPolicy::Multiple => {
+                    "multiple sources (declared, not yet runtime-enabled)".to_string()
+                }
             });
         if let Some(policy_label) = policy_label {
             lines.push(format!("Policy: {policy_label}"));
@@ -474,7 +490,8 @@ pub fn sync_connection_inspector_summary_system(
 
     match port.port_type {
         PortType::Input => {
-            if let Some(connection_entity) = input_connection.and_then(|connection| connection.connection_entity)
+            if let Some(connection_entity) =
+                input_connection.and_then(|connection| connection.connection_entity)
             {
                 if let Some(info) = diagnostics.connections.get(&connection_entity) {
                     lines.push(format!("Wire: {}", info.detail));
@@ -556,7 +573,14 @@ pub fn sync_port_preview_summary_system(
     let node_label = q_nodes
         .get(port.node_entity)
         .ok()
-        .map(|node| format_node_label(&registry, &live_document, port.node_entity, &node.definition_id))
+        .map(|node| {
+            format_node_label(
+                &registry,
+                &live_document,
+                port.node_entity,
+                &node.definition_id,
+            )
+        })
         .unwrap_or_else(|| format!("Node#{:?}", port.node_entity));
     let port_kind = match port.port_type {
         PortType::Input => "Input",
@@ -632,7 +656,10 @@ fn format_node_value_preview(value: &NodeValue) -> String {
         NodeValue::Vec2(value) => format!("vec2({:.2}, {:.2})", value.x, value.y),
         NodeValue::Vec3(value) => format!("vec3({:.2}, {:.2}, {:.2})", value.x, value.y, value.z),
         NodeValue::Vec4(value) => {
-            format!("vec4({:.2}, {:.2}, {:.2}, {:.2})", value.x, value.y, value.z, value.w)
+            format!(
+                "vec4({:.2}, {:.2}, {:.2}, {:.2})",
+                value.x, value.y, value.z, value.w
+            )
         }
         NodeValue::Color(color) => {
             let srgba = color.to_srgba();
@@ -679,10 +706,16 @@ struct PortVisualPalette {
     border_width: f32,
 }
 
-fn palette_for_port(base: Color, severity: UiDiagnosticSeverity, focused: bool) -> PortVisualPalette {
+fn palette_for_port(
+    base: Color,
+    severity: UiDiagnosticSeverity,
+    focused: bool,
+) -> PortVisualPalette {
     let base = base.to_srgba();
     let fill = match severity {
-        UiDiagnosticSeverity::Neutral => Color::srgba(base.red * 0.55, base.green * 0.55, base.blue * 0.55, 0.78),
+        UiDiagnosticSeverity::Neutral => {
+            Color::srgba(base.red * 0.55, base.green * 0.55, base.blue * 0.55, 0.78)
+        }
         UiDiagnosticSeverity::Active => Color::srgba(base.red, base.green, base.blue, 0.96),
         UiDiagnosticSeverity::Warning => Color::srgba(0.96, 0.63, 0.24, 0.96),
         UiDiagnosticSeverity::Error => Color::srgba(0.95, 0.28, 0.28, 0.98),

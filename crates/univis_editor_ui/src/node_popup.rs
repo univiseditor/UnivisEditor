@@ -1,7 +1,7 @@
 //! Node settings popup rendered over the graph canvas.
 use crate::prelude::*;
-use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;
+use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::picking::prelude::Pickable;
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;

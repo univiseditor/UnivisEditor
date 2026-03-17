@@ -15,19 +15,19 @@ use self::history::{
     capture_graph_history_snapshot_system, graph_persistence_shortcuts_system,
     handle_history_requests_system,
 };
+pub use self::io::latest_backup_file;
 use self::io::{
     autosave_dirty_graph_system, expire_persistence_status_system,
     handle_load_graph_requests_system, handle_save_graph_requests_system,
     refresh_dirty_state_system,
 };
-pub use self::io::latest_backup_file;
-pub use self::state::{
-    ApplyGraphDocumentRequest, GraphHistorySettings, GraphHistoryState,
-    GraphPersistenceActivation, GraphPersistenceRuntimeState, GraphPersistenceSettings,
-    GraphPersistenceStatus, GraphPersistenceStatusMessage, GraphPersistenceStatusSeverity,
-    LoadGraphFromPathRequest, LoadGraphRequest, SaveGraphRequest, SaveGraphToPathRequest,
-};
 use self::state::PendingGraphLoad;
+pub use self::state::{
+    ApplyGraphDocumentRequest, GraphHistorySettings, GraphHistoryState, GraphPersistenceActivation,
+    GraphPersistenceRuntimeState, GraphPersistenceSettings, GraphPersistenceStatus,
+    GraphPersistenceStatusMessage, GraphPersistenceStatusSeverity, LoadGraphFromPathRequest,
+    LoadGraphRequest, SaveGraphRequest, SaveGraphToPathRequest,
+};
 
 /// Plugin that wires save/load and autosave systems into the app.
 pub struct GraphPersistencePlugin;

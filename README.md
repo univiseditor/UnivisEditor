@@ -76,6 +76,8 @@ The rule used across the workspace is:
 
 For a focused write-up of the new live wiring model, see [docs/connection-architecture.md](/home/abdellah/Desktop/Univis/UnivisEditor/docs/connection-architecture.md).
 
+For the current save-file contract and migration shape, see [docs/save-file-format.md](/home/abdellah/Desktop/Univis/UnivisEditor/docs/save-file-format.md).
+
 ## Workspace Layout
 
 The workspace is split into focused crates:

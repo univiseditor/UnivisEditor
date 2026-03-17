@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-17
+
+- Replaced direct `GraphDocument` JSON writes with a versioned save-file envelope in `univis_editor_persistence`, introducing explicit DTOs for authored inputs, edges, scene values, and view state while keeping load-time migration support for older raw graph payloads.
+- Split legacy save migration into an explicit `univis_editor_persistence::migrations` pipeline so save-file parsing, v0 upgrades, and raw-document upgrades no longer stay embedded inside the serialization module.
+- Added `docs/save-file-format.md` to define the active `univis.graph` save contract, persisted authored-state boundaries, and the expected legacy migration path into save-file `v1`.
+- Started writing `meta.created_at` and `meta.updated_at` into save-file `v1`, preserving the original creation timestamp when overwriting an existing envelope-based graph file while refreshing the update timestamp on each save.
+- Added workflow smoke coverage for repeated saves to the same graph path so persistence now checks that `created_at` stays stable while `updated_at` refreshes across overwrite saves.
+- Marked migrated legacy loads as needing resave until the user writes the graph back in `save-file v1`, and added warning-level load feedback plus smoke coverage for that upgraded-load path.
+
 ## 2026-03-16
 
 - Fixed live wire creation in the editor by making drag-time target detection fall back to world-space port proximity and by preserving the last accepted target through the mouse-release frame, which restores new valid connections, rejected-target feedback, and the expected data flow for links created after loading a graph.

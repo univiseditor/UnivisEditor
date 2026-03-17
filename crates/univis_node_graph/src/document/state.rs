@@ -1,8 +1,8 @@
 use bevy::prelude::Entity;
 
 use super::{
-    build_graph_document_from_snapshots, GraphDocument, GraphDocumentCameraState,
-    GraphDocumentEdgeSnapshot, GraphDocumentNodeSnapshot, LiveGraphDocumentState,
+    GraphDocument, GraphDocumentCameraState, GraphDocumentEdgeSnapshot, GraphDocumentNodeSnapshot,
+    LiveGraphDocumentState, build_graph_document_from_snapshots,
 };
 
 impl LiveGraphDocumentState {

@@ -580,45 +580,45 @@ fn spawn_canvas_island_setting_stepper_row(
                 column_gap: Val::Px(6.0),
                 ..default()
             },))
-            .with_children(|controls| {
-                for (text, action) in [("-", decrease_action), ("+", increase_action)] {
-                    controls
-                        .spawn((
-                            Button,
-                            Node {
-                                width: Val::Px(24.0),
-                                height: Val::Px(24.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                border_radius: BorderRadius::all(Val::Px(999.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.08)),
-                            CanvasIslandInteractive,
-                            CanvasIslandSettingsActionButton { action },
-                        ))
-                        .with_children(|button| {
-                            button.spawn((
-                                Text::new(text),
-                                TextFont {
-                                    font_size: 12.0,
+                .with_children(|controls| {
+                    for (text, action) in [("-", decrease_action), ("+", increase_action)] {
+                        controls
+                            .spawn((
+                                Button,
+                                Node {
+                                    width: Val::Px(24.0),
+                                    height: Val::Px(24.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border_radius: BorderRadius::all(Val::Px(999.0)),
                                     ..default()
                                 },
-                                TextColor(Color::WHITE),
-                            ));
-                        });
-                }
+                                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+                                CanvasIslandInteractive,
+                                CanvasIslandSettingsActionButton { action },
+                            ))
+                            .with_children(|button| {
+                                button.spawn((
+                                    Text::new(text),
+                                    TextFont {
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                ));
+                            });
+                    }
 
-                controls.spawn((
-                    Text::new("0"),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                    CanvasIslandSettingsValueText { kind: value_kind },
-                ));
-            });
+                    controls.spawn((
+                        Text::new("0"),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        CanvasIslandSettingsValueText { kind: value_kind },
+                    ));
+                });
         });
 }
 

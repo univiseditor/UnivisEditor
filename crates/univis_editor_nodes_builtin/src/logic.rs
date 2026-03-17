@@ -331,10 +331,12 @@ impl NodeDefinition for NoteNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::input_string("Text")
-            .with_default(NodeValue::string("Write a note..."))
-            .with_description("Visible note text")
-            .editable_in_popup()]
+        vec![
+            PortDefinition::input_string("Text")
+                .with_default(NodeValue::string("Write a note..."))
+                .with_description("Visible note text")
+                .editable_in_popup(),
+        ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {

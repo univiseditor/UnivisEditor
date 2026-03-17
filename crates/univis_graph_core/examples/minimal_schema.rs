@@ -222,12 +222,16 @@ fn main() {
     let mut document = GraphDocument::<MiniValue, ()>::default();
     let add_node_id = document.spawn_node(NodeId::new("mini/add"), [0.0, 0.0], 2, 1);
     let format_node_id = document.spawn_node(NodeId::new("mini/format"), [180.0, 0.0], 1, 1);
-    document.connect(add_node_id, 0, format_node_id, 0).expect("valid edge");
+    document
+        .connect(add_node_id, 0, format_node_id, 0)
+        .expect("valid edge");
 
     let add_node = document.node_mut(add_node_id).expect("add node");
     add_node.inputs = vec![MiniValue::Number(2.0), MiniValue::Number(3.5)];
 
-    let add_definition = registry.get(&NodeId::new("mini/add")).expect("add definition");
+    let add_definition = registry
+        .get(&NodeId::new("mini/add"))
+        .expect("add definition");
     let format_definition = registry
         .get(&NodeId::new("mini/format"))
         .expect("format definition");
@@ -244,7 +248,10 @@ fn main() {
         delta_time: 0.0,
         custom_data: &mut add_custom_data,
     };
-    assert_eq!(add_definition.process(&mut add_context), ProcessResult::Success);
+    assert_eq!(
+        add_definition.process(&mut add_context),
+        ProcessResult::Success
+    );
 
     let mut format_context = ProcessContext {
         inputs: &add_outputs,

@@ -163,7 +163,13 @@ fn resolve_selected_entity_value(
             }
         }
 
-        if let Some(root) = node.values.outputs.iter().find_map(NodeValue::as_entity).cloned() {
+        if let Some(root) = node
+            .values
+            .outputs
+            .iter()
+            .find_map(NodeValue::as_entity)
+            .cloned()
+        {
             let name_hint = root
                 .name
                 .clone()

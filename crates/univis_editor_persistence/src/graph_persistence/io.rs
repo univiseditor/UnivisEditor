@@ -7,7 +7,8 @@ use univis_editor_ui::prelude::GraphCamera;
 use univis_node_graph::prelude::*;
 
 use crate::format::{
-    parse_graph_document_payload, prepare_graph_document_write, serialize_graph_document,
+    parse_graph_document_payload, parse_graph_save_metadata,
+    prepare_graph_document_write_with_meta, serialize_graph_document, GraphSaveMetaV1,
     ParsedGraphDocument, PreparedGraphWrite,
 };
 
@@ -93,6 +94,7 @@ pub(super) fn handle_save_graph_requests_system(
                 runtime.initialized = true;
                 runtime.autosave_elapsed_secs = 0.0;
                 runtime.open_confirm_until_secs = None;
+                runtime.requires_resave_after_migration = false;
 
                 if prepared.validation_issue_count > 0 {
                     set_persistence_status(
@@ -251,6 +253,7 @@ pub(super) fn handle_load_graph_requests_system(
     load_runtime.live_document.document.prefabs = save_file.prefabs.clone();
     load_runtime.live_document.document.subgraphs = save_file.subgraphs.clone();
     load_runtime.pending.reset();
+    load_runtime.runtime.requires_resave_after_migration = migration_note.is_some();
     ui_state.reset();
     stage_graph_document_apply(
         &mut commands,
@@ -263,20 +266,14 @@ pub(super) fn handle_load_graph_requests_system(
         path.clone(),
         validation_issues.len(),
     );
+    load_runtime.pending.migration_note = migration_note.clone();
+    load_runtime.pending.requires_resave_after_migration = migration_note.is_some();
     load_runtime.history.clear();
     load_runtime.history.awaiting_rebaseline = true;
     load_runtime.history.last_document = Some(save_file);
     load_runtime.mutation_tracker.capture_requested = false;
 
-    if let Some(note) = migration_note {
-        set_persistence_status(
-            &mut load_runtime.status,
-            GraphPersistenceStatusSeverity::Info,
-            note,
-            now,
-            load_runtime.settings.status_duration_secs,
-        );
-    } else {
+    if migration_note.is_none() {
         set_persistence_status(
             &mut load_runtime.status,
             GraphPersistenceStatusSeverity::Info,
@@ -314,18 +311,17 @@ pub(super) fn refresh_dirty_state_system(
     };
 
     if !runtime.initialized || runtime.last_saved_signature.is_none() || runtime.needs_rebaseline {
-        runtime.last_saved_signature = Some(current_signature);
-        runtime.dirty = false;
+        runtime.last_saved_signature = Some(current_signature.clone());
         runtime.initialized = true;
         runtime.needs_rebaseline = false;
-        return;
     }
 
-    runtime.dirty = runtime
-        .last_saved_signature
-        .as_ref()
-        .map(|saved| saved != &current_signature)
-        .unwrap_or(false);
+    runtime.dirty = runtime.requires_resave_after_migration
+        || runtime
+            .last_saved_signature
+            .as_ref()
+            .map(|saved| saved != &current_signature)
+            .unwrap_or(false);
 }
 
 pub(super) fn autosave_dirty_graph_system(
@@ -378,6 +374,7 @@ pub(super) fn autosave_dirty_graph_system(
         Ok(prepared) => {
             runtime.last_saved_signature = Some(prepared.signature.clone());
             runtime.dirty = false;
+            runtime.requires_resave_after_migration = false;
 
             let backup_result = write_backup_file(
                 &prepared.document,
@@ -466,7 +463,9 @@ fn persist_graph_to_path(
     source_document: &GraphDocument,
 ) -> Result<PreparedGraphWrite, String> {
     let document = build_graph_document(q_connections, q_nodes, q_camera, source_document);
-    let prepared = prepare_graph_document_write(document, pretty_json, registry)?;
+    let existing_meta = load_existing_graph_save_meta(path).unwrap_or_default();
+    let prepared =
+        prepare_graph_document_write_with_meta(document, pretty_json, registry, existing_meta)?;
     write_graph_payload(path, &prepared.payload)?;
     Ok(prepared)
 }
@@ -548,6 +547,11 @@ fn write_graph_payload(path: &str, payload: &str) -> Result<(), String> {
 
     fs::write(target, payload)
         .map_err(|err| format!("cannot write graph file {}: {}", target.display(), err))
+}
+
+fn load_existing_graph_save_meta(path: &str) -> Option<GraphSaveMetaV1> {
+    let content = fs::read_to_string(path).ok()?;
+    parse_graph_save_metadata(&content).ok().flatten()
 }
 
 fn write_backup_file(

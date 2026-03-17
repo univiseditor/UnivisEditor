@@ -8,6 +8,7 @@ bevy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 univis_node_graph = { path = "../univis_node_graph" }
+univis_scene = { path = "../univis_scene" }
 univis_editor_commands = { path = "../univis_editor_commands" }
 univis_editor_runtime = { path = "../univis_editor_runtime" }
 univis_editor_ui = { path = "../univis_editor_ui" }

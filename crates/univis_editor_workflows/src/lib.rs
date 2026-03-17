@@ -9,9 +9,7 @@ mod status;
 use bevy::prelude::*;
 use univis_editor_runtime::NodeRuntimeSystemSet;
 
-use self::capture::{
-    capture_prefab_from_selection_system, capture_subgraph_from_selection_system,
-};
+use self::capture::{capture_prefab_from_selection_system, capture_subgraph_from_selection_system};
 use self::duplicate::duplicate_selected_nodes_system;
 use self::instantiate::{insert_subgraph_instances_system, spawn_prefab_instance_nodes_system};
 use self::prefab_sync::sync_prefab_instance_nodes_system;

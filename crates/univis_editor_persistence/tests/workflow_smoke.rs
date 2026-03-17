@@ -1,21 +1,26 @@
 use bevy::prelude::*;
 use std::fs;
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
-use univis_editor_persistence::format::parse_graph_document_payload;
+use univis_editor_persistence::format::{parse_graph_document_payload, parse_graph_save_metadata};
 use univis_editor_persistence::graph_persistence::{
-    GraphHistoryState, GraphPersistencePlugin, GraphPersistenceSettings,
+    GraphHistoryState, GraphPersistencePlugin, GraphPersistenceRuntimeState,
+    GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
 };
 use univis_editor_ui::menu::execute_spawn_node_commands_system;
 use univis_editor_ui::menu::ContextMenuState;
 use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::prelude::sync_live_graph_document_state;
 use univis_node_graph::commands::GraphMutationTracker;
-use univis_node_graph::document::LiveGraphDocumentState;
+use univis_node_graph::document::{
+    GraphDocument, GraphDocumentEdge, GraphDocumentNode, LiveGraphDocumentState,
+};
 use univis_node_graph::node_definition::{
-    AuthoredNodeInputs, GraphNode, GraphPort, NodeCategory, NodeDefinition, NodeId,
-    PortDefinition, PortType, ProcessContext, ProcessResult, Selected,
+    AuthoredNodeInputs, GraphNode, GraphPort, NodeCategory, NodeDefinition, NodeId, PortDefinition,
+    PortType, ProcessContext, ProcessResult, Selected,
 };
 use univis_node_graph::node_registry::NodeRegistry;
 use univis_node_graph::pin::{DragState, GraphConnection, WireConnectionState};
@@ -221,6 +226,37 @@ fn edge_count(app: &mut App) -> usize {
     query.iter(world).count()
 }
 
+fn legacy_raw_document() -> GraphDocument {
+    GraphDocument {
+        version: 1,
+        nodes: vec![
+            GraphDocumentNode {
+                id: 1,
+                definition_id: NodeId::new("tests/workflow_value"),
+                position: [32.0, 48.0],
+                inputs: vec![NodeValue::string("legacy-value")],
+                input_count: 1,
+                output_count: 1,
+            },
+            GraphDocumentNode {
+                id: 2,
+                definition_id: NodeId::new("tests/workflow_sink"),
+                position: [220.0, 48.0],
+                inputs: vec![NodeValue::None],
+                input_count: 1,
+                output_count: 0,
+            },
+        ],
+        edges: vec![GraphDocumentEdge {
+            from_node_id: 1,
+            from_index: 0,
+            to_node_id: 2,
+            to_index: 0,
+        }],
+        ..GraphDocument::default()
+    }
+}
+
 #[test]
 fn smoke_save_and_load_round_trip_restores_graph_shape_and_values() {
     let mut app = build_test_app();
@@ -273,6 +309,84 @@ fn smoke_save_and_load_round_trip_restores_graph_shape_and_values() {
         restored_value_node.inputs.first(),
         Some(&NodeValue::string("smoke-value"))
     );
+
+    let _ = fs::remove_file(save_path);
+}
+
+#[test]
+fn smoke_save_preserves_created_at_and_refreshes_updated_at() {
+    let mut app = build_test_app();
+    let save_path = unique_temp_path("workflow_metadata");
+
+    let value_node = spawn_node(&mut app, "tests/workflow_value", Vec2::new(32.0, 48.0));
+    let sink_node = spawn_node(&mut app, "tests/workflow_sink", Vec2::new(220.0, 48.0));
+    set_string_input(&mut app, value_node, 0, "first-save");
+    connect_nodes(&mut app, value_node, sink_node);
+
+    app.world_mut()
+        .write_message(GraphCommandRequest::SaveGraphToPath {
+            path: save_path.to_string_lossy().into_owned(),
+        })
+        .expect("first save request should enqueue");
+    app.update();
+
+    let first_meta = parse_graph_save_metadata(
+        &fs::read_to_string(&save_path).expect("first saved graph file should exist"),
+    )
+    .expect("first save metadata should parse")
+    .expect("first save should contain metadata");
+
+    thread::sleep(Duration::from_millis(2));
+
+    set_string_input(&mut app, value_node, 0, "second-save");
+    app.world_mut()
+        .write_message(GraphCommandRequest::SaveGraphToPath {
+            path: save_path.to_string_lossy().into_owned(),
+        })
+        .expect("second save request should enqueue");
+    app.update();
+
+    let second_meta = parse_graph_save_metadata(
+        &fs::read_to_string(&save_path).expect("second saved graph file should exist"),
+    )
+    .expect("second save metadata should parse")
+    .expect("second save should contain metadata");
+
+    assert_eq!(first_meta.created_at, second_meta.created_at);
+    assert_ne!(first_meta.updated_at, second_meta.updated_at);
+
+    let _ = fs::remove_file(save_path);
+}
+
+#[test]
+fn smoke_load_marks_migrated_legacy_graph_dirty_until_resave() {
+    let mut app = build_test_app();
+    let save_path = unique_temp_path("workflow_legacy_load");
+    let legacy_payload =
+        serde_json::to_string(&legacy_raw_document()).expect("legacy raw graph should serialize");
+    fs::write(&save_path, legacy_payload).expect("legacy raw graph should be written");
+
+    app.world_mut()
+        .write_message(GraphCommandRequest::LoadGraphFromPath {
+            path: save_path.to_string_lossy().into_owned(),
+            force_if_dirty: true,
+        })
+        .expect("load request should enqueue");
+    update_frames(&mut app, 2);
+
+    assert_eq!(node_count(&mut app), 2);
+    assert_eq!(edge_count(&mut app), 1);
+
+    let runtime = app.world().resource::<GraphPersistenceRuntimeState>();
+    assert!(runtime.dirty);
+    assert!(runtime.requires_resave_after_migration);
+
+    let status = app.world().resource::<GraphPersistenceStatus>();
+    let active = status.active.as_ref().expect("status message should exist");
+    assert_eq!(active.severity, GraphPersistenceStatusSeverity::Warning);
+    assert!(active
+        .text
+        .contains("Save the graph to rewrite it in the current format."));
 
     let _ = fs::remove_file(save_path);
 }

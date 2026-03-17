@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use univis_node_graph::prelude::{analyze_graph_topology, GraphConnection, GraphNode, NodeValue};
+use univis_node_graph::prelude::{GraphConnection, GraphNode, NodeValue, analyze_graph_topology};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraphInputSource {
@@ -98,7 +98,9 @@ pub fn rebuild_connectivity_index_system(
 
     let topology = analyze_graph_topology(
         nodes.iter().map(|(entity, _, _)| *entity),
-        q_connections.iter().map(|connection| (connection.from_node, connection.to_node)),
+        q_connections
+            .iter()
+            .map(|connection| (connection.from_node, connection.to_node)),
     );
 
     resolved_inputs

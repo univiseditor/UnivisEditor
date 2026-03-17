@@ -3,8 +3,8 @@ use std::collections::HashSet;
 
 use crate::prelude::*;
 use bevy::prelude::*;
-use univis_ui::prelude::*;
 use univis_node_graph::node_definition::NodeGraphSchema;
+use univis_ui::prelude::*;
 
 use crate::editor::{EditorSettings, WireStyle};
 
@@ -183,15 +183,12 @@ pub fn wire_drag_feedback_system(
             next_feedback.valid_targets.insert(to_port_entity);
         }
 
-        let proximity_distance = q_port_transforms
-            .get(to_port_entity)
-            .ok()
-            .map(|transform| {
-                transform
-                    .translation()
-                    .truncate()
-                    .distance(wire_state.current_mouse_world_pos)
-            });
+        let proximity_distance = q_port_transforms.get(to_port_entity).ok().map(|transform| {
+            transform
+                .translation()
+                .truncate()
+                .distance(wire_state.current_mouse_world_pos)
+        });
 
         let targeted_by_interaction = interaction_is_pointer_active(interaction);
         let targeted_by_proximity =
@@ -531,8 +528,8 @@ fn evaluate_wire_target(
         .get(port.index)
         .ok_or_else(|| "Target input definition is missing.".to_string())?;
 
-    let output_requirement_token = from_definition
-        .output_requirement_token(from_index, source_connected_inputs);
+    let output_requirement_token =
+        from_definition.output_requirement_token(from_index, source_connected_inputs);
 
     if !NodeGraphSchema::requirement_satisfied(
         to_port_definition.requirement.as_ref(),
@@ -551,7 +548,10 @@ fn evaluate_wire_target(
 
     match to_port_definition.connection_policy {
         univis_node_graph::prelude::ConnectionPolicy::Single => {
-            if q_connections.iter().any(|link| link.to_port == to_port_entity) {
+            if q_connections
+                .iter()
+                .any(|link| link.to_port == to_port_entity)
+            {
                 return Err(format!(
                     "Input '{}' is already connected.",
                     to_port_definition.name
@@ -567,7 +567,9 @@ fn evaluate_wire_target(
     }
 
     if would_create_cycle(
-        q_connections.iter().map(|link| (link.from_node, link.to_node)),
+        q_connections
+            .iter()
+            .map(|link| (link.from_node, link.to_node)),
         from_node,
         port.node_entity,
     ) {

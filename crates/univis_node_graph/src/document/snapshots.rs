@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use bevy::prelude::Entity;
 
 use super::{
-    GraphDocument, GraphDocumentBuildResult, GraphDocumentCameraState, GraphDocumentEdge,
-    GraphDocumentEdgeSnapshot, GraphDocumentNode, GraphDocumentNodeSnapshot,
-    GRAPH_DOCUMENT_VERSION,
+    GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentBuildResult, GraphDocumentCameraState,
+    GraphDocumentEdge, GraphDocumentEdgeSnapshot, GraphDocumentNode, GraphDocumentNodeSnapshot,
 };
 
 pub fn build_graph_document_from_snapshots<I, J>(

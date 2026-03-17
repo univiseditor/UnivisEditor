@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use bevy::camera::visibility::{
-    add_visibility_class, NoFrustumCulling, VisibilityClass, VisibleEntities,
+    NoFrustumCulling, VisibilityClass, VisibleEntities, add_visibility_class,
 };
 use bevy::{prelude::*, render::sync_world::SyncToRenderWorld};
 

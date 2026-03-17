@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use univis_graph_core::prelude::{
-    ArcGraphNodeDefinition as ArcCoreNodeDefinition, GraphNodeRegistry, PortDefinition as CorePortDefinition,
+    ArcGraphNodeDefinition as ArcCoreNodeDefinition, GraphNodeRegistry,
+    PortDefinition as CorePortDefinition,
 };
 
 use super::live_graph::GraphNode;
@@ -131,10 +132,7 @@ impl NodeRegistry {
         self.core_registry.clear();
     }
 
-    fn lookup_definitions(
-        &self,
-        ids: impl IntoIterator<Item = NodeId>,
-    ) -> Vec<ArcNodeDefinition> {
+    fn lookup_definitions(&self, ids: impl IntoIterator<Item = NodeId>) -> Vec<ArcNodeDefinition> {
         ids.into_iter()
             .filter_map(|id| self.definitions.get(&id).cloned())
             .collect()
@@ -167,7 +165,11 @@ fn sync_changed_node_visuals(world: &mut World) {
         };
         query
             .iter(world)
-            .filter_map(|(entity, node)| registry.get(&node.definition_id).map(|definition| (entity, definition)))
+            .filter_map(|(entity, node)| {
+                registry
+                    .get(&node.definition_id)
+                    .map(|definition| (entity, definition))
+            })
             .collect()
     };
 

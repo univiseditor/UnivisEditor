@@ -630,14 +630,24 @@ fn refresh_editor_diagnostics_summary_system(
         if !boundary.incoming_edges.is_empty() {
             lines.push(format!(
                 "Selection incoming: {}",
-                format_edge_list(&live_document.document, &registry, &boundary.incoming_edges, 3)
+                format_edge_list(
+                    &live_document.document,
+                    &registry,
+                    &boundary.incoming_edges,
+                    3
+                )
             ));
         }
 
         if !boundary.outgoing_edges.is_empty() {
             lines.push(format!(
                 "Selection outgoing: {}",
-                format_edge_list(&live_document.document, &registry, &boundary.outgoing_edges, 3)
+                format_edge_list(
+                    &live_document.document,
+                    &registry,
+                    &boundary.outgoing_edges,
+                    3
+                )
             ));
         }
     }
@@ -776,13 +786,7 @@ fn refresh_scene_preview_summary_system(
 fn sync_port_preview_tooltip_system(
     summary: Res<GraphPortPreviewSummary>,
     windows: Query<&Window>,
-    mut tooltips: Query<
-        &mut Node,
-        (
-            With<PortPreviewTooltip>,
-            Without<PortPreviewTooltipSwatch>,
-        ),
-    >,
+    mut tooltips: Query<&mut Node, (With<PortPreviewTooltip>, Without<PortPreviewTooltipSwatch>)>,
     mut titles: Query<
         &mut Text,
         (
@@ -821,10 +825,7 @@ fn sync_port_preview_tooltip_system(
     >,
     mut swatches: Query<
         (&mut Node, &mut BackgroundColor),
-        (
-            With<PortPreviewTooltipSwatch>,
-            Without<PortPreviewTooltip>,
-        ),
+        (With<PortPreviewTooltipSwatch>, Without<PortPreviewTooltip>),
     >,
 ) {
     if !summary.is_changed() {

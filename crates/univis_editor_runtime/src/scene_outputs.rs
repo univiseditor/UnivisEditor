@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use univis_node_graph::prelude::{GraphNode, NodeValue};
-use univis_scene::{scene_document_signature, SceneDocument, SceneStats};
+use univis_scene::{SceneDocument, SceneStats, scene_document_signature};
 
 use crate::connectivity::GraphResolvedInputs;
 
@@ -79,7 +79,7 @@ pub(super) fn collect_scene_outputs_system(
 
 #[cfg(test)]
 mod tests {
-    use super::{scene_sink_mode, SceneSinkMode};
+    use super::{SceneSinkMode, scene_sink_mode};
 
     #[test]
     fn scene_sinks_are_treated_as_world_sinks() {
