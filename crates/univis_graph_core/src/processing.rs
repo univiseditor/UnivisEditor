@@ -160,6 +160,14 @@ pub trait GraphNodeDefinition<Value, Port>: Send + Sync {
 
     fn outputs(&self) -> Vec<Port>;
 
+    fn output_requirement_token(
+        &self,
+        _output_index: usize,
+        _connected_inputs: &[bool],
+    ) -> Option<String> {
+        None
+    }
+
     fn process(&self, context: &mut ProcessContext<'_, Value>) -> ProcessResult;
 
     fn show_in_menu(&self) -> bool {

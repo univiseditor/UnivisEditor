@@ -512,6 +512,15 @@ impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
             .collect()
     }
 
+    fn output_requirement_token(
+        &self,
+        output_index: usize,
+        connected_inputs: &[bool],
+    ) -> Option<String> {
+        self.inner
+            .output_requirement_token(output_index, connected_inputs)
+    }
+
     fn process(&self, context: &mut CoreProcessContext<'_, NodeValue>) -> ProcessResult {
         self.inner.process(context)
     }
@@ -576,6 +585,15 @@ impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
             .into_iter()
             .map(|port| port.as_core())
             .collect()
+    }
+
+    fn output_requirement_token(
+        &self,
+        output_index: usize,
+        connected_inputs: &[bool],
+    ) -> Option<String> {
+        self.inner
+            .output_requirement_token(output_index, connected_inputs)
     }
 
     fn process(&self, context: &mut CoreProcessContext<'_, NodeValue>) -> ProcessResult {

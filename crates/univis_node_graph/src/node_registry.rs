@@ -132,6 +132,12 @@ impl NodeRegistry {
         self.core_registry.clear();
     }
 
+    pub fn core_registry(
+        &self,
+    ) -> &GraphNodeRegistry<NodeValue, CorePortDefinition<NodeGraphSchema>> {
+        &self.core_registry
+    }
+
     fn lookup_definitions(&self, ids: impl IntoIterator<Item = NodeId>) -> Vec<ArcNodeDefinition> {
         ids.into_iter()
             .filter_map(|id| self.definitions.get(&id).cloned())
