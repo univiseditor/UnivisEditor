@@ -184,12 +184,14 @@ fn parse_graph_save_metadata_reads_envelope_timestamps() {
     let meta = parse_graph_save_metadata(&payload)
         .expect("metadata parse should succeed")
         .expect("save payload should contain metadata");
-    assert!(meta
-        .created_at
-        .as_deref()
-        .is_some_and(|value| !value.is_empty()));
-    assert!(meta
-        .updated_at
-        .as_deref()
-        .is_some_and(|value| !value.is_empty()));
+    assert!(
+        meta.created_at
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+    );
+    assert!(
+        meta.updated_at
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+    );
 }

@@ -112,11 +112,11 @@ impl NodeDefinition for NumberNode {
         body.spawn((
             UNode {
                 width: UVal::Percent(1.0),
-                height: UVal::Px(34.0),
+                height: UVal::Px(30.0),
                 ..default()
             },
             ULayout {
-                justify_content: UJustifyContent::Center,
+                justify_content: UJustifyContent::End,
                 align_items: UAlignItems::Center,
                 ..default()
             },
@@ -124,8 +124,8 @@ impl NodeDefinition for NumberNode {
         .with_children(|parent| {
             parent.spawn((
                 UNode {
-                    width: UVal::Px(140.0),
-                    height: UVal::Px(30.0),
+                    width: UVal::Px(126.0),
+                    height: UVal::Px(26.0),
                     ..default()
                 },
                 UDragValue::new()
@@ -191,11 +191,11 @@ impl NodeDefinition for IntegerNode {
         body.spawn((
             UNode {
                 width: UVal::Percent(1.0),
-                height: UVal::Px(34.0),
+                height: UVal::Px(30.0),
                 ..default()
             },
             ULayout {
-                justify_content: UJustifyContent::Center,
+                justify_content: UJustifyContent::End,
                 align_items: UAlignItems::Center,
                 ..default()
             },
@@ -203,8 +203,8 @@ impl NodeDefinition for IntegerNode {
         .with_children(|parent| {
             parent.spawn((
                 UNode {
-                    width: UVal::Px(140.0),
-                    height: UVal::Px(30.0),
+                    width: UVal::Px(126.0),
+                    height: UVal::Px(26.0),
                     ..default()
                 },
                 UDragValue::new()
@@ -270,11 +270,11 @@ impl NodeDefinition for BooleanNode {
         body.spawn((
             UNode {
                 width: UVal::Percent(1.0),
-                height: UVal::Px(36.0),
+                height: UVal::Px(30.0),
                 ..default()
             },
             ULayout {
-                justify_content: UJustifyContent::Center,
+                justify_content: UJustifyContent::End,
                 align_items: UAlignItems::Center,
                 ..default()
             },
@@ -340,11 +340,11 @@ impl NodeDefinition for TextNode {
         body.spawn((
             UNode {
                 width: UVal::Percent(1.0),
-                height: UVal::Px(36.0),
+                height: UVal::Px(30.0),
                 ..default()
             },
             ULayout {
-                justify_content: UJustifyContent::Center,
+                justify_content: UJustifyContent::End,
                 align_items: UAlignItems::Center,
                 ..default()
             },
@@ -354,7 +354,7 @@ impl NodeDefinition for TextNode {
                 UTextField::new()
                     .with_text("")
                     .with_placeholder("type text")
-                    .with_size(180.0, 30.0),
+                    .with_size(166.0, 26.0),
                 TextNodeFieldWidget { node_entity },
             ));
         });

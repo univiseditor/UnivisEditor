@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-18
+
+- Added an `Assets` surface to `CanvasIsland` so saved prefabs and subgraphs can be browsed directly in the editor, with per-asset `Spawn`, `Insert`, and `Update from Selection` actions instead of relying only on latest-asset shortcuts.
+- Extended the prefab/subgraph capture workflow and command layer to support in-place updates of existing assets by id, preserving asset identity while refreshing the stored graph selection and adding smoke coverage for the update path.
+- Refreshed graph node presentation with richer headers and a more informative spawn menu, including `univis_ui` icon usage, category-aware fallback icons, item descriptions, and cleaner menu rows for node discovery.
+- Started phasing out popup-driven parameter editing in favor of Blender-style inline node controls by embedding editable input widgets directly inside nodes, aligning simple value controls with their ports, and introducing a collapsible in-node `Transform` section for denser scene-node settings.
+- Tightened the built-in input node bodies (`Number`, `Integer`, `Boolean`, and `Text`) so their value widgets sit closer to the output side and better match the new inline-editing direction.
+- Reworked right-click behavior in the graph so the first context menu now behaves more like Blender, opening with clipboard and selection actions (`Paste`, `Copy`, `Duplicate`, `Delete`, `Frame Selected`) instead of jumping straight into the node browser, while still preserving right-click disconnect on connected input ports.
+- Added an editor-side graph clipboard flow for selected nodes, including explicit `CopySelectedNodes` / `PasteNodes` commands, cursor-position paste placement, and `Ctrl+C` / `Ctrl+V` shortcuts, with node spawning moved behind an explicit secondary `Add Node...` step from the context menu.
+
 ## 2026-03-17
 
 - Replaced direct `GraphDocument` JSON writes with a versioned save-file envelope in `univis_editor_persistence`, introducing explicit DTOs for authored inputs, edges, scene values, and view state while keeping load-time migration support for older raw graph payloads.

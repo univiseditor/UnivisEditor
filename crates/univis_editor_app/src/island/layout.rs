@@ -79,6 +79,7 @@ pub(super) fn setup_canvas_island_ui_system(mut commands: Commands) {
                 for (label, surface) in [
                     ("File", CanvasIslandSurface::FileMenu),
                     ("Edit", CanvasIslandSurface::EditMenu),
+                    ("Assets", CanvasIslandSurface::Assets),
                     ("Search", CanvasIslandSurface::Search),
                     ("Settings", CanvasIslandSurface::Settings),
                 ] {
@@ -111,6 +112,7 @@ pub(super) fn setup_canvas_island_ui_system(mut commands: Commands) {
             });
 
             spawn_canvas_island_file_panel(root);
+            spawn_canvas_island_assets_panel(root);
 
             spawn_canvas_island_menu_panel(
                 root,
@@ -154,6 +156,45 @@ pub(super) fn setup_canvas_island_ui_system(mut commands: Commands) {
             spawn_canvas_island_search_panel(root);
             spawn_canvas_island_settings_panel(root);
         });
+}
+
+fn spawn_canvas_island_assets_panel(root: &mut ChildSpawnerCommands) {
+    root.spawn((
+        Node {
+            width: Val::Px(340.0),
+            display: Display::None,
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(10.0)),
+            row_gap: Val::Px(8.0),
+            border_radius: BorderRadius::all(Val::Px(22.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.05, 0.06, 0.08, 0.96)),
+        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+        CanvasIslandMenuPanel {
+            surface: CanvasIslandSurface::Assets,
+        },
+    ))
+    .with_children(|panel| {
+        panel.spawn((
+            Text::new("Assets"),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5)),
+        ));
+
+        panel.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                ..default()
+            },
+            CanvasIslandAssetsDynamicContent,
+        ));
+    });
 }
 
 fn spawn_canvas_island_file_panel(root: &mut ChildSpawnerCommands) {

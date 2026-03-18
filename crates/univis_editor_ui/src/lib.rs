@@ -1,5 +1,6 @@
 pub mod connection_diagnostics;
 pub mod editor;
+pub mod inline_editors;
 pub mod interaction;
 pub mod menu;
 pub mod node_popup;
@@ -10,9 +11,11 @@ pub mod wire;
 
 use bevy::prelude::*;
 use connection_diagnostics::*;
+use inline_editors::*;
 use interaction::*;
 use menu::*;
-use node_popup::NodePopupPlugin;
+use node_popup::NodePopupState;
+use node_spawn::sync_node_icon_font_glyphs_system;
 use univis_ui::prelude::{UnivisTextFieldPlugin, UnivisUiPlugin};
 use wire::*;
 
@@ -51,14 +54,15 @@ impl Plugin for NodeUiPlugin {
             .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
             .init_resource::<overlay::GraphOverlayState>()
+            .init_resource::<NodePopupState>()
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
-            .add_plugins(NodePopupPlugin)
             .add_systems(
                 Update,
                 (
                     sanitize_graph_editor_state,
                     sync_port_connection_caches_system,
+                    sync_node_icon_font_glyphs_system,
                 ),
             )
             .add_systems(Update, sync_box_selection_overlay)
@@ -110,7 +114,20 @@ impl Plugin for NodeUiPlugin {
                 )
                     .chain(),
             )
-            .add_systems(PostUpdate, sync_live_graph_document_state);
+            .add_systems(
+                PostUpdate,
+                (
+                    handle_inline_node_section_toggle_system,
+                    sync_inline_node_section_visuals_system,
+                    sync_inline_editor_visibility_system,
+                    sync_inline_numeric_inputs_system,
+                    sync_inline_toggle_inputs_system,
+                    sync_inline_text_inputs_system,
+                    sync_inline_widgets_from_authored_inputs_system,
+                    sync_live_graph_document_state,
+                )
+                    .chain(),
+            );
     }
 }
 

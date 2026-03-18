@@ -37,14 +37,14 @@ fn find_graph_node_ancestor(
     }
 }
 
-fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
+pub(crate) fn interaction_is_pointer_active(interaction: &UInteraction) -> bool {
     matches!(
         *interaction,
         UInteraction::Pressed | UInteraction::Hovered | UInteraction::Clicked
     )
 }
 
-fn pointer_target_node(
+pub(crate) fn pointer_target_node(
     nodes_interaction: &Query<(Entity, &UInteraction), With<GraphNode>>,
     headers_interaction: &Query<(Entity, &UInteraction), With<Header>>,
     ports_interaction: &Query<(&UInteraction, &GraphPort)>,
@@ -78,14 +78,14 @@ fn pointer_target_node(
         })
 }
 
-fn selection_additive_modifier(keys: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn selection_additive_modifier(keys: &ButtonInput<KeyCode>) -> bool {
     keys.pressed(KeyCode::ShiftLeft)
         || keys.pressed(KeyCode::ShiftRight)
         || keys.pressed(KeyCode::ControlLeft)
         || keys.pressed(KeyCode::ControlRight)
 }
 
-fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
+pub(crate) fn graph_editing_enabled(activation: Option<&GraphEditingUiActivation>) -> bool {
     activation
         .map(|activation| activation.enabled)
         .unwrap_or(true)

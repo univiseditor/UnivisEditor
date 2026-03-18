@@ -134,6 +134,90 @@ pub(super) fn handle_canvas_island_menu_actions_system(
     }
 }
 
+pub(super) fn handle_canvas_island_asset_buttons_system(
+    mut island: ResMut<CanvasIslandState>,
+    mut overlay: ResMut<GraphOverlayState>,
+    update_prefab_buttons: Query<
+        (&Interaction, &CanvasIslandUpdatePrefabAssetButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    prefab_buttons: Query<
+        (&Interaction, &CanvasIslandPrefabAssetButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    update_subgraph_buttons: Query<
+        (&Interaction, &CanvasIslandUpdateSubgraphAssetButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    subgraph_buttons: Query<
+        (&Interaction, &CanvasIslandSubgraphAssetButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut command_writer: MessageWriter<GraphCommandRequest>,
+    camera_query: Query<&Transform, With<GraphCamera>>,
+) {
+    let spawn_position = camera_query
+        .iter()
+        .next()
+        .map(|transform| transform.translation.truncate())
+        .unwrap_or(Vec2::ZERO);
+
+    let mut pressed = false;
+
+    for (interaction, button) in update_prefab_buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        command_writer.write(GraphCommandRequest::UpdatePrefabFromSelection {
+            prefab_id: button.prefab_id.clone(),
+        });
+        pressed = true;
+    }
+
+    for (interaction, button) in prefab_buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        command_writer.write(GraphCommandRequest::SpawnPrefabNode {
+            prefab_id: button.prefab_id.clone(),
+            position: spawn_position,
+        });
+        pressed = true;
+    }
+
+    for (interaction, button) in update_subgraph_buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        command_writer.write(GraphCommandRequest::UpdateSubgraphFromSelection {
+            subgraph_id: button.subgraph_id.clone(),
+        });
+        pressed = true;
+    }
+
+    for (interaction, button) in subgraph_buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        command_writer.write(GraphCommandRequest::InsertSubgraph {
+            subgraph_id: button.subgraph_id.clone(),
+            position: spawn_position,
+        });
+        pressed = true;
+    }
+
+    if pressed {
+        island.surface = CanvasIslandSurface::Compact;
+        if overlay.active_surface == GraphOverlaySurface::CanvasIslandMenu {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
+    }
+}
+
 pub(super) fn handle_canvas_island_recent_file_buttons_system(
     mut island: ResMut<CanvasIslandState>,
     mut overlay: ResMut<GraphOverlayState>,

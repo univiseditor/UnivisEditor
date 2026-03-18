@@ -12,6 +12,7 @@ pub(super) enum CanvasIslandSurface {
     Compact,
     FileMenu,
     EditMenu,
+    Assets,
     Search,
     Settings,
 }
@@ -72,6 +73,29 @@ pub(super) struct CanvasIslandRecoverAutosaveButton {
 
 #[derive(Component)]
 pub(super) struct CanvasIslandFileDynamicContent;
+
+#[derive(Component)]
+pub(super) struct CanvasIslandPrefabAssetButton {
+    pub prefab_id: String,
+}
+
+#[derive(Component)]
+pub(super) struct CanvasIslandUpdatePrefabAssetButton {
+    pub prefab_id: String,
+}
+
+#[derive(Component)]
+pub(super) struct CanvasIslandSubgraphAssetButton {
+    pub subgraph_id: String,
+}
+
+#[derive(Component)]
+pub(super) struct CanvasIslandUpdateSubgraphAssetButton {
+    pub subgraph_id: String,
+}
+
+#[derive(Component)]
+pub(super) struct CanvasIslandAssetsDynamicContent;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum CanvasIslandSettingsAction {

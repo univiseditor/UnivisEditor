@@ -1,4 +1,5 @@
 use super::*;
+use univis_ui::prelude::{Icon, Theme};
 
 pub(super) fn sync_canvas_island_ui_target_system(
     mut commands: Commands,
@@ -249,6 +250,385 @@ pub(super) fn rebuild_canvas_island_file_panel_system(
                                         TextColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
                                     ));
                                 });
+                        });
+                }
+            }
+        });
+    });
+}
+
+pub(super) fn rebuild_canvas_island_assets_panel_system(
+    mut commands: Commands,
+    island: Res<CanvasIslandState>,
+    live_document: Res<univis_node_graph::prelude::LiveGraphDocumentState>,
+    theme: Res<Theme>,
+    dynamic_content_entity: Query<Entity, With<CanvasIslandAssetsDynamicContent>>,
+    children_query: Query<&Children>,
+) {
+    if !island.is_changed() && !live_document.is_changed() {
+        return;
+    }
+
+    let Ok(content_entity) = dynamic_content_entity.single() else {
+        return;
+    };
+
+    if let Ok(existing_children) = children_query.get(content_entity) {
+        for child in existing_children.iter() {
+            commands.entity(child).try_despawn();
+        }
+    }
+
+    if island.surface != CanvasIslandSurface::Assets {
+        return;
+    }
+
+    let prefab_entries: Vec<_> = live_document
+        .document
+        .prefabs
+        .iter()
+        .rev()
+        .map(|prefab| {
+            let root_name = prefab
+                .root
+                .name
+                .as_deref()
+                .filter(|name| !name.is_empty())
+                .unwrap_or("<unnamed root>")
+                .to_string();
+            let entity_count = count_entity_value_nodes(&prefab.root);
+            (
+                prefab.id.clone(),
+                prefab.name.clone(),
+                format!("root: {}  •  {} entity node(s)", root_name, entity_count),
+            )
+        })
+        .collect();
+    let subgraph_entries: Vec<_> = live_document
+        .document
+        .subgraphs
+        .iter()
+        .rev()
+        .map(|subgraph| {
+            (
+                subgraph.id.clone(),
+                subgraph.name.clone(),
+                format!(
+                    "{} node(s)  •  {} wire(s)",
+                    subgraph.document.nodes.len(),
+                    subgraph.document.edges.len()
+                ),
+            )
+        })
+        .collect();
+    let icon_font = theme.icon.font.clone();
+
+    commands.queue(move |world: &mut World| {
+        let Ok(mut content_entity_mut) = world.get_entity_mut(content_entity) else {
+            return;
+        };
+
+        content_entity_mut.with_children(|content| {
+            content.spawn((
+                Text::new("Prefabs"),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+            ));
+
+            if prefab_entries.is_empty() {
+                content.spawn((
+                    Text::new("No prefabs captured yet. Use Edit > Capture Prefab."),
+                    TextFont {
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                ));
+            } else {
+                for (prefab_id, name, summary) in &prefab_entries {
+                    content
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                min_height: Val::Px(46.0),
+                                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                                justify_content: JustifyContent::SpaceBetween,
+                                align_items: AlignItems::Center,
+                                border_radius: BorderRadius::all(Val::Px(14.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                        ))
+                        .with_children(|card| {
+                            card.spawn((
+                                Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(2.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                            ))
+                            .with_children(|column| {
+                                column.spawn((
+                                    Text::new(name.clone()),
+                                    TextFont {
+                                        font_size: 12.5,
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                ));
+                                column.spawn((
+                                    Text::new(summary.clone()),
+                                    TextFont {
+                                        font_size: 10.5,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
+                                ));
+                            });
+
+                            card.spawn((
+                                Node {
+                                    align_items: AlignItems::Center,
+                                    column_gap: Val::Px(6.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                            ))
+                            .with_children(|actions| {
+                                actions
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            min_width: Val::Px(78.0),
+                                            height: Val::Px(28.0),
+                                            padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(5.0),
+                                            border_radius: BorderRadius::all(Val::Px(999.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgba(1.0, 0.83, 0.42, 0.16)),
+                                        CanvasIslandInteractive,
+                                        CanvasIslandUpdatePrefabAssetButton {
+                                            prefab_id: prefab_id.clone(),
+                                        },
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            Text::new(Icon::REFRESH_CW),
+                                            TextFont {
+                                                font: icon_font.clone(),
+                                                font_size: 12.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgba(1.0, 0.9, 0.62, 0.92)),
+                                        ));
+                                        button.spawn((
+                                            Text::new("Update"),
+                                            TextFont {
+                                                font_size: 10.5,
+                                                ..default()
+                                            },
+                                            TextColor(Color::WHITE),
+                                        ));
+                                    });
+
+                                actions
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            min_width: Val::Px(72.0),
+                                            height: Val::Px(28.0),
+                                            padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(5.0),
+                                            border_radius: BorderRadius::all(Val::Px(999.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgba(0.36, 0.58, 0.96, 0.16)),
+                                        CanvasIslandInteractive,
+                                        CanvasIslandPrefabAssetButton {
+                                            prefab_id: prefab_id.clone(),
+                                        },
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            Text::new(Icon::BOX),
+                                            TextFont {
+                                                font: icon_font.clone(),
+                                                font_size: 12.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgba(0.84, 0.91, 1.0, 0.92)),
+                                        ));
+                                        button.spawn((
+                                            Text::new("Spawn"),
+                                            TextFont {
+                                                font_size: 10.5,
+                                                ..default()
+                                            },
+                                            TextColor(Color::WHITE),
+                                        ));
+                                    });
+                            });
+                        });
+                }
+            }
+
+            content.spawn((
+                Text::new("Subgraphs"),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+            ));
+
+            if subgraph_entries.is_empty() {
+                content.spawn((
+                    Text::new("No subgraphs captured yet. Use Edit > Capture Subgraph."),
+                    TextFont {
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                ));
+            } else {
+                for (subgraph_id, name, summary) in &subgraph_entries {
+                    content
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                min_height: Val::Px(46.0),
+                                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                                justify_content: JustifyContent::SpaceBetween,
+                                align_items: AlignItems::Center,
+                                border_radius: BorderRadius::all(Val::Px(14.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                        ))
+                        .with_children(|card| {
+                            card.spawn((
+                                Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(2.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                            ))
+                            .with_children(|column| {
+                                column.spawn((
+                                    Text::new(name.clone()),
+                                    TextFont {
+                                        font_size: 12.5,
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                ));
+                                column.spawn((
+                                    Text::new(summary.clone()),
+                                    TextFont {
+                                        font_size: 10.5,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.45)),
+                                ));
+                            });
+
+                            card.spawn((
+                                Node {
+                                    align_items: AlignItems::Center,
+                                    column_gap: Val::Px(6.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                            ))
+                            .with_children(|actions| {
+                                actions
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            min_width: Val::Px(78.0),
+                                            height: Val::Px(28.0),
+                                            padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(5.0),
+                                            border_radius: BorderRadius::all(Val::Px(999.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgba(1.0, 0.83, 0.42, 0.16)),
+                                        CanvasIslandInteractive,
+                                        CanvasIslandUpdateSubgraphAssetButton {
+                                            subgraph_id: subgraph_id.clone(),
+                                        },
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            Text::new(Icon::REFRESH_CW),
+                                            TextFont {
+                                                font: icon_font.clone(),
+                                                font_size: 12.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgba(1.0, 0.9, 0.62, 0.92)),
+                                        ));
+                                        button.spawn((
+                                            Text::new("Update"),
+                                            TextFont {
+                                                font_size: 10.5,
+                                                ..default()
+                                            },
+                                            TextColor(Color::WHITE),
+                                        ));
+                                    });
+
+                                actions
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            min_width: Val::Px(68.0),
+                                            height: Val::Px(28.0),
+                                            padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(5.0),
+                                            border_radius: BorderRadius::all(Val::Px(999.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgba(0.36, 0.58, 0.96, 0.16)),
+                                        CanvasIslandInteractive,
+                                        CanvasIslandSubgraphAssetButton {
+                                            subgraph_id: subgraph_id.clone(),
+                                        },
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            Text::new(Icon::LAYOUT_GRID),
+                                            TextFont {
+                                                font: icon_font.clone(),
+                                                font_size: 12.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgba(0.84, 0.91, 1.0, 0.92)),
+                                        ));
+                                        button.spawn((
+                                            Text::new("Insert"),
+                                            TextFont {
+                                                font_size: 10.5,
+                                                ..default()
+                                            },
+                                            TextColor(Color::WHITE),
+                                        ));
+                                    });
+                            });
                         });
                 }
             }
@@ -590,4 +970,12 @@ pub(super) fn style_canvas_island_buttons_system(
             Interaction::None => Color::srgba(1.0, 1.0, 1.0, 0.08),
         };
     }
+}
+
+fn count_entity_value_nodes(entity: &univis_scene::EntityValue) -> usize {
+    1 + entity
+        .children
+        .iter()
+        .map(count_entity_value_nodes)
+        .sum::<usize>()
 }

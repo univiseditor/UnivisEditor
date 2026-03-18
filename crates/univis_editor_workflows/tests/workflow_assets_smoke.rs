@@ -420,3 +420,87 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
         Some(&NodeValue::string(prefab_id))
     );
 }
+
+#[test]
+fn smoke_update_existing_prefab_and_subgraph_from_selection() {
+    let mut app = build_test_app();
+
+    let entity_node = spawn_node(&mut app, "tests/workflow_entity", Vec2::new(40.0, 40.0));
+    set_output_entity(&mut app, entity_node, "Hero");
+    select_nodes(&mut app, &[entity_node]);
+    app.world_mut()
+        .write_message(GraphCommandRequest::CapturePrefabFromSelection)
+        .expect("prefab capture request should enqueue");
+    app.update();
+
+    let prefab_id = {
+        let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
+        live_document
+            .prefabs
+            .last()
+            .expect("prefab should exist")
+            .id
+            .clone()
+    };
+
+    set_output_entity(&mut app, entity_node, "Villain");
+    select_nodes(&mut app, &[entity_node]);
+    app.world_mut()
+        .write_message(GraphCommandRequest::UpdatePrefabFromSelection {
+            prefab_id: prefab_id.clone(),
+        })
+        .expect("prefab update request should enqueue");
+    app.update();
+
+    {
+        let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
+        let prefab = live_document
+            .prefab(&prefab_id)
+            .expect("prefab should still exist");
+        assert_eq!(prefab.root.name.as_deref(), Some("Villain"));
+    }
+
+    let value_node = spawn_node(&mut app, "tests/workflow_value", Vec2::new(120.0, 180.0));
+    let sink_node = spawn_node(&mut app, "tests/workflow_sink", Vec2::new(280.0, 180.0));
+    connect_nodes(&mut app, value_node, sink_node);
+    select_nodes(&mut app, &[value_node, sink_node]);
+    app.world_mut()
+        .write_message(GraphCommandRequest::CaptureSubgraphFromSelection)
+        .expect("subgraph capture request should enqueue");
+    app.update();
+
+    let subgraph_id = {
+        let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
+        live_document
+            .subgraphs
+            .last()
+            .expect("subgraph should exist")
+            .id
+            .clone()
+    };
+
+    select_nodes(&mut app, &[value_node]);
+    app.world_mut()
+        .write_message(GraphCommandRequest::UpdateSubgraphFromSelection {
+            subgraph_id: subgraph_id.clone(),
+        })
+        .expect("subgraph update request should enqueue");
+    app.update();
+
+    {
+        let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
+        let subgraph = live_document
+            .subgraph(&subgraph_id)
+            .expect("subgraph should still exist");
+        assert_eq!(subgraph.document.nodes.len(), 1);
+        assert_eq!(subgraph.document.edges.len(), 0);
+    }
+
+    let status = app.world().resource::<GraphPersistenceStatus>();
+    let text = status
+        .active
+        .as_ref()
+        .map(|status| status.text.clone())
+        .unwrap_or_default();
+    assert!(text.contains("Updated subgraph"));
+}

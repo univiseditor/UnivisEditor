@@ -10,8 +10,8 @@ use univis_editor_persistence::graph_persistence::{
     GraphHistoryState, GraphPersistencePlugin, GraphPersistenceRuntimeState,
     GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
 };
-use univis_editor_ui::menu::execute_spawn_node_commands_system;
 use univis_editor_ui::menu::ContextMenuState;
+use univis_editor_ui::menu::execute_spawn_node_commands_system;
 use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::prelude::sync_live_graph_document_state;
 use univis_node_graph::commands::GraphMutationTracker;
@@ -43,8 +43,10 @@ impl NodeDefinition for WorkflowValueNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![PortDefinition::new("Value", ValueType::String)
-            .with_default(NodeValue::string("default"))]
+        vec![
+            PortDefinition::new("Value", ValueType::String)
+                .with_default(NodeValue::string("default")),
+        ]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
@@ -384,9 +386,11 @@ fn smoke_load_marks_migrated_legacy_graph_dirty_until_resave() {
     let status = app.world().resource::<GraphPersistenceStatus>();
     let active = status.active.as_ref().expect("status message should exist");
     assert_eq!(active.severity, GraphPersistenceStatusSeverity::Warning);
-    assert!(active
-        .text
-        .contains("Save the graph to rewrite it in the current format."));
+    assert!(
+        active
+            .text
+            .contains("Save the graph to rewrite it in the current format.")
+    );
 
     let _ = fs::remove_file(save_path);
 }

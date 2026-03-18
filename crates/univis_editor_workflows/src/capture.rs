@@ -22,12 +22,17 @@ pub(super) fn capture_prefab_from_selection_system(
     settings: Res<GraphPersistenceSettings>,
     time: Res<Time>,
 ) {
-    if !command_requests
-        .read()
-        .any(|command| matches!(command, GraphCommandRequest::CapturePrefabFromSelection))
-    {
+    let capture_target = command_requests.read().find_map(|command| match command {
+        GraphCommandRequest::CapturePrefabFromSelection => Some(None),
+        GraphCommandRequest::UpdatePrefabFromSelection { prefab_id } => {
+            Some(Some(prefab_id.clone()))
+        }
+        _ => None,
+    });
+
+    let Some(capture_target) = capture_target else {
         return;
-    }
+    };
 
     let Some((name_hint, root)) =
         resolve_selected_entity_value(live_document.selected_entities(), &q_nodes)
@@ -42,14 +47,35 @@ pub(super) fn capture_prefab_from_selection_system(
         return;
     };
 
-    let id = next_asset_id("prefab", &name_hint, |candidate| {
-        live_document
-            .document
-            .prefabs
-            .iter()
-            .any(|prefab| prefab.id == candidate)
-    });
-    let name = humanize_asset_name(&name_hint, "Prefab");
+    let (id, name, updated_existing) = if let Some(prefab_id) = capture_target {
+        let Some(existing) = live_document.document.prefab(&prefab_id) else {
+            set_asset_status(
+                &mut status,
+                GraphPersistenceStatusSeverity::Warning,
+                format!(
+                    "Prefab '{}' does not exist in the current graph.",
+                    prefab_id
+                ),
+                &settings,
+                &time,
+            );
+            return;
+        };
+        (existing.id.clone(), existing.name.clone(), true)
+    } else {
+        (
+            next_asset_id("prefab", &name_hint, |candidate| {
+                live_document
+                    .document
+                    .prefabs
+                    .iter()
+                    .any(|prefab| prefab.id == candidate)
+            }),
+            humanize_asset_name(&name_hint, "Prefab"),
+            false,
+        )
+    };
+
     live_document.document.upsert_prefab(GraphDocumentPrefab {
         id: id.clone(),
         name: name.clone(),
@@ -60,7 +86,14 @@ pub(super) fn capture_prefab_from_selection_system(
     set_asset_status(
         &mut status,
         GraphPersistenceStatusSeverity::Info,
-        format!("Captured prefab '{}' ({})", name, id),
+        if updated_existing {
+            format!(
+                "Updated prefab '{}' ({}) from the current selection.",
+                name, id
+            )
+        } else {
+            format!("Captured prefab '{}' ({})", name, id)
+        },
         &settings,
         &time,
     );
@@ -74,12 +107,17 @@ pub(super) fn capture_subgraph_from_selection_system(
     settings: Res<GraphPersistenceSettings>,
     time: Res<Time>,
 ) {
-    if !command_requests
-        .read()
-        .any(|command| matches!(command, GraphCommandRequest::CaptureSubgraphFromSelection))
-    {
+    let capture_target = command_requests.read().find_map(|command| match command {
+        GraphCommandRequest::CaptureSubgraphFromSelection => Some(None),
+        GraphCommandRequest::UpdateSubgraphFromSelection { subgraph_id } => {
+            Some(Some(subgraph_id.clone()))
+        }
+        _ => None,
+    });
+
+    let Some(capture_target) = capture_target else {
         return;
-    }
+    };
 
     let Some(boundary) = live_document.document.selected_subgraph_boundary_summary() else {
         set_asset_status(
@@ -93,21 +131,41 @@ pub(super) fn capture_subgraph_from_selection_system(
     };
     let selected_count = boundary.selected_node_count();
 
-    let name_hint = live_document
-        .document
-        .selected_node_ids()
-        .first()
-        .and_then(|node_id| live_document.document.node(*node_id))
-        .map(|node| node.definition_id.to_string())
-        .unwrap_or_else(|| "subgraph".to_string());
-    let id = next_asset_id("subgraph", &name_hint, |candidate| {
-        live_document
+    let (id, name, updated_existing) = if let Some(subgraph_id) = capture_target {
+        let Some(existing) = live_document.document.subgraph(&subgraph_id) else {
+            set_asset_status(
+                &mut status,
+                GraphPersistenceStatusSeverity::Warning,
+                format!(
+                    "Subgraph '{}' does not exist in the current graph.",
+                    subgraph_id
+                ),
+                &settings,
+                &time,
+            );
+            return;
+        };
+        (existing.id.clone(), existing.name.clone(), true)
+    } else {
+        let name_hint = live_document
             .document
-            .subgraphs
-            .iter()
-            .any(|subgraph| subgraph.id == candidate)
-    });
-    let name = humanize_asset_name(&name_hint, "Subgraph");
+            .selected_node_ids()
+            .first()
+            .and_then(|node_id| live_document.document.node(*node_id))
+            .map(|node| node.definition_id.to_string())
+            .unwrap_or_else(|| "subgraph".to_string());
+        (
+            next_asset_id("subgraph", &name_hint, |candidate| {
+                live_document
+                    .document
+                    .subgraphs
+                    .iter()
+                    .any(|subgraph| subgraph.id == candidate)
+            }),
+            humanize_asset_name(&name_hint, "Subgraph"),
+            false,
+        )
+    };
 
     if !live_document
         .document
@@ -127,15 +185,27 @@ pub(super) fn capture_subgraph_from_selection_system(
     set_asset_status(
         &mut status,
         GraphPersistenceStatusSeverity::Info,
-        format!(
-            "Captured subgraph '{}' ({}) from {} node(s) with {} internal wire(s); omitted {} incoming and {} outgoing boundary wire(s).",
-            name,
-            id,
-            selected_count,
-            boundary.internal_edge_count(),
-            boundary.incoming_edge_count(),
-            boundary.outgoing_edge_count()
-        ),
+        if updated_existing {
+            format!(
+                "Updated subgraph '{}' ({}) from {} node(s) with {} internal wire(s); omitted {} incoming and {} outgoing boundary wire(s).",
+                name,
+                id,
+                selected_count,
+                boundary.internal_edge_count(),
+                boundary.incoming_edge_count(),
+                boundary.outgoing_edge_count()
+            )
+        } else {
+            format!(
+                "Captured subgraph '{}' ({}) from {} node(s) with {} internal wire(s); omitted {} incoming and {} outgoing boundary wire(s).",
+                name,
+                id,
+                selected_count,
+                boundary.internal_edge_count(),
+                boundary.incoming_edge_count(),
+                boundary.outgoing_edge_count()
+            )
+        },
         &settings,
         &time,
     );

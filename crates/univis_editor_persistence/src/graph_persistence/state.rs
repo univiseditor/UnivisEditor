@@ -214,6 +214,7 @@ impl MutationUiState<'_> {
         self.wire_state.clear();
         self.popup.open_for = None;
         self.menu_state.is_open = false;
+        self.menu_state.mode = univis_editor_ui::menu::ContextMenuMode::Actions;
         self.menu_state.search_query.clear();
         self.overlay.active_surface = GraphOverlaySurface::None;
     }

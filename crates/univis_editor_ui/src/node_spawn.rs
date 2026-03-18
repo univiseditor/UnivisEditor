@@ -1,4 +1,5 @@
 //! Helpers for spawning graph nodes from registered definitions.
+use crate::inline_editors::{default_inline_section_state, spawn_inline_input_panel};
 use crate::prelude::*;
 use bevy::prelude::*;
 use std::sync::Arc;
@@ -6,6 +7,9 @@ use univis_ui::prelude::*;
 
 #[derive(Component)]
 pub struct Header;
+
+#[derive(Component)]
+pub struct NodeIconFontGlyph;
 
 #[derive(Component)]
 pub struct NodeBody(pub Entity);
@@ -64,18 +68,20 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
     position: Vec2,
 ) -> Entity {
     let title = definition.display_name().to_string();
+    let category = definition.category().as_str().to_string();
     let color = definition.color();
+    let title_color = definition.title_color();
     let inputs = definition.inputs();
     let outputs = definition.outputs();
     let input_count = inputs.len();
     let output_count = outputs.len();
     let definition_id = definition.id();
     let has_custom_body = definition.has_custom_body();
-    let has_popup_inputs = inputs.iter().any(|port| port.editable_in_popup);
     let authored_inputs = authored_inputs_from_ports(&inputs);
+    let (header_icon, header_icon_uses_icon_font) = node_icon_for_definition(definition);
 
     let definition_clone = Arc::clone(definition);
-    let node_width = 270.0;
+    let node_width = 300.0;
     let mut graph_node = GraphNode::new(definition_id, input_count, output_count);
     graph_node.values.inputs = authored_inputs.clone();
 
@@ -88,7 +94,7 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
             Transform::from_xyz(position.x, position.y, 1.0),
             graph_node,
             AuthoredNodeInputs {
-                values: authored_inputs,
+                values: authored_inputs.clone(),
             },
             UInteraction::default(),
             UBorder {
@@ -104,6 +110,10 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
             },
         ))
         .id();
+
+    if let Some(section_state) = default_inline_section_state(&inputs) {
+        commands.entity(root_entity).insert(section_state);
+    }
 
     commands.entity(root_entity).with_children(|parent| {
         parent
@@ -135,26 +145,28 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                         Header,
                         UInteraction::default(),
                         ULayout {
+                            align_items: UAlignItems::Center,
                             justify_content: UJustifyContent::SpaceBetween,
                             ..default()
                         },
                     ))
                     .with_children(|header| {
-                        header.spawn(UTextLabel {
-                            text: title,
-                            font_size: 20.0,
-                            color: Color::WHITE,
-                            ..default()
-                        });
-
-                        if has_popup_inputs {
-                            header
-                                .spawn((
+                        header
+                            .spawn((
+                                UNode::default(),
+                                ULayout {
+                                    align_items: UAlignItems::Center,
+                                    gap: 8.0,
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|left| {
+                                left.spawn((
                                     UNode {
-                                        width: UVal::Px(22.0),
-                                        height: UVal::Px(22.0),
-                                        background_color: Color::srgb(0.12, 0.12, 0.16),
-                                        border_radius: UCornerRadius::all(4.0),
+                                        width: UVal::Px(28.0),
+                                        height: UVal::Px(28.0),
+                                        background_color: Color::srgba(0.08, 0.09, 0.12, 0.22),
+                                        border_radius: UCornerRadius::all(14.0),
                                         ..default()
                                     },
                                     ULayout {
@@ -162,20 +174,43 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                                         align_items: UAlignItems::Center,
                                         ..default()
                                     },
-                                    UInteraction::default(),
-                                    NodeSettingsButton {
-                                        node_entity: root_entity,
+                                ))
+                                .with_children(|badge| {
+                                    let mut entity = badge.spawn(UTextLabel {
+                                        text: header_icon.clone(),
+                                        font_size: 14.0,
+                                        color: title_color,
+                                        ..default()
+                                    });
+                                    if header_icon_uses_icon_font {
+                                        entity.insert(NodeIconFontGlyph);
+                                    }
+                                });
+
+                                left.spawn((
+                                    UNode::default(),
+                                    ULayout {
+                                        flex_direction: UFlexDirection::Column,
+                                        justify_content: UJustifyContent::Center,
+                                        ..default()
                                     },
                                 ))
-                                .with_children(|button| {
-                                    button.spawn(UTextLabel {
-                                        text: "G".to_string(),
-                                        font_size: 11.0,
-                                        color: Color::WHITE,
+                                .with_children(|text| {
+                                    text.spawn(UTextLabel {
+                                        text: title.clone(),
+                                        font_size: 17.0,
+                                        color: title_color,
+                                        ..default()
+                                    });
+
+                                    text.spawn(UTextLabel {
+                                        text: category.clone(),
+                                        font_size: 10.5,
+                                        color: Color::srgba(1.0, 1.0, 1.0, 0.62),
                                         ..default()
                                     });
                                 });
-                        }
+                            });
                     });
 
                 // Body
@@ -183,31 +218,18 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                     .spawn((
                         UNode {
                             width: UVal::Percent(1.0),
-                            padding: USides::all(10.0),
+                            padding: USides::column(10.0),
                             ..default()
                         },
                         ULayout {
                             flex_direction: UFlexDirection::Row,
                             justify_content: UJustifyContent::SpaceBetween,
+                            align_items: UAlignItems::Start,
+                            gap: 12.0,
                             ..default()
                         },
                     ))
                     .with_children(|body| {
-                        // Inputs
-                        body.spawn((
-                            ULayout {
-                                flex_direction: UFlexDirection::Column,
-                                ..default()
-                            },
-                            UNode::default(),
-                        ))
-                        .with_children(|col| {
-                            for (i, port_def) in inputs.iter().enumerate() {
-                                spawn_port_ui_new(col, root_entity, PortType::Input, i, port_def);
-                            }
-                        });
-
-                        // Center Content
                         body.spawn((
                             UNode {
                                 width: UVal::Flex(1.0),
@@ -215,17 +237,25 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                                 ..default()
                             },
                             ULayout {
-                                justify_content: UJustifyContent::Center,
-                                align_items: UAlignItems::Center,
                                 flex_direction: UFlexDirection::Column,
+                                gap: 6.0,
                                 ..default()
                             },
                         ))
-                        .with_children(|center| {
+                        .with_children(|main| {
                             if has_custom_body {
-                                definition_clone.build_body(center, root_entity);
-                            } else {
-                                center.spawn((
+                                definition_clone.build_body(main, root_entity);
+                            }
+
+                            let spawned_inputs = spawn_inline_input_panel(
+                                main,
+                                root_entity,
+                                &inputs,
+                                &authored_inputs,
+                            );
+
+                            if !has_custom_body && !spawned_inputs {
+                                main.spawn((
                                     NodeBody(root_entity),
                                     UNode::default(),
                                     UInteraction::default(),
@@ -235,11 +265,15 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
 
                         // Outputs
                         body.spawn((
-                            ULayout {
-                                flex_direction: UFlexDirection::Column,
+                            UNode {
+                                width: UVal::Content,
                                 ..default()
                             },
-                            UNode::default(),
+                            ULayout {
+                                flex_direction: UFlexDirection::Column,
+                                gap: 4.0,
+                                ..default()
+                            },
                         ))
                         .with_children(|col| {
                             for (i, port_def) in outputs.iter().enumerate() {
@@ -251,6 +285,37 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
     });
 
     root_entity
+}
+
+pub(crate) fn fallback_node_category_icon(category: &str) -> &'static str {
+    match category {
+        NodeCategory::INPUT => Icon::TYPE,
+        NodeCategory::MATH => Icon::CIRCLE_PLUS,
+        NodeCategory::LOGIC => Icon::GIT_BRANCH,
+        NodeCategory::SCENE => Icon::BOX,
+        NodeCategory::ADVANCED => Icon::CPU,
+        _ => Icon::CODESANDBOX,
+    }
+}
+
+pub(crate) fn node_icon_for_definition(definition: &ArcNodeDefinition) -> (String, bool) {
+    if let Some(icon) = definition.icon() {
+        (icon.to_string(), false)
+    } else {
+        (
+            fallback_node_category_icon(definition.category().as_str()).to_string(),
+            true,
+        )
+    }
+}
+
+pub fn sync_node_icon_font_glyphs_system(
+    theme: Res<Theme>,
+    mut labels: Query<&mut UTextLabel, Added<NodeIconFontGlyph>>,
+) {
+    for mut label in labels.iter_mut() {
+        label.font = theme.icon.font.clone();
+    }
 }
 
 pub fn spawn_placeholder_node_entity<'w, 's>(
@@ -701,7 +766,7 @@ fn spawn_port_ui_new(
                 PortLabel { port_entity },
                 UTextLabel {
                     text: port_name,
-                    font_size: 15.0,
+                    font_size: 12.0,
                     color: if port_def.requirement.is_some() {
                         port_color
                     } else {
