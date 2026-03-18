@@ -9,6 +9,8 @@
 - Tightened the built-in input node bodies (`Number`, `Integer`, `Boolean`, and `Text`) so their value widgets sit closer to the output side and better match the new inline-editing direction.
 - Reworked right-click behavior in the graph so the first context menu now behaves more like Blender, opening with clipboard and selection actions (`Paste`, `Copy`, `Duplicate`, `Delete`, `Frame Selected`) instead of jumping straight into the node browser, while still preserving right-click disconnect on connected input ports.
 - Added an editor-side graph clipboard flow for selected nodes, including explicit `CopySelectedNodes` / `PasteNodes` commands, cursor-position paste placement, and `Ctrl+C` / `Ctrl+V` shortcuts, with node spawning moved behind an explicit secondary `Add Node...` step from the context menu.
+- Continued polishing the Blender-style context menu by turning `Add Node...` into a category-first browsing flow, then revealing category-specific node flyouts on hover so node discovery stays structured instead of dumping the full registry at once.
+- Refined the new graph menu presentation with stronger per-category and per-node color accents, clearer hover and active states, and dedicated scroll support for the category and node flyouts in addition to the main context menu.
 
 ## 2026-03-17
 

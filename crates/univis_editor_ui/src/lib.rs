@@ -98,8 +98,13 @@ impl Plugin for NodeUiPlugin {
                 (
                     open_context_menu_system,
                     sync_context_menu_overlay_system,
+                    sync_context_menu_hover_state_system,
                     draw_context_menu_system,
+                    sync_context_menu_button_visuals_system,
+                    handle_context_menu_scroll_system,
+                    sync_context_menu_scrollbar_system,
                     interact_context_menu_system,
+                    close_context_menu_on_outside_click_system,
                     execute_spawn_node_commands_system,
                 )
                     .chain(),

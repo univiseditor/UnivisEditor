@@ -68,6 +68,7 @@ pub fn frame_selected_nodes_system(
 pub fn camera_controller(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    overlay: Res<GraphOverlayState>,
     mut scroll_evr: MessageReader<MouseWheel>,
     windows: Query<&Window>,
     mut query: Query<
@@ -75,6 +76,11 @@ pub fn camera_controller(
         With<GraphCamera>,
     >,
 ) {
+    if overlay.active_surface != GraphOverlaySurface::None {
+        scroll_evr.clear();
+        return;
+    }
+
     let zoom_speed = 0.1;
     let camera_speed = 400.0;
 
