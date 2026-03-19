@@ -7,7 +7,7 @@ pub use univis_graph_core::prelude::{
 };
 
 use crate::{
-    document::{GraphDocument, LiveGraphDocumentState},
+    document::{GraphDocument, LiveGraphDocumentState, graph_document_signature},
     node_registry::NodeRegistry,
 };
 
@@ -23,7 +23,7 @@ impl LiveGraphValidationState {
         document: &GraphDocument,
         report: GraphValidationReport,
     ) {
-        self.document_signature = graph_document_validation_signature(document).ok();
+        self.document_signature = graph_document_signature(document).ok();
         self.report = report;
     }
 }
@@ -37,7 +37,7 @@ pub fn refresh_live_graph_validation_state_system(
         return;
     }
 
-    let current_signature = graph_document_validation_signature(&live_document.document).ok();
+    let current_signature = graph_document_signature(&live_document.document).ok();
     if !registry.is_changed()
         && current_signature.is_some()
         && current_signature == validation_state.document_signature
@@ -48,12 +48,6 @@ pub fn refresh_live_graph_validation_state_system(
     validation_state.report = validate_graph_document_report(&live_document.document, &registry);
     validation_state.document_signature = current_signature;
 }
-
-pub fn graph_document_validation_signature(document: &GraphDocument) -> Result<String, String> {
-    serde_json::to_string(document)
-        .map_err(|err| format!("validation signature serialization failed: {}", err))
-}
-
 pub fn validate_graph_document_report(
     document: &GraphDocument,
     registry: &NodeRegistry,

@@ -20,7 +20,7 @@ fn persistence_runtime_state_starts_clean() {
 
     assert!(!runtime.dirty);
     assert!(!runtime.initialized);
-    assert!(runtime.last_saved_signature.is_none());
+    assert!(runtime.last_saved_document_signature.is_none());
     assert_eq!(runtime.autosave_elapsed_secs, 0.0);
     assert!(runtime.open_confirm_until_secs.is_none());
     assert!(!runtime.needs_rebaseline);

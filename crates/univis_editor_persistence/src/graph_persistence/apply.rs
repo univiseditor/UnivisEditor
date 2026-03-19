@@ -55,8 +55,7 @@ pub(super) fn handle_apply_graph_document_requests_system(
         request.document,
         PendingGraphApplyOrigin::Mutation,
         request.source_label.clone(),
-        validation_issue_count,
-        Some(validation_report),
+        validation_report,
     );
 
     if request.track_for_undo {
@@ -224,10 +223,11 @@ pub(super) fn finalize_pending_graph_load_system(
         .source_label
         .clone()
         .unwrap_or_else(|| settings.file_path.clone());
+    let validation_issue_count = pending.validation_issue_count();
     let requires_warning = pending.requires_resave_after_migration
         || pending.placeholder_count > 0
         || skipped_link_count > 0
-        || pending.validation_issue_count > 0;
+        || validation_issue_count > 0;
 
     if requires_warning {
         let message = if pending.requires_resave_after_migration {
@@ -236,9 +236,7 @@ pub(super) fn finalize_pending_graph_load_system(
                 .as_deref()
                 .unwrap_or("Loaded a legacy graph payload");
 
-            if pending.placeholder_count > 0
-                || skipped_link_count > 0
-                || pending.validation_issue_count > 0
+            if pending.placeholder_count > 0 || skipped_link_count > 0 || validation_issue_count > 0
             {
                 format!(
                     "{}. Save the graph to rewrite it in the current format. Loaded {} with {} placeholder node(s), {} skipped link(s), and {} validation issue(s).",
@@ -246,7 +244,7 @@ pub(super) fn finalize_pending_graph_load_system(
                     source_label,
                     pending.placeholder_count,
                     skipped_link_count,
-                    pending.validation_issue_count
+                    validation_issue_count
                 )
             } else {
                 format!(
@@ -260,7 +258,7 @@ pub(super) fn finalize_pending_graph_load_system(
                 pending_completion_prefix(pending.origin, &source_label),
                 pending.placeholder_count,
                 skipped_link_count,
-                pending.validation_issue_count
+                validation_issue_count
             )
         };
 
@@ -311,8 +309,7 @@ pub(super) fn stage_graph_document_apply(
     document: GraphDocument,
     origin: PendingGraphApplyOrigin,
     source_label: String,
-    validation_issue_count: usize,
-    validation_report: Option<GraphValidationReport>,
+    validation_report: GraphValidationReport,
 ) {
     pending.reset();
 
@@ -381,6 +378,5 @@ pub(super) fn stage_graph_document_apply(
     pending.source_label = Some(source_label);
     pending.origin = origin;
     pending.is_pending = true;
-    pending.validation_issue_count = validation_issue_count;
     pending.validation_report = validation_report;
 }

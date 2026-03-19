@@ -88,7 +88,6 @@ pub(super) fn handle_history_requests_system(
 
     let current_snapshot = GraphHistorySnapshot {
         document: live_document.document.clone(),
-        validation_issue_count: live_validation.report.issue_count(),
         validation_report: live_validation.report.clone(),
     };
     let target_snapshot = match origin {
@@ -126,7 +125,6 @@ pub(super) fn handle_history_requests_system(
     };
     let GraphHistorySnapshot {
         document: target_document,
-        validation_issue_count,
         validation_report,
     } = target_snapshot;
     live_validation.set_report_for_document(&target_document, validation_report.clone());
@@ -147,17 +145,15 @@ pub(super) fn handle_history_requests_system(
             PendingGraphApplyOrigin::Redo => "redo snapshot".to_string(),
             PendingGraphApplyOrigin::Load => settings.file_path.clone(),
         },
-        validation_issue_count,
-        Some(validation_report.clone()),
+        validation_report.clone(),
     );
 
     history.awaiting_rebaseline = true;
     history.last_document = Some(GraphHistorySnapshot {
         document: target_document.clone(),
-        validation_issue_count,
         validation_report,
     });
-    history.last_signature = crate::format::graph_document_signature(&target_document).ok();
+    history.last_document_signature = graph_document_signature(&target_document).ok();
     mutation_tracker.capture_requested = false;
 
     set_persistence_status(
@@ -187,20 +183,19 @@ pub(super) fn capture_graph_history_snapshot_system(
         return;
     }
 
-    let Ok(current_signature) = crate::format::graph_document_signature(&live_document.document)
-    else {
+    let Ok(current_signature) = graph_document_signature(&live_document.document) else {
         mutation_tracker.capture_requested = false;
         return;
     };
 
-    if history.awaiting_rebaseline || history.last_signature.is_none() {
+    if history.awaiting_rebaseline || history.last_document_signature.is_none() {
         history.rebaseline_to_document(&live_document.document, live_validation.report.clone());
         mutation_tracker.capture_requested = false;
         return;
     }
 
     if history
-        .last_signature
+        .last_document_signature
         .as_ref()
         .is_some_and(|signature| signature == &current_signature)
     {
@@ -218,9 +213,8 @@ pub(super) fn capture_graph_history_snapshot_system(
 
     history.last_document = Some(GraphHistorySnapshot {
         document: live_document.document.clone(),
-        validation_issue_count: live_validation.report.issue_count(),
         validation_report: live_validation.report.clone(),
     });
-    history.last_signature = Some(current_signature);
+    history.last_document_signature = Some(current_signature);
     mutation_tracker.capture_requested = false;
 }

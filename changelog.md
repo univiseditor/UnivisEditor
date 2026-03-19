@@ -12,6 +12,9 @@
 - Split the persistence write-preparation path so save and autosave can reuse a precomputed validation issue count when the built graph document still matches the current live document, avoiding an extra validation pass during ordinary writes while keeping a safe fallback when signatures differ.
 - Upgraded persistence history and apply/load plumbing from raw documents to richer graph snapshots that carry validation metadata, letting `undo`, `redo`, load, and graph-apply flows preserve validation state alongside the document instead of recomputing only a fresh issue count each time.
 - Extended `LiveGraphValidationState` with a document signature plus explicit seeding helpers so persistence can inject already-known validation reports during apply/load/undo/redo paths, then aligned history snapshot capture to run after live validation refreshes so stored snapshots and live diagnostics stay in sync.
+- Simplified persistence snapshot state by removing duplicated cached validation issue counts from history and pending-apply state, making `GraphValidationReport` the single source of truth there and deriving counts only when user-facing warnings need them.
+- Moved `graph_document_signature` into `univis_node_graph::document`, then updated live validation and persistence history/dirty tracking to consume the same shared document-signature helper instead of leaving signature logic split between graph state and save-file formatting code.
+- Clarified persistence naming around document identity by renaming saved/history signature fields to `document_signature` / `last_saved_document_signature` / `last_document_signature`, and removed the temporary `graph_document_signature` re-export from `univis_editor_persistence::format` so save-file helpers no longer expose document-layer utilities.
 
 ## 2026-03-18
 

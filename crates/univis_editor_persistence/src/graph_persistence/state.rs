@@ -42,7 +42,7 @@ impl Default for GraphPersistenceSettings {
 pub struct GraphPersistenceRuntimeState {
     pub dirty: bool,
     pub initialized: bool,
-    pub last_saved_signature: Option<String>,
+    pub last_saved_document_signature: Option<String>,
     pub autosave_elapsed_secs: f32,
     pub open_confirm_until_secs: Option<f64>,
     pub needs_rebaseline: bool,
@@ -54,7 +54,7 @@ impl Default for GraphPersistenceRuntimeState {
         Self {
             dirty: false,
             initialized: false,
-            last_saved_signature: None,
+            last_saved_document_signature: None,
             autosave_elapsed_secs: 0.0,
             open_confirm_until_secs: None,
             needs_rebaseline: false,
@@ -83,14 +83,13 @@ pub struct GraphHistoryState {
     pub past: Vec<GraphHistorySnapshot>,
     pub future: Vec<GraphHistorySnapshot>,
     pub last_document: Option<GraphHistorySnapshot>,
-    pub last_signature: Option<String>,
+    pub last_document_signature: Option<String>,
     pub awaiting_rebaseline: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct GraphHistorySnapshot {
     pub document: GraphDocument,
-    pub validation_issue_count: usize,
     pub validation_report: GraphValidationReport,
 }
 
@@ -99,7 +98,7 @@ impl GraphHistoryState {
         self.past.clear();
         self.future.clear();
         self.last_document = None;
-        self.last_signature = None;
+        self.last_document_signature = None;
         self.awaiting_rebaseline = false;
     }
 
@@ -108,10 +107,9 @@ impl GraphHistoryState {
         document: &GraphDocument,
         validation_report: GraphValidationReport,
     ) {
-        self.last_signature = crate::format::graph_document_signature(document).ok();
+        self.last_document_signature = graph_document_signature(document).ok();
         self.last_document = Some(GraphHistorySnapshot {
             document: document.clone(),
-            validation_issue_count: validation_report.issue_count(),
             validation_report,
         });
         self.awaiting_rebaseline = false;
@@ -195,11 +193,14 @@ pub(super) struct PendingGraphLoad {
     pub selected_node_ids: Vec<u64>,
     pub camera: Option<GraphDocumentCameraState>,
     pub placeholder_count: usize,
-    pub validation_issue_count: usize,
-    pub validation_report: Option<GraphValidationReport>,
+    pub validation_report: GraphValidationReport,
 }
 
 impl PendingGraphLoad {
+    pub fn validation_issue_count(&self) -> usize {
+        self.validation_report.issue_count()
+    }
+
     pub fn reset(&mut self) {
         self.is_pending = false;
         self.source_label = None;
@@ -212,8 +213,7 @@ impl PendingGraphLoad {
         self.selected_node_ids.clear();
         self.camera = None;
         self.placeholder_count = 0;
-        self.validation_issue_count = 0;
-        self.validation_report = None;
+        self.validation_report = GraphValidationReport::default();
     }
 }
 

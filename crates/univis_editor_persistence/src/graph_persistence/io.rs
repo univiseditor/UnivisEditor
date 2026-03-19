@@ -7,9 +7,9 @@ use univis_editor_ui::prelude::GraphCamera;
 use univis_node_graph::prelude::*;
 
 use crate::format::{
-    GraphSaveMetaV1, ParsedGraphDocument, PreparedGraphWrite, graph_document_signature,
-    parse_graph_document_payload, parse_graph_save_metadata,
-    prepare_graph_document_write_with_meta_and_issue_count, serialize_graph_document,
+    GraphSaveMetaV1, ParsedGraphDocument, PreparedGraphWrite, parse_graph_document_payload,
+    parse_graph_save_metadata, prepare_graph_document_write_with_meta_and_issue_count,
+    serialize_graph_document,
 };
 
 use super::apply::stage_graph_document_apply;
@@ -91,7 +91,7 @@ pub(super) fn handle_save_graph_requests_system(
             &live_document.document,
         ) {
             Ok(prepared) => {
-                runtime.last_saved_signature = Some(prepared.signature);
+                runtime.last_saved_document_signature = Some(prepared.document_signature);
                 runtime.dirty = false;
                 runtime.initialized = true;
                 runtime.autosave_elapsed_secs = 0.0;
@@ -275,8 +275,7 @@ pub(super) fn handle_load_graph_requests_system(
         save_file.clone(),
         PendingGraphApplyOrigin::Load,
         path.clone(),
-        validation_report.issue_count(),
-        Some(validation_report.clone()),
+        validation_report.clone(),
     );
     load_runtime.pending.migration_note = migration_note.clone();
     load_runtime.pending.requires_resave_after_migration = migration_note.is_some();
@@ -284,7 +283,6 @@ pub(super) fn handle_load_graph_requests_system(
     load_runtime.history.awaiting_rebaseline = true;
     load_runtime.history.last_document = Some(GraphHistorySnapshot {
         document: save_file,
-        validation_issue_count: validation_report.issue_count(),
         validation_report,
     });
     load_runtime.mutation_tracker.capture_requested = false;
@@ -322,19 +320,22 @@ pub(super) fn refresh_dirty_state_system(
 
     let current_document =
         build_graph_document(&q_connections, &q_nodes, &q_camera, &live_document.document);
-    let Ok(current_signature) = crate::format::graph_document_signature(&current_document) else {
+    let Ok(current_signature) = graph_document_signature(&current_document) else {
         return;
     };
 
-    if !runtime.initialized || runtime.last_saved_signature.is_none() || runtime.needs_rebaseline {
-        runtime.last_saved_signature = Some(current_signature.clone());
+    if !runtime.initialized
+        || runtime.last_saved_document_signature.is_none()
+        || runtime.needs_rebaseline
+    {
+        runtime.last_saved_document_signature = Some(current_signature.clone());
         runtime.initialized = true;
         runtime.needs_rebaseline = false;
     }
 
     runtime.dirty = runtime.requires_resave_after_migration
         || runtime
-            .last_saved_signature
+            .last_saved_document_signature
             .as_ref()
             .map(|saved| saved != &current_signature)
             .unwrap_or(false);
@@ -390,7 +391,7 @@ pub(super) fn autosave_dirty_graph_system(
         &live_document.document,
     ) {
         Ok(prepared) => {
-            runtime.last_saved_signature = Some(prepared.signature.clone());
+            runtime.last_saved_document_signature = Some(prepared.document_signature.clone());
             runtime.dirty = false;
             runtime.requires_resave_after_migration = false;
 

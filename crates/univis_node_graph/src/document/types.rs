@@ -19,6 +19,11 @@ pub type GraphDocumentPrefab = CoreGraphDocumentPrefab<EntityValue>;
 pub type GraphDocumentSubgraph = CoreGraphDocumentSubgraph<NodeValue, EntityValue>;
 pub type GraphDocumentNode = CoreGraphDocumentNode<NodeValue>;
 
+pub fn graph_document_signature(document: &GraphDocument) -> Result<String, String> {
+    serde_json::to_string(document)
+        .map_err(|err| format!("signature serialization failed: {}", err))
+}
+
 #[derive(Resource, Debug, Clone, Default)]
 pub struct LiveGraphDocumentState {
     pub document: GraphDocument,

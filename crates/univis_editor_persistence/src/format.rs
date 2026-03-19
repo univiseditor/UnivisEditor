@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use univis_node_graph::document::{
     GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentCameraState, GraphDocumentEdge,
     GraphDocumentNode, GraphDocumentPrefab, GraphDocumentSubgraph, GraphDocumentViewState,
+    graph_document_signature,
 };
 use univis_node_graph::graph_validation::validate_graph_document_report;
 use univis_node_graph::node_definition::NodeId;
@@ -29,7 +30,7 @@ pub struct ParsedGraphDocument {
 pub struct PreparedGraphWrite {
     pub document: GraphDocument,
     pub payload: String,
-    pub signature: String,
+    pub document_signature: String,
     pub validation_issue_count: usize,
 }
 
@@ -669,11 +670,6 @@ pub fn parse_graph_save_metadata(content: &str) -> Result<Option<GraphSaveMetaV1
     Ok(Some(save_file.meta))
 }
 
-pub fn graph_document_signature(document: &GraphDocument) -> Result<String, String> {
-    serde_json::to_string(&GraphDocumentV1::from_document(document))
-        .map_err(|err| format!("signature serialization failed: {}", err))
-}
-
 fn finalize_prepared_graph_write(
     document: GraphDocument,
     pretty_json: bool,
@@ -684,12 +680,12 @@ fn finalize_prepared_graph_write(
         &GraphSaveFileV1::from_document_with_meta(&document, meta.refreshed()),
         pretty_json,
     )?;
-    let signature = graph_document_signature(&document)?;
+    let document_signature = graph_document_signature(&document)?;
 
     Ok(PreparedGraphWrite {
         document,
         payload,
-        signature,
+        document_signature,
         validation_issue_count,
     })
 }

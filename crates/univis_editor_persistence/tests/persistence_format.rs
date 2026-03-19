@@ -1,9 +1,11 @@
 use serde_json::json;
 use univis_editor_persistence::format::{
-    graph_document_signature, parse_graph_document_payload, parse_graph_save_metadata,
-    prepare_graph_document_write, serialize_graph_document,
+    parse_graph_document_payload, parse_graph_save_metadata, prepare_graph_document_write,
+    serialize_graph_document,
 };
-use univis_node_graph::document::{GraphDocument, GraphDocumentEdge, GraphDocumentNode};
+use univis_node_graph::document::{
+    GraphDocument, GraphDocumentEdge, GraphDocumentNode, graph_document_signature,
+};
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
@@ -81,7 +83,7 @@ fn prepare_graph_document_write_generates_payload_signature_and_validation_count
 
     assert!(prepared.payload.contains('\n'));
     assert_eq!(
-        prepared.signature,
+        prepared.document_signature,
         graph_document_signature(&document).unwrap()
     );
     assert_eq!(prepared.validation_issue_count, 0);
