@@ -8,7 +8,7 @@ use univis_editor_ui::node_spawn::spawn_node_from_definition_entity;
 use univis_node_graph::{
     commands::GraphMutationTracker,
     node_definition::NodeId,
-    prelude::{GraphNode, LiveGraphDocumentState, NodeRegistry},
+    prelude::{AuthoredNodeInputs, GraphNode, LiveGraphDocumentState, NodeRegistry},
     value::NodeValue,
 };
 
@@ -146,11 +146,20 @@ pub(super) fn spawn_prefab_instance_nodes_system(
             let Ok(mut entity) = world.get_entity_mut(spawned) else {
                 return;
             };
+
+            let prefab_value = NodeValue::string(prefab_id.clone());
+
             let Some(mut node) = entity.get_mut::<GraphNode>() else {
                 return;
             };
             if let Some(input) = node.values.inputs.first_mut() {
-                *input = NodeValue::string(prefab_id.clone());
+                *input = prefab_value.clone();
+            }
+
+            if let Some(mut authored_inputs) = entity.get_mut::<AuthoredNodeInputs>() {
+                if let Some(input) = authored_inputs.values.first_mut() {
+                    *input = prefab_value;
+                }
             }
         });
         mutation_tracker.mark_changed();

@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use univis_node_graph::{
     commands::GraphMutationTracker,
     document::{GraphDocument, LiveGraphDocumentState},
+    graph_validation::LiveGraphValidationState,
     node_definition::NodeId,
 };
 
@@ -74,6 +75,7 @@ impl Plugin for GraphCommandsPlugin {
         app.add_message::<GraphCommandRequest>()
             .init_resource::<GraphClipboardState>()
             .init_resource::<GraphMutationTracker>()
+            .init_resource::<LiveGraphValidationState>()
             .init_resource::<LiveGraphDocumentState>();
     }
 }

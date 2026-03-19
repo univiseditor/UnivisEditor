@@ -14,7 +14,8 @@ use univis_editor_ui::prelude::{
     GraphCamera, GraphConnectionInspectorSummary, GraphPortPreviewSummary, Selected,
 };
 use univis_node_graph::prelude::{
-    GraphDocument, GraphDocumentEdge, GraphValidationIssue, LiveGraphDocumentState, NodeRegistry,
+    GraphDocument, GraphDocumentEdge, GraphValidationIssue, LiveGraphDocumentState,
+    LiveGraphValidationState, NodeRegistry,
 };
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -502,6 +503,7 @@ fn validation_issue_line(
 
 fn refresh_editor_diagnostics_summary_system(
     live_document: Res<LiveGraphDocumentState>,
+    validation_state: Res<LiveGraphValidationState>,
     registry: Res<NodeRegistry>,
     runtime_diagnostics: Res<GraphRuntimeDiagnostics>,
     runtime_trace_settings: Res<GraphRuntimeTraceSettings>,
@@ -512,15 +514,9 @@ fn refresh_editor_diagnostics_summary_system(
     history: Res<GraphHistoryState>,
     mut summary: ResMut<EditorDiagnosticsSummary>,
 ) {
-    let validation_issues = univis_node_graph::graph_validation::validate_graph_document(
-        &live_document.document,
-        &registry,
-    );
-    let blocked_node_ids = runtime_diagnostics
-        .blocked_nodes
-        .iter()
-        .filter_map(|entity| live_document.node_id_for_entity(*entity))
-        .collect::<Vec<_>>();
+    let validation_report = &validation_state.report;
+    let validation_issues = &validation_report.issues;
+    let blocked_node_ids = validation_report.topology.blocked_nodes.clone();
     let blocked_node_set = blocked_node_ids.iter().copied().collect::<HashSet<_>>();
     let sink_node_ids = scene_outputs
         .sinks
@@ -547,10 +543,11 @@ fn refresh_editor_diagnostics_summary_system(
         live_document.document.subgraph_count()
     ));
     lines.push(format!(
-        "Validation: {}  Runtime issues: {}  Blocked: {}  Unused: {}",
-        validation_issues.len(),
+        "Validation: {}  Runtime issues: {}  Blocked: {}  Ordered: {}  Unused: {}",
+        validation_report.issue_count(),
         runtime_diagnostics.node_issues.len(),
         blocked_node_ids.len(),
+        validation_report.topology.ordered_nodes.len(),
         unused_node_ids.len()
     ));
     lines.push(format!(
@@ -683,7 +680,7 @@ fn refresh_editor_diagnostics_summary_system(
         ));
     }
 
-    if validation_issues.is_empty()
+    if validation_report.is_valid()
         && runtime_diagnostics.node_issues.is_empty()
         && blocked_node_ids.is_empty()
         && unused_node_ids.is_empty()

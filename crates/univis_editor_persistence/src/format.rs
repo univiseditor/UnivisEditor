@@ -6,7 +6,7 @@ use univis_node_graph::document::{
     GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentCameraState, GraphDocumentEdge,
     GraphDocumentNode, GraphDocumentPrefab, GraphDocumentSubgraph, GraphDocumentViewState,
 };
-use univis_node_graph::graph_validation::validate_graph_document;
+use univis_node_graph::graph_validation::validate_graph_document_report;
 use univis_node_graph::node_definition::NodeId;
 use univis_node_graph::node_registry::NodeRegistry;
 use univis_node_graph::value::NodeValue;
@@ -685,7 +685,7 @@ pub(crate) fn prepare_graph_document_write_with_meta(
         pretty_json,
     )?;
     let signature = graph_document_signature(&document)?;
-    let validation_issue_count = validate_graph_document(&document, registry).len();
+    let validation_issue_count = validate_graph_document_report(&document, registry).issue_count();
 
     Ok(PreparedGraphWrite {
         document,

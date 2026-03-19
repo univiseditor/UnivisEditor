@@ -120,10 +120,46 @@ pub fn sync_live_graph_document_state(
         &Transform,
         Option<&Selected>,
     )>,
+    q_changed_nodes: Query<
+        Entity,
+        (
+            With<GraphNode>,
+            Or<(
+                Added<GraphNode>,
+                Added<AuthoredNodeInputs>,
+                Changed<AuthoredNodeInputs>,
+                Changed<Transform>,
+                Added<Selected>,
+            )>,
+        ),
+    >,
     q_connections: Query<&GraphConnection>,
+    q_changed_connections: Query<Entity, Or<(Added<GraphConnection>, Changed<GraphConnection>)>>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
+    q_changed_camera: Query<
+        Entity,
+        (
+            With<GraphCamera>,
+            Or<(Added<GraphCamera>, Changed<Transform>, Changed<Projection>)>,
+        ),
+    >,
+    mut removed_nodes: RemovedComponents<GraphNode>,
+    mut removed_connections: RemovedComponents<GraphConnection>,
+    mut removed_selected: RemovedComponents<Selected>,
+    mut removed_cameras: RemovedComponents<GraphCamera>,
     mut live_document: ResMut<LiveGraphDocumentState>,
 ) {
+    let should_refresh = !q_changed_nodes.is_empty()
+        || !q_changed_connections.is_empty()
+        || !q_changed_camera.is_empty()
+        || removed_nodes.read().next().is_some()
+        || removed_connections.read().next().is_some()
+        || removed_selected.read().next().is_some()
+        || removed_cameras.read().next().is_some();
+    if !should_refresh {
+        return;
+    }
+
     let mut nodes_data = Vec::new();
     for (entity, node, authored_inputs, transform, selected) in q_nodes.iter() {
         nodes_data.push(GraphDocumentNodeSnapshot {

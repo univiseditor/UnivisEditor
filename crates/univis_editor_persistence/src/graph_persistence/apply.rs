@@ -37,7 +37,8 @@ pub(super) fn handle_apply_graph_document_requests_system(
         return;
     };
 
-    let validation_issue_count = validate_graph_document(&request.document, &registry).len();
+    let validation_issue_count =
+        validate_graph_document_report(&request.document, &registry).issue_count();
     live_document.document.prefabs = request.document.prefabs.clone();
     live_document.document.subgraphs = request.document.subgraphs.clone();
     ui_state.reset();

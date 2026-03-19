@@ -119,7 +119,8 @@ pub(super) fn handle_history_requests_system(
         PendingGraphApplyOrigin::Load => return,
     };
 
-    let validation_issue_count = validate_graph_document(&target_document, &registry).len();
+    let validation_issue_count =
+        validate_graph_document_report(&target_document, &registry).issue_count();
     live_document.document.prefabs = target_document.prefabs.clone();
     live_document.document.subgraphs = target_document.subgraphs.clone();
     ui_state.reset();

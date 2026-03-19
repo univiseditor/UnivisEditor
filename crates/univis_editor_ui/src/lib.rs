@@ -47,6 +47,7 @@ impl Plugin for NodeUiPlugin {
         app.init_resource::<univis_node_graph::pin::DragState>()
             .init_resource::<interaction::BoxSelectionState>()
             .init_resource::<univis_node_graph::pin::WireConnectionState>()
+            .init_resource::<univis_node_graph::graph_validation::LiveGraphValidationState>()
             .init_resource::<WireDragFeedback>()
             .init_resource::<GraphConnectionUiDiagnostics>()
             .init_resource::<GraphConnectionInspectorSummary>()
@@ -130,6 +131,7 @@ impl Plugin for NodeUiPlugin {
                     sync_inline_text_inputs_system,
                     sync_inline_widgets_from_authored_inputs_system,
                     sync_live_graph_document_state,
+                    univis_node_graph::graph_validation::refresh_live_graph_validation_state_system,
                 )
                     .chain(),
             );

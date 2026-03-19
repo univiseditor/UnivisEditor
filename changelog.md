@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-19
+
+- Moved graph-document validation deeper into `univis_graph_core` by introducing a reusable `validation` module with shared issue/report types, structural document checks, schema-aware type compatibility, requirement validation, and topology-aware reporting in one core-level pipeline.
+- Extended the core `GraphNodeDefinition` contract with an `output_requirement_token` hook so requirement matching no longer depends on Bevy-side adapter logic and can stay reusable across graph adapters.
+- Reduced `univis_node_graph::graph_validation` to a thin adapter layer over the core validator, added an explicit `validate_graph_document_report` entry point, and kept the older issue-list helper for compatibility while the workspace migrates.
+- Started adopting the shared validation report in higher layers by switching persistence paths to consume report counts directly, logging blocked-topology information during load, and teaching the floating diagnostics panel to read `blocked` and `ordered` topology state from a shared live validation report instead of recomputing validation locally.
+- Added a centralized `LiveGraphValidationState` resource that refreshes after live-document snapshot sync, giving editor surfaces a single in-memory validation source of truth for current graph diagnostics.
+- Stopped the live-document snapshot and live validation path from doing unconditional no-op work every `PostUpdate` by gating graph-document rebuilds on actual node, authored-input, selection, connection, and camera changes, then skipping live validation refreshes unless the live document or registry changed.
+- Tightened the prefab-instance spawn workflow so it updates `AuthoredNodeInputs` alongside the live `GraphNode` input buffer, keeping the stricter live-document sync gating compatible with editor-authored state and save/load expectations.
+
 ## 2026-03-18
 
 - Added an `Assets` surface to `CanvasIsland` so saved prefabs and subgraphs can be browsed directly in the editor, with per-asset `Spawn`, `Insert`, and `Update from Selection` actions instead of relying only on latest-asset shortcuts.

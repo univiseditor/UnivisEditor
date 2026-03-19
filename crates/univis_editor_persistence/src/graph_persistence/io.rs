@@ -236,14 +236,20 @@ pub(super) fn handle_load_graph_requests_system(
             return;
         }
     };
-    let validation_issues = validate_graph_document(&save_file, &registry);
-    if !validation_issues.is_empty() {
+    let validation_report = validate_graph_document_report(&save_file, &registry);
+    if validation_report.has_errors() {
         warn!(
             "Loaded graph document {} with {} validation issue(s)",
             path,
-            validation_issues.len()
+            validation_report.issue_count()
         );
-        for issue in validation_issues.iter().take(5) {
+        if validation_report.topology.has_cycle_or_blocked_nodes() {
+            warn!(
+                "Graph validation blocked nodes: {}",
+                validation_report.topology.blocked_nodes.len()
+            );
+        }
+        for issue in validation_report.issues.iter().take(5) {
             warn!("Graph validation: {}", issue.message);
         }
     }
@@ -262,7 +268,7 @@ pub(super) fn handle_load_graph_requests_system(
         save_file.clone(),
         PendingGraphApplyOrigin::Load,
         path.clone(),
-        validation_issues.len(),
+        validation_report.issue_count(),
     );
     load_runtime.pending.migration_note = migration_note.clone();
     load_runtime.pending.requires_resave_after_migration = migration_note.is_some();
