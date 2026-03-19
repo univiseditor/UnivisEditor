@@ -80,11 +80,18 @@ impl Default for GraphHistorySettings {
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct GraphHistoryState {
-    pub past: Vec<GraphDocument>,
-    pub future: Vec<GraphDocument>,
-    pub last_document: Option<GraphDocument>,
+    pub past: Vec<GraphHistorySnapshot>,
+    pub future: Vec<GraphHistorySnapshot>,
+    pub last_document: Option<GraphHistorySnapshot>,
     pub last_signature: Option<String>,
     pub awaiting_rebaseline: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphHistorySnapshot {
+    pub document: GraphDocument,
+    pub validation_issue_count: usize,
+    pub validation_report: GraphValidationReport,
 }
 
 impl GraphHistoryState {
@@ -96,9 +103,17 @@ impl GraphHistoryState {
         self.awaiting_rebaseline = false;
     }
 
-    pub fn rebaseline_to_document(&mut self, document: &GraphDocument) {
+    pub fn rebaseline_to_document(
+        &mut self,
+        document: &GraphDocument,
+        validation_report: GraphValidationReport,
+    ) {
         self.last_signature = crate::format::graph_document_signature(document).ok();
-        self.last_document = Some(document.clone());
+        self.last_document = Some(GraphHistorySnapshot {
+            document: document.clone(),
+            validation_issue_count: validation_report.issue_count(),
+            validation_report,
+        });
         self.awaiting_rebaseline = false;
     }
 
@@ -164,6 +179,7 @@ pub struct ApplyGraphDocumentRequest {
     pub document: GraphDocument,
     pub source_label: String,
     pub track_for_undo: bool,
+    pub validation_report: Option<GraphValidationReport>,
 }
 
 #[derive(Resource, Default)]
@@ -180,6 +196,7 @@ pub(super) struct PendingGraphLoad {
     pub camera: Option<GraphDocumentCameraState>,
     pub placeholder_count: usize,
     pub validation_issue_count: usize,
+    pub validation_report: Option<GraphValidationReport>,
 }
 
 impl PendingGraphLoad {
@@ -196,6 +213,7 @@ impl PendingGraphLoad {
         self.camera = None;
         self.placeholder_count = 0;
         self.validation_issue_count = 0;
+        self.validation_report = None;
     }
 }
 
@@ -224,6 +242,7 @@ impl MutationUiState<'_> {
 pub(super) struct LoadGraphRuntimeParams<'w> {
     pub settings: ResMut<'w, GraphPersistenceSettings>,
     pub live_document: ResMut<'w, LiveGraphDocumentState>,
+    pub live_validation: ResMut<'w, LiveGraphValidationState>,
     pub pending: ResMut<'w, PendingGraphLoad>,
     pub runtime: ResMut<'w, GraphPersistenceRuntimeState>,
     pub history: ResMut<'w, GraphHistoryState>,

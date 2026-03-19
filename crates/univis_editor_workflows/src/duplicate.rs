@@ -97,6 +97,7 @@ pub(super) fn duplicate_selected_nodes_system(
         document,
         source_label: "duplicated selection".to_string(),
         track_for_undo: true,
+        validation_report: None,
     });
 
     set_asset_status(

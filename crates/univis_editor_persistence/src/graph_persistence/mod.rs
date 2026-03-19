@@ -63,7 +63,9 @@ impl Plugin for GraphPersistencePlugin {
                 (
                     finalize_pending_graph_load_system,
                     capture_graph_history_snapshot_system
-                        .after(univis_editor_ui::interaction::sync_live_graph_document_state),
+                        .after(
+                            univis_node_graph::graph_validation::refresh_live_graph_validation_state_system,
+                        ),
                     refresh_dirty_state_system,
                     autosave_dirty_graph_system,
                     expire_persistence_status_system,

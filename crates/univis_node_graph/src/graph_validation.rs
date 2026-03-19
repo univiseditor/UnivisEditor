@@ -14,6 +14,18 @@ use crate::{
 #[derive(Resource, Debug, Clone, Default)]
 pub struct LiveGraphValidationState {
     pub report: GraphValidationReport,
+    pub document_signature: Option<String>,
+}
+
+impl LiveGraphValidationState {
+    pub fn set_report_for_document(
+        &mut self,
+        document: &GraphDocument,
+        report: GraphValidationReport,
+    ) {
+        self.document_signature = graph_document_validation_signature(document).ok();
+        self.report = report;
+    }
 }
 
 pub fn refresh_live_graph_validation_state_system(
@@ -25,7 +37,21 @@ pub fn refresh_live_graph_validation_state_system(
         return;
     }
 
+    let current_signature = graph_document_validation_signature(&live_document.document).ok();
+    if !registry.is_changed()
+        && current_signature.is_some()
+        && current_signature == validation_state.document_signature
+    {
+        return;
+    }
+
     validation_state.report = validate_graph_document_report(&live_document.document, &registry);
+    validation_state.document_signature = current_signature;
+}
+
+pub fn graph_document_validation_signature(document: &GraphDocument) -> Result<String, String> {
+    serde_json::to_string(document)
+        .map_err(|err| format!("validation signature serialization failed: {}", err))
 }
 
 pub fn validate_graph_document_report(

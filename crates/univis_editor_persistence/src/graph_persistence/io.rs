@@ -7,16 +7,18 @@ use univis_editor_ui::prelude::GraphCamera;
 use univis_node_graph::prelude::*;
 
 use crate::format::{
-    GraphSaveMetaV1, ParsedGraphDocument, PreparedGraphWrite, parse_graph_document_payload,
-    parse_graph_save_metadata, prepare_graph_document_write_with_meta, serialize_graph_document,
+    GraphSaveMetaV1, ParsedGraphDocument, PreparedGraphWrite, graph_document_signature,
+    parse_graph_document_payload, parse_graph_save_metadata,
+    prepare_graph_document_write_with_meta_and_issue_count, serialize_graph_document,
 };
 
 use super::apply::stage_graph_document_apply;
 use super::state::{
-    GraphPersistenceActivation, GraphPersistenceRuntimeState, GraphPersistenceSettings,
-    GraphPersistenceStatus, GraphPersistenceStatusSeverity, LoadGraphFromPathRequest,
-    LoadGraphRequest, LoadGraphRuntimeParams, MutationUiState, PendingGraphApplyOrigin,
-    SaveGraphRequest, SaveGraphToPathRequest, graph_persistence_enabled, set_persistence_status,
+    GraphHistorySnapshot, GraphPersistenceActivation, GraphPersistenceRuntimeState,
+    GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
+    LoadGraphFromPathRequest, LoadGraphRequest, LoadGraphRuntimeParams, MutationUiState,
+    PendingGraphApplyOrigin, SaveGraphRequest, SaveGraphToPathRequest, graph_persistence_enabled,
+    set_persistence_status,
 };
 
 pub(super) fn handle_save_graph_requests_system(
@@ -36,6 +38,7 @@ pub(super) fn handle_save_graph_requests_system(
     )>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     live_document: Res<LiveGraphDocumentState>,
+    live_validation: Res<LiveGraphValidationState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatus>,
     time: Res<Time>,
@@ -84,6 +87,7 @@ pub(super) fn handle_save_graph_requests_system(
             &q_connections,
             &q_nodes,
             &q_camera,
+            &live_validation,
             &live_document.document,
         ) {
             Ok(prepared) => {
@@ -254,6 +258,9 @@ pub(super) fn handle_load_graph_requests_system(
         }
     }
 
+    load_runtime
+        .live_validation
+        .set_report_for_document(&save_file, validation_report.clone());
     load_runtime.live_document.document.prefabs = save_file.prefabs.clone();
     load_runtime.live_document.document.subgraphs = save_file.subgraphs.clone();
     load_runtime.pending.reset();
@@ -269,12 +276,17 @@ pub(super) fn handle_load_graph_requests_system(
         PendingGraphApplyOrigin::Load,
         path.clone(),
         validation_report.issue_count(),
+        Some(validation_report.clone()),
     );
     load_runtime.pending.migration_note = migration_note.clone();
     load_runtime.pending.requires_resave_after_migration = migration_note.is_some();
     load_runtime.history.clear();
     load_runtime.history.awaiting_rebaseline = true;
-    load_runtime.history.last_document = Some(save_file);
+    load_runtime.history.last_document = Some(GraphHistorySnapshot {
+        document: save_file,
+        validation_issue_count: validation_report.issue_count(),
+        validation_report,
+    });
     load_runtime.mutation_tracker.capture_requested = false;
 
     if migration_note.is_none() {
@@ -343,6 +355,7 @@ pub(super) fn autosave_dirty_graph_system(
     )>,
     q_camera: Query<(&Transform, &Projection), With<GraphCamera>>,
     live_document: Res<LiveGraphDocumentState>,
+    live_validation: Res<LiveGraphValidationState>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatus>,
 ) {
@@ -373,6 +386,7 @@ pub(super) fn autosave_dirty_graph_system(
         &q_connections,
         &q_nodes,
         &q_camera,
+        &live_validation,
         &live_document.document,
     ) {
         Ok(prepared) => {
@@ -464,12 +478,23 @@ fn persist_graph_to_path(
         Option<&Selected>,
     )>,
     q_camera: &Query<(&Transform, &Projection), With<GraphCamera>>,
+    live_validation: &LiveGraphValidationState,
     source_document: &GraphDocument,
 ) -> Result<PreparedGraphWrite, String> {
     let document = build_graph_document(q_connections, q_nodes, q_camera, source_document);
     let existing_meta = load_existing_graph_save_meta(path).unwrap_or_default();
-    let prepared =
-        prepare_graph_document_write_with_meta(document, pretty_json, registry, existing_meta)?;
+    let validation_issue_count =
+        if graph_document_signature(&document)? == graph_document_signature(source_document)? {
+            live_validation.report.issue_count()
+        } else {
+            validate_graph_document_report(&document, registry).issue_count()
+        };
+    let prepared = prepare_graph_document_write_with_meta_and_issue_count(
+        document,
+        pretty_json,
+        existing_meta,
+        validation_issue_count,
+    )?;
     write_graph_payload(path, &prepared.payload)?;
     Ok(prepared)
 }

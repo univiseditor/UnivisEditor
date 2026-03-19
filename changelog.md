@@ -9,6 +9,9 @@
 - Added a centralized `LiveGraphValidationState` resource that refreshes after live-document snapshot sync, giving editor surfaces a single in-memory validation source of truth for current graph diagnostics.
 - Stopped the live-document snapshot and live validation path from doing unconditional no-op work every `PostUpdate` by gating graph-document rebuilds on actual node, authored-input, selection, connection, and camera changes, then skipping live validation refreshes unless the live document or registry changed.
 - Tightened the prefab-instance spawn workflow so it updates `AuthoredNodeInputs` alongside the live `GraphNode` input buffer, keeping the stricter live-document sync gating compatible with editor-authored state and save/load expectations.
+- Split the persistence write-preparation path so save and autosave can reuse a precomputed validation issue count when the built graph document still matches the current live document, avoiding an extra validation pass during ordinary writes while keeping a safe fallback when signatures differ.
+- Upgraded persistence history and apply/load plumbing from raw documents to richer graph snapshots that carry validation metadata, letting `undo`, `redo`, load, and graph-apply flows preserve validation state alongside the document instead of recomputing only a fresh issue count each time.
+- Extended `LiveGraphValidationState` with a document signature plus explicit seeding helpers so persistence can inject already-known validation reports during apply/load/undo/redo paths, then aligned history snapshot capture to run after live validation refreshes so stored snapshots and live diagnostics stay in sync.
 
 ## 2026-03-18
 

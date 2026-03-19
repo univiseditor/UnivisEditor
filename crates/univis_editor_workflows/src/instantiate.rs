@@ -70,6 +70,7 @@ pub(super) fn insert_subgraph_instances_system(
             document,
             source_label: format!("subgraph {}", resolved_id),
             track_for_undo: true,
+            validation_report: None,
         });
     }
 }

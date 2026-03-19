@@ -93,6 +93,7 @@ pub(super) fn paste_nodes_from_clipboard_system(
             document,
             source_label: "pasted clipboard".to_string(),
             track_for_undo: true,
+            validation_report: None,
         });
 
         set_asset_status(

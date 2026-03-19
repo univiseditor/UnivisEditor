@@ -674,18 +674,17 @@ pub fn graph_document_signature(document: &GraphDocument) -> Result<String, Stri
         .map_err(|err| format!("signature serialization failed: {}", err))
 }
 
-pub(crate) fn prepare_graph_document_write_with_meta(
+fn finalize_prepared_graph_write(
     document: GraphDocument,
     pretty_json: bool,
-    registry: &NodeRegistry,
     meta: GraphSaveMetaV1,
+    validation_issue_count: usize,
 ) -> Result<PreparedGraphWrite, String> {
     let payload = serialize_save_file(
         &GraphSaveFileV1::from_document_with_meta(&document, meta.refreshed()),
         pretty_json,
     )?;
     let signature = graph_document_signature(&document)?;
-    let validation_issue_count = validate_graph_document_report(&document, registry).issue_count();
 
     Ok(PreparedGraphWrite {
         document,
@@ -693,6 +692,25 @@ pub(crate) fn prepare_graph_document_write_with_meta(
         signature,
         validation_issue_count,
     })
+}
+
+pub(crate) fn prepare_graph_document_write_with_meta_and_issue_count(
+    document: GraphDocument,
+    pretty_json: bool,
+    meta: GraphSaveMetaV1,
+    validation_issue_count: usize,
+) -> Result<PreparedGraphWrite, String> {
+    finalize_prepared_graph_write(document, pretty_json, meta, validation_issue_count)
+}
+
+pub(crate) fn prepare_graph_document_write_with_meta(
+    document: GraphDocument,
+    pretty_json: bool,
+    registry: &NodeRegistry,
+    meta: GraphSaveMetaV1,
+) -> Result<PreparedGraphWrite, String> {
+    let validation_issue_count = validate_graph_document_report(&document, registry).issue_count();
+    finalize_prepared_graph_write(document, pretty_json, meta, validation_issue_count)
 }
 
 pub fn prepare_graph_document_write(

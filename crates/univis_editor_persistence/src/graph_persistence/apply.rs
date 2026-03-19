@@ -21,6 +21,7 @@ pub(super) fn handle_apply_graph_document_requests_system(
     q_existing_nodes: Query<Entity, With<GraphNode>>,
     q_existing_connections: Query<Entity, With<GraphConnection>>,
     mut live_document: ResMut<LiveGraphDocumentState>,
+    mut live_validation: ResMut<LiveGraphValidationState>,
     mut pending: ResMut<PendingGraphLoad>,
     mut history: ResMut<GraphHistoryState>,
     mut mutation_tracker: ResMut<GraphMutationTracker>,
@@ -37,8 +38,11 @@ pub(super) fn handle_apply_graph_document_requests_system(
         return;
     };
 
-    let validation_issue_count =
-        validate_graph_document_report(&request.document, &registry).issue_count();
+    let validation_report = request
+        .validation_report
+        .unwrap_or_else(|| validate_graph_document_report(&request.document, &registry));
+    let validation_issue_count = validation_report.issue_count();
+    live_validation.set_report_for_document(&request.document, validation_report.clone());
     live_document.document.prefabs = request.document.prefabs.clone();
     live_document.document.subgraphs = request.document.subgraphs.clone();
     ui_state.reset();
@@ -52,6 +56,7 @@ pub(super) fn handle_apply_graph_document_requests_system(
         PendingGraphApplyOrigin::Mutation,
         request.source_label.clone(),
         validation_issue_count,
+        Some(validation_report),
     );
 
     if request.track_for_undo {
@@ -307,6 +312,7 @@ pub(super) fn stage_graph_document_apply(
     origin: PendingGraphApplyOrigin,
     source_label: String,
     validation_issue_count: usize,
+    validation_report: Option<GraphValidationReport>,
 ) {
     pending.reset();
 
@@ -376,4 +382,5 @@ pub(super) fn stage_graph_document_apply(
     pending.origin = origin;
     pending.is_pending = true;
     pending.validation_issue_count = validation_issue_count;
+    pending.validation_report = validation_report;
 }
