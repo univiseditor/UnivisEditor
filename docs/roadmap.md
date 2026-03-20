@@ -206,28 +206,28 @@ The intended outcome is that `GraphDocument` remains the authored truth, while
 
 ## Phase 8: Performance Model
 
-- [ ] Create: `docs/graph-core-performance-model.md`
-- [ ] Define:
-  - [ ] what is stored permanently in `ExecutableGraph`
-  - [ ] what is rebuilt only when structure changes
-  - [ ] what marks a node dirty
-  - [ ] when outputs are considered changed
-  - [ ] the cost of core operations
-- [ ] Decide:
-  - [ ] when to rebuild
-  - [ ] when to rerun execution
+- [x] Create: `docs/graph-core-performance-model.md`
+- [x] Define:
+  - [x] what is stored permanently in `ExecutableGraph`
+  - [x] what is rebuilt only when structure changes
+  - [x] what marks a node dirty
+  - [x] when outputs are considered changed
+  - [x] the cost of core operations
+- [x] Decide:
+  - [x] when to rebuild
+  - [x] when to rerun execution
 
 ## Phase 9: Execution Tests
 
-- [ ] Test:
-  - [ ] build from document
-  - [ ] direct linking
-  - [ ] node diagnostics
-  - [ ] dirty propagation
-  - [ ] disabled nodes
-  - [ ] blocked nodes
-  - [ ] partial execution
-  - [ ] unchanged-output short-circuit
+- [x] Test:
+  - [x] build from document
+  - [x] direct linking
+  - [x] node diagnostics
+  - [x] dirty propagation
+  - [x] disabled nodes
+  - [x] blocked nodes
+  - [x] partial execution
+  - [x] unchanged-output short-circuit
 
 ## Documentation Maintenance
 

@@ -206,28 +206,28 @@
 
 ## Phase 8: نموذج الأداء
 
-- [ ] إنشاء ملف: `docs/graph-core-performance-model.md`
-- [ ] تعريف:
-  - [ ] ما يُخزن دائمًا في `ExecutableGraph`
-  - [ ] ما يُعاد بناؤه فقط عند تغير البنية
-  - [ ] ما الذي يسبب dirty
-  - [ ] متى تعتبر outputs متغيرة
-  - [ ] تكلفة العمليات الأساسية
-- [ ] تحديد:
-  - [ ] متى نعيد build
-  - [ ] متى نعيد execution
+- [x] إنشاء ملف: `docs/graph-core-performance-model.md`
+- [x] تعريف:
+  - [x] ما يُخزن دائمًا في `ExecutableGraph`
+  - [x] ما يُعاد بناؤه فقط عند تغير البنية
+  - [x] ما الذي يسبب dirty
+  - [x] متى تعتبر outputs متغيرة
+  - [x] تكلفة العمليات الأساسية
+- [x] تحديد:
+  - [x] متى نعيد build
+  - [x] متى نعيد execution
 
 ## Phase 9: اختبارات التنفيذ
 
-- [ ] اختبار:
-  - [ ] build من document
-  - [ ] direct linking
-  - [ ] node diagnostics
-  - [ ] dirty propagation
-  - [ ] disabled nodes
-  - [ ] blocked nodes
-  - [ ] partial execution
-  - [ ] unchanged output short-circuit
+- [x] اختبار:
+  - [x] build من document
+  - [x] direct linking
+  - [x] node diagnostics
+  - [x] dirty propagation
+  - [x] disabled nodes
+  - [x] blocked nodes
+  - [x] partial execution
+  - [x] unchanged output short-circuit
 
 ## صيانة الوثائق
 

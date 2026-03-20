@@ -10,6 +10,8 @@
 - Added core-facing readiness and blocked-state helpers such as `is_build_ready`, `can_execute`, `blocked_node_ids`, and `blocked_node_diagnostics`, so higher layers can now ask execution viability questions directly of `graph_core` instead of reconstructing them from separate validation outputs.
 - Switched runtime projection code to consume execution order and node diagnostics from the executable graph itself, keeping `validation` and `execution` aligned around one in-memory source of truth.
 - Completed `Phase 7` of the graph-core execution roadmap by linking build diagnostics to execution readiness and making blocked-node answers come directly from the core executable model.
+- Added a dedicated `graph-core-performance-model` note that locks the intended rebuild vs rerun policy, the permanent execution-state footprint of `ExecutableGraph`, dirty triggers, output-change semantics, and the rule that higher runtime layers should project from one long-lived executable graph instead of owning a second execution cache.
+- Rounded out executable-graph coverage with focused core tests for build-from-document direct links and execution order, disabled-node skipping, partial execution when some nodes are omitted from the build, and the already-landed dirty-propagation and blocked-node cases, then marked `Phase 8` and `Phase 9` complete in both roadmap documents.
 
 ## 2026-03-19
 

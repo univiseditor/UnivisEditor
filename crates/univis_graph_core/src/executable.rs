@@ -1148,8 +1148,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ExecutableGraph, ExecutableInputResolutionState, ExecutableNode, ExecutablePortRef,
-        NodeExecutionState,
+        ExecutableGraph, ExecutableInputResolutionState, ExecutableNode, ExecutableNodeBuildStatus,
+        ExecutableNodeRunStatus, ExecutablePortRef, NodeExecutionState,
     };
     use crate::document::{GraphDocument, GraphDocumentNode};
     use crate::identity::NodeId;
@@ -1483,6 +1483,130 @@ mod tests {
         assert_eq!(changed_graph.get_outputs(11), Some(&[6][..]));
         assert_eq!(changed_graph.get_node(11).unwrap().resolved_inputs(), &[5]);
         assert!(!changed_graph.get_node(11).unwrap().execution_state().dirty);
+    }
+
+    #[test]
+    fn build_from_document_creates_direct_links_and_execution_order() {
+        let mut registry = GraphNodeRegistry::<i32, PortDefinition<TestSchema>>::new();
+        registry.register(EchoNode);
+
+        let mut document = GraphDocument::<i32, ()>::default();
+        document
+            .insert_node(GraphDocumentNode {
+                id: 1,
+                definition_id: NodeId::new("tests/echo"),
+                position: [0.0, 0.0],
+                inputs: vec![3],
+                input_count: 1,
+                output_count: 1,
+            })
+            .unwrap();
+        document
+            .insert_node(GraphDocumentNode {
+                id: 2,
+                definition_id: NodeId::new("tests/echo"),
+                position: [100.0, 0.0],
+                inputs: vec![0],
+                input_count: 1,
+                output_count: 1,
+            })
+            .unwrap();
+        document.connect(1, 0, 2, 0).unwrap();
+
+        let build = ExecutableGraph::build(&document, &registry);
+        let source = build.graph.get_node(1).unwrap();
+        let target = build.graph.get_node(2).unwrap();
+
+        assert!(build.graph.validation_report().is_valid());
+        assert_eq!(build.graph.execution_order(), &[1, 2]);
+        assert_eq!(
+            source.links().outgoing_links_for_output(0).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            source.links().outgoing_links_for_output(0).unwrap()[0].node_id,
+            2
+        );
+        assert_eq!(target.links().incoming_links_for_input(0).unwrap().len(), 1);
+        assert_eq!(
+            target.links().incoming_links_for_input(0).unwrap()[0].node_id,
+            1
+        );
+        assert!(build.graph.is_build_ready());
+        assert!(build.graph.can_execute());
+    }
+
+    #[test]
+    fn run_node_skips_disabled_nodes() {
+        let mut registry = GraphNodeRegistry::<i32, PortDefinition<TestSchema>>::new();
+        registry.register(ConstantFiveNode);
+
+        let mut graph = ExecutableGraph::<i32>::new();
+        let mut node = ExecutableNode::from_parts(
+            1,
+            NodeId::new("tests/constant_five"),
+            vec![],
+            vec![],
+            vec![0],
+        );
+        node.seed_resolved_inputs_from_authored();
+        graph.insert_node(node);
+        assert!(graph.disable_node(1));
+
+        let outcome = graph.run_node(&registry, 1, 0.016).unwrap();
+
+        assert_eq!(outcome.status, ExecutableNodeRunStatus::SkippedDisabled);
+        assert!(!outcome.outputs_changed);
+        assert_eq!(graph.get_outputs(1), Some(&[0][..]));
+    }
+
+    #[test]
+    fn partial_build_still_runs_valid_nodes_when_other_nodes_are_omitted() {
+        let mut registry = GraphNodeRegistry::<i32, PortDefinition<TestSchema>>::new();
+        registry.register(ConstantFiveNode);
+
+        let mut document = GraphDocument::<i32, ()>::default();
+        document
+            .insert_node(GraphDocumentNode {
+                id: 1,
+                definition_id: NodeId::new("tests/constant_five"),
+                position: [0.0, 0.0],
+                inputs: vec![],
+                input_count: 0,
+                output_count: 1,
+            })
+            .unwrap();
+        document
+            .insert_node(GraphDocumentNode {
+                id: 2,
+                definition_id: NodeId::new("tests/missing"),
+                position: [100.0, 0.0],
+                inputs: vec![],
+                input_count: 0,
+                output_count: 1,
+            })
+            .unwrap();
+
+        let mut build = ExecutableGraph::build(&document, &registry);
+
+        assert!(build.is_partial);
+        assert!(build.graph.is_partial_build());
+        assert!(!build.graph.is_build_ready());
+        assert!(build.graph.can_execute());
+        assert_eq!(
+            build
+                .graph
+                .node_diagnostic(2)
+                .map(|diagnostic| diagnostic.status),
+            Some(ExecutableNodeBuildStatus::Omitted)
+        );
+
+        let outcomes = build.graph.run_ready_nodes(&registry, 0.016);
+
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].node_id, 1);
+        assert_eq!(outcomes[0].status, ExecutableNodeRunStatus::Executed);
+        assert_eq!(build.graph.get_outputs(1), Some(&[5][..]));
     }
 
     #[test]
