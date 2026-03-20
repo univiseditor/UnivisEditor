@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
-use univis_node_graph::prelude::{
-    AuthoredNodeInputs, GraphNode, NodeRegistry, NodeValue, ProcessContext, ProcessResult,
-};
+use univis_graph_core::prelude::{ExecutableNodeBuildStatus, ExecutableNodeRunStatus};
+use univis_node_graph::prelude::{AuthoredNodeInputs, GraphNode, NodeRegistry, ProcessResult};
 
 use crate::connectivity::{
-    GraphConnectivityIndex, GraphResolvedInputs, NodeInputSignature, NodeOutputSignature,
+    GraphConnectivityIndex, GraphExecutableRuntimeState, GraphResolvedInputs, NodeInputSignature,
+    NodeOutputSignature, project_runtime_resources,
 };
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -60,235 +60,240 @@ pub struct GraphRuntimeTraceEntry {
 
 pub(super) fn propagate_and_process_nodes_system(
     registry: Res<NodeRegistry>,
-    connectivity: Res<GraphConnectivityIndex>,
+    mut executable_state: ResMut<GraphExecutableRuntimeState>,
+    mut connectivity: ResMut<GraphConnectivityIndex>,
     mut diagnostics: ResMut<GraphRuntimeDiagnostics>,
     trace_settings: Res<GraphRuntimeTraceSettings>,
     mut runtime_trace: ResMut<GraphRuntimeTrace>,
     mut resolved_inputs: ResMut<GraphResolvedInputs>,
-    mut q_nodes: ParamSet<(
-        Query<(
-            Entity,
-            &GraphNode,
-            &AuthoredNodeInputs,
-            &NodeInputSignature,
-            &NodeOutputSignature,
-        )>,
-        Query<(
-            Entity,
-            &mut GraphNode,
-            &AuthoredNodeInputs,
-            &mut NodeInputSignature,
-            &mut NodeOutputSignature,
-        )>,
+    mut q_nodes: Query<(
+        Entity,
+        &mut GraphNode,
+        &AuthoredNodeInputs,
+        &mut NodeInputSignature,
+        &mut NodeOutputSignature,
     )>,
     time: Res<Time>,
 ) {
     let connectivity_changed = connectivity.is_changed();
-    if diagnostics.blocked_nodes != connectivity.blocked_nodes {
-        diagnostics.blocked_nodes = connectivity.blocked_nodes.clone();
-        if !diagnostics.blocked_nodes.is_empty() {
-            warn!(
-                "Graph runtime skipped {} node(s) because the graph contains a cycle or blocked dependency path.",
-                diagnostics.blocked_nodes.len()
-            );
+    let node_count_hint = executable_state.entity_to_node_id.len().max(1);
+    let mut known_nodes = HashSet::with_capacity(node_count_hint);
+    let mut dirty_reasons = HashMap::<Entity, Vec<String>>::with_capacity(node_count_hint);
+    let mut definition_ids = HashMap::<Entity, String>::with_capacity(node_count_hint);
+
+    if trace_settings.enabled {
+        runtime_trace.entries.clear();
+    }
+
+    for (entity, mut node, authored_inputs, mut input_signature, output_signature) in
+        q_nodes.iter_mut()
+    {
+        known_nodes.insert(entity);
+        definition_ids.insert(entity, node.definition_id.to_string());
+
+        let Some(node_id) = executable_state.node_id_for_entity(entity) else {
+            input_signature.inputs.clone_from(&authored_inputs.values);
+            continue;
+        };
+
+        if node.custom_data.is_some() {
+            let custom_data = node.custom_data.take();
+            let _ = executable_state
+                .graph
+                .replace_custom_data(node_id, custom_data);
+        }
+
+        if input_signature.inputs != authored_inputs.values
+            && executable_state
+                .graph
+                .replace_authored_inputs(node_id, &authored_inputs.values)
+        {
+            dirty_reasons
+                .entry(entity)
+                .or_default()
+                .push("authored inputs changed".to_string());
+        }
+
+        if output_signature.outputs != node.values.outputs
+            && executable_state
+                .graph
+                .sync_external_outputs(node_id, &node.values.outputs)
+        {
+            dirty_reasons
+                .entry(entity)
+                .or_default()
+                .push("visual or external output changed".to_string());
+        }
+
+        if connectivity_changed
+            && executable_state
+                .graph
+                .get_node(node_id)
+                .is_some_and(|node| node.execution_state().dirty)
+        {
+            dirty_reasons
+                .entry(entity)
+                .or_default()
+                .push("graph structure changed".to_string());
+        }
+
+        input_signature.inputs.clone_from(&authored_inputs.values);
+    }
+
+    let outcomes = executable_state
+        .graph
+        .run_ready_nodes(registry.core_registry(), time.delta_secs());
+    project_runtime_resources(&executable_state, &mut connectivity, &mut resolved_inputs);
+
+    let mut issues_by_node = HashMap::<Entity, GraphRuntimeNodeIssue>::new();
+    for (node_id, diagnostic) in &executable_state.node_diagnostics {
+        let Some(entity) = executable_state.entity_for_node_id(*node_id) else {
+            continue;
+        };
+        let Some(message) = diagnostic
+            .reasons
+            .first()
+            .map(|reason| reason.message.clone())
+        else {
+            continue;
+        };
+        let Some(definition_id) = executable_state
+            .graph
+            .get_node(*node_id)
+            .map(|node| node.definition_id().to_string())
+            .or_else(|| definition_ids.get(&entity).cloned())
+        else {
+            continue;
+        };
+
+        let severity = match diagnostic.status {
+            ExecutableNodeBuildStatus::Built => continue,
+            ExecutableNodeBuildStatus::Degraded => GraphRuntimeIssueSeverity::Warning,
+            ExecutableNodeBuildStatus::Blocked | ExecutableNodeBuildStatus::Omitted => {
+                GraphRuntimeIssueSeverity::Error
+            }
+        };
+
+        issues_by_node.insert(
+            entity,
+            GraphRuntimeNodeIssue {
+                node: entity,
+                definition_id,
+                severity,
+                message,
+            },
+        );
+    }
+
+    for outcome in outcomes {
+        let Some(entity) = executable_state.entity_for_node_id(outcome.node_id) else {
+            continue;
+        };
+        let definition_id = executable_state
+            .graph
+            .get_node(outcome.node_id)
+            .map(|node| node.definition_id().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let result_summary = summarize_result(outcome.result.as_ref());
+
+        if trace_settings.enabled {
+            runtime_trace.entries.push(GraphRuntimeTraceEntry {
+                node: entity,
+                definition_id: definition_id.clone(),
+                reasons: dirty_reasons
+                    .remove(&entity)
+                    .filter(|reasons| !reasons.is_empty())
+                    .unwrap_or_else(|| vec!["node marked dirty".to_string()]),
+                result: result_summary,
+                outputs_changed: outcome.outputs_changed,
+            });
+        }
+
+        match (outcome.status, outcome.result) {
+            (ExecutableNodeRunStatus::Executed, Some(ProcessResult::Success)) => {}
+            (ExecutableNodeRunStatus::Executed, Some(ProcessResult::Error(message))) => {
+                issues_by_node.insert(
+                    entity,
+                    GraphRuntimeNodeIssue {
+                        node: entity,
+                        definition_id,
+                        severity: GraphRuntimeIssueSeverity::Error,
+                        message: format!("Processing error: {message}"),
+                    },
+                );
+            }
+            (ExecutableNodeRunStatus::Executed, Some(ProcessResult::MissingInput(index)))
+            | (ExecutableNodeRunStatus::SkippedBlocked, Some(ProcessResult::MissingInput(index))) =>
+            {
+                issues_by_node.insert(
+                    entity,
+                    GraphRuntimeNodeIssue {
+                        node: entity,
+                        definition_id,
+                        severity: GraphRuntimeIssueSeverity::Warning,
+                        message: format!("Missing input: {index}"),
+                    },
+                );
+            }
+            (ExecutableNodeRunStatus::MissingDefinition, Some(ProcessResult::Error(message))) => {
+                issues_by_node.insert(
+                    entity,
+                    GraphRuntimeNodeIssue {
+                        node: entity,
+                        definition_id,
+                        severity: GraphRuntimeIssueSeverity::Error,
+                        message,
+                    },
+                );
+            }
+            _ => {}
         }
     }
 
-    let node_count_hint = q_nodes.p0().iter().len();
-    let mut known_nodes = HashSet::with_capacity(node_count_hint);
-    let mut dirty_nodes = HashSet::with_capacity(node_count_hint);
-    let mut dirty_reasons = HashMap::<Entity, Vec<String>>::with_capacity(node_count_hint);
-    let mut outputs_by_node = HashMap::<Entity, Vec<NodeValue>>::with_capacity(node_count_hint);
-
+    for (entity, mut node, _authored_inputs, _input_signature, mut output_signature) in
+        q_nodes.iter_mut()
     {
-        let nodes = q_nodes.p0();
-        for (entity, node, authored_inputs, input_signature, output_signature) in nodes.iter() {
-            known_nodes.insert(entity);
-            outputs_by_node.insert(entity, node.values.outputs.clone());
-            resolved_inputs
-                .by_node
-                .entry(entity)
-                .or_insert_with(|| authored_inputs.values.clone());
+        let Some(node_id) = executable_state.node_id_for_entity(entity) else {
+            output_signature.outputs.clone_from(&node.values.outputs);
+            continue;
+        };
 
-            let mut reasons = Vec::new();
-            if connectivity_changed {
-                reasons.push("graph connectivity changed".to_string());
-            }
-            if input_signature.inputs != authored_inputs.values {
-                reasons.push("authored inputs changed".to_string());
-            }
-            if output_signature.outputs != node.values.outputs {
-                reasons.push("visual or external output changed".to_string());
-            }
+        let Some(executable_node) = executable_state.graph.get_node(node_id) else {
+            output_signature.outputs.clone_from(&node.values.outputs);
+            continue;
+        };
 
-            if !reasons.is_empty() {
-                dirty_nodes.insert(entity);
-                dirty_reasons.insert(entity, reasons);
-            }
-        }
+        node.values.inputs = executable_node.resolved_inputs().to_vec();
+        node.values.outputs = executable_node.outputs().to_vec();
+        output_signature.outputs.clone_from(&node.values.outputs);
+    }
+
+    diagnostics.blocked_nodes = connectivity.blocked_nodes.clone();
+    diagnostics.node_issues = sorted_issues(issues_by_node);
+
+    if !diagnostics.blocked_nodes.is_empty() && connectivity_changed {
+        warn!(
+            "Graph runtime skipped {} node(s) because the graph contains a cycle or blocked dependency path.",
+            diagnostics.blocked_nodes.len()
+        );
     }
 
     resolved_inputs
         .by_node
         .retain(|entity, _| known_nodes.contains(entity));
 
-    let mut issues_by_node = diagnostics
-        .node_issues
-        .drain(..)
-        .filter(|issue| known_nodes.contains(&issue.node))
-        .map(|issue| (issue.node, issue))
-        .collect::<HashMap<_, _>>();
-
-    if dirty_nodes.is_empty() && !connectivity_changed {
-        diagnostics.node_issues = sorted_issues(issues_by_node);
-        if trace_settings.enabled {
-            runtime_trace.entries.clear();
-        }
-        return;
-    }
-
-    if trace_settings.enabled {
-        runtime_trace.entries.clear();
-    }
-
-    for entity in connectivity.ordered_nodes.iter().copied() {
-        if !dirty_nodes.contains(&entity) {
-            continue;
-        }
-
-        let mut mutable_nodes = q_nodes.p1();
-        let Ok((_, mut node, authored_inputs, mut input_signature, mut output_signature)) =
-            mutable_nodes.get_mut(entity)
-        else {
-            continue;
-        };
-
-        let mut resolved = authored_inputs.values.clone();
-        if let Some(sources) = connectivity.incoming_by_node_input.get(&entity) {
-            for (input_index, source) in sources.iter().enumerate() {
-                let Some(source) = source else {
-                    continue;
-                };
-
-                let value = outputs_by_node
-                    .get(&source.source_node)
-                    .and_then(|outputs| outputs.get(source.source_index))
-                    .cloned()
-                    .unwrap_or(NodeValue::None);
-
-                if let Some(slot) = resolved.get_mut(input_index) {
-                    *slot = value;
-                }
-            }
-        }
-        match resolved_inputs.by_node.entry(entity) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().clone_from(&resolved);
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(resolved.clone());
-            }
-        }
-
-        let definition_id = node.definition_id.clone();
-        let Some(definition) = registry.get(&definition_id) else {
-            issues_by_node.insert(
-                entity,
-                GraphRuntimeNodeIssue {
-                    node: entity,
-                    definition_id: definition_id.to_string(),
-                    severity: GraphRuntimeIssueSeverity::Error,
-                    message: "Missing node definition in registry.".to_string(),
-                },
-            );
-            continue;
-        };
-
-        let mut outputs = node.values.outputs.clone();
-
-        let result = {
-            let custom_data = &mut node.custom_data;
-            let mut context = ProcessContext {
-                inputs: &resolved,
-                outputs: &mut outputs,
-                delta_time: time.delta_secs(),
-                custom_data,
-            };
-            definition.process(&mut context)
-        };
-
-        let result_summary = match &result {
-            ProcessResult::Success => "success".to_string(),
-            ProcessResult::Error(message) => format!("error: {message}"),
-            ProcessResult::MissingInput(index) => format!("missing input: {index}"),
-        };
-
-        match &result {
-            ProcessResult::Success => {
-                issues_by_node.remove(&entity);
-            }
-            ProcessResult::Error(message) => {
-                issues_by_node.insert(
-                    entity,
-                    GraphRuntimeNodeIssue {
-                        node: entity,
-                        definition_id: definition_id.to_string(),
-                        severity: GraphRuntimeIssueSeverity::Error,
-                        message: format!("Processing error: {}", message),
-                    },
-                );
-            }
-            ProcessResult::MissingInput(index) => {
-                issues_by_node.insert(
-                    entity,
-                    GraphRuntimeNodeIssue {
-                        node: entity,
-                        definition_id: definition_id.to_string(),
-                        severity: GraphRuntimeIssueSeverity::Warning,
-                        message: format!("Missing input: {}", index),
-                    },
-                );
-            }
-        }
-
-        let outputs_changed = output_signature.outputs != outputs;
-        if trace_settings.enabled {
-            runtime_trace.entries.push(GraphRuntimeTraceEntry {
-                node: entity,
-                definition_id: definition_id.to_string(),
-                reasons: dirty_reasons.remove(&entity).unwrap_or_default(),
-                result: result_summary,
-                outputs_changed,
-            });
-        }
-        node.values.inputs.clone_from(&resolved);
-        node.values.outputs.clone_from(&outputs);
-        input_signature.inputs.clone_from(&authored_inputs.values);
-        output_signature.outputs.clone_from(&outputs);
-        outputs_by_node.insert(entity, outputs);
-
-        if outputs_changed {
-            if let Some(outputs) = connectivity.outgoing_by_node_output.get(&entity) {
-                for targets in outputs {
-                    for target in targets {
-                        dirty_nodes.insert(target.target_node);
-                        dirty_reasons
-                            .entry(target.target_node)
-                            .or_default()
-                            .push(format!(
-                                "upstream output changed: {} -> input {}",
-                                definition_id, target.target_index
-                            ));
-                    }
-                }
-            }
-        }
-    }
-
-    diagnostics.node_issues = sorted_issues(issues_by_node);
     if trace_settings.enabled && runtime_trace.entries.len() > trace_settings.max_entries {
         let keep_from = runtime_trace.entries.len() - trace_settings.max_entries;
         runtime_trace.entries.drain(0..keep_from);
+    }
+}
+
+fn summarize_result(result: Option<&ProcessResult>) -> String {
+    match result {
+        Some(ProcessResult::Success) => "success".to_string(),
+        Some(ProcessResult::Error(message)) => format!("error: {message}"),
+        Some(ProcessResult::MissingInput(index)) => format!("missing input: {index}"),
+        None => "skipped".to_string(),
     }
 }
 

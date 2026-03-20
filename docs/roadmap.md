@@ -163,35 +163,35 @@ The intended outcome is that `GraphDocument` remains the authored truth, while
 
 ## Phase 5: Dirty Propagation
 
-- [ ] Define the dirty propagation model
-- [ ] When authored input changes or external mutation happens:
-  - [ ] mark the node dirty
-- [ ] Propagate dirty state to:
-  - [ ] downstream nodes
-- [ ] Execute:
-  - [ ] ready nodes only
-- [ ] After execution:
-  - [ ] compare previous and new outputs
-- [ ] If outputs did not change:
-  - [ ] stop propagation
-- [ ] If outputs changed:
-  - [ ] continue propagation
+- [x] Define the dirty propagation model
+- [x] When authored input changes or external mutation happens:
+  - [x] mark the node dirty
+- [x] Propagate dirty state to:
+  - [x] downstream nodes
+- [x] Execute:
+  - [x] ready nodes only
+- [x] After execution:
+  - [x] compare previous and new outputs
+- [x] If outputs did not change:
+  - [x] stop propagation
+- [x] If outputs changed:
+  - [x] continue propagation
 
 ## Phase 6: Move Execution Logic Downward
 
-- [ ] Move:
-  - [ ] adjacency logic
-  - [ ] propagation
-  - [ ] ready / blocked logic
-  - [ ] scheduling
-  - [ ] execution traversal
-- [ ] Keep outside core:
-  - [ ] Bevy ECS
-  - [ ] world mutation
-  - [ ] rendering
-  - [ ] UI
-- [ ] Make higher runtime layers:
-  - [ ] adapters over core
+- [x] Move:
+  - [x] adjacency logic
+  - [x] propagation
+  - [x] ready / blocked logic
+  - [x] scheduling
+  - [x] execution traversal
+- [x] Keep outside core:
+  - [x] Bevy ECS
+  - [x] world mutation
+  - [x] rendering
+  - [x] UI
+- [x] Make higher runtime layers:
+  - [x] adapters over core
 
 ## Phase 7: Integrate Validation With Execution
 

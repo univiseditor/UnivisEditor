@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-03-20
+
+- Moved the remaining runtime execution path onto `ExecutableGraph` by introducing a `GraphExecutableRuntimeState` adapter resource in `univis_editor_runtime`, rebuilding executable state from the authored graph snapshot, and projecting compatibility resources such as connectivity and resolved-input caches from the core execution graph instead of maintaining a second execution engine in Bevy systems.
+- Added core-side synchronization hooks on `ExecutableGraph` for whole-node authored-input replacement, external output synchronization, downstream dirtiness propagation, and runtime `custom_data` handoff so higher layers can keep ECS-facing widget and visual mutations while delegating actual scheduling and propagation rules to `univis_graph_core`.
+- Reworked runtime node processing and diagnostics so `univis_editor_runtime` now feeds authored changes, visual output mutations, and custom runtime payloads into the executable graph, runs `run_ready_nodes(...)` from core, then projects resolved inputs, outputs, blocked state, trace entries, and runtime issues back into ECS and existing editor-facing resources.
+- Completed `Phase 6` of the graph-core execution roadmap in both Arabic and English by making the Bevy runtime an adapter over core execution rather than the owner of separate adjacency, propagation, readiness, scheduling, and traversal logic.
+
 ## 2026-03-19
 
 - Moved graph-document validation deeper into `univis_graph_core` by introducing a reusable `validation` module with shared issue/report types, structural document checks, schema-aware type compatibility, requirement validation, and topology-aware reporting in one core-level pipeline.

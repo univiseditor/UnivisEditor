@@ -13,7 +13,8 @@ use self::scene_outputs::collect_scene_outputs_system;
 use self::world_sync::{cleanup_orphaned_scene_roots_system, sync_scene_nodes_to_world_system};
 
 pub use self::connectivity::{
-    GraphConnectivityIndex, GraphResolvedInputs, NodeInputSignature, NodeOutputSignature,
+    GraphConnectivityIndex, GraphExecutableRuntimeState, GraphResolvedInputs, NodeInputSignature,
+    NodeOutputSignature,
 };
 pub use self::diagnostics::{
     GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity, GraphRuntimeNodeIssue, GraphRuntimeTrace,
@@ -36,6 +37,7 @@ impl Plugin for NodeRuntimePlugin {
         app.init_resource::<GraphRuntimeDiagnostics>()
             .init_resource::<GraphRuntimeTraceSettings>()
             .init_resource::<GraphRuntimeTrace>()
+            .init_resource::<connectivity::GraphExecutableRuntimeState>()
             .init_resource::<connectivity::GraphConnectivityIndex>()
             .init_resource::<connectivity::GraphResolvedInputs>()
             .init_resource::<GraphSceneOutputs>()
@@ -80,9 +82,9 @@ impl Plugin for NodeRuntimePlugin {
 
 pub mod prelude {
     pub use crate::{
-        GraphConnectivityIndex, GraphResolvedInputs, GraphRuntimeDiagnostics, GraphRuntimeTrace,
-        GraphRuntimeTraceEntry, GraphRuntimeTraceSettings, GraphSceneOutputMode, GraphSceneOutputs,
-        GraphSceneSinkOutput, NodeInputSignature, NodeOutputSignature, NodeRuntimePlugin,
-        NodeRuntimeSystemSet,
+        GraphConnectivityIndex, GraphExecutableRuntimeState, GraphResolvedInputs,
+        GraphRuntimeDiagnostics, GraphRuntimeTrace, GraphRuntimeTraceEntry,
+        GraphRuntimeTraceSettings, GraphSceneOutputMode, GraphSceneOutputs, GraphSceneSinkOutput,
+        NodeInputSignature, NodeOutputSignature, NodeRuntimePlugin, NodeRuntimeSystemSet,
     };
 }

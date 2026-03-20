@@ -278,6 +278,10 @@ impl<Value> ExecutableNode<Value> {
         &self.execution
     }
 
+    pub fn has_custom_data(&self) -> bool {
+        self.custom_data.is_some()
+    }
+
     pub fn is_ready(&self) -> bool {
         self.execution.ready
     }
@@ -480,6 +484,57 @@ impl<Value> ExecutableGraph<Value>
 where
     Value: Clone + Default + PartialEq,
 {
+    fn mark_node_dirty_without_revision(&mut self, node_id: u64) -> bool {
+        let Some(node) = self.get_node_mut(node_id) else {
+            return false;
+        };
+        node.execution.dirty = true;
+        node.refresh_execution_state();
+        true
+    }
+
+    fn mark_direct_downstream_dirty(&mut self, node_id: u64) {
+        let Some(downstream) = self.get_downstream(node_id) else {
+            return;
+        };
+
+        for target_node_id in downstream {
+            self.mark_node_dirty_without_revision(target_node_id);
+        }
+    }
+
+    fn reachable_from(&self, node_id: u64) -> Vec<u64> {
+        let mut visited = HashSet::new();
+        let mut queue = vec![node_id];
+        let mut ordered = Vec::new();
+
+        while let Some(current) = queue.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            ordered.push(current);
+            if let Some(downstream) = self.get_downstream(current) {
+                for target in downstream.into_iter().rev() {
+                    queue.push(target);
+                }
+            }
+        }
+
+        ordered.sort_unstable();
+        ordered
+    }
+
+    fn refresh_dirty_node_inputs(&mut self, node_ids: impl IntoIterator<Item = u64>) {
+        for node_id in node_ids {
+            let is_dirty = self
+                .get_node(node_id)
+                .is_some_and(|node| node.execution_state().dirty);
+            if is_dirty {
+                let _ = self.resolve_inputs(node_id);
+            }
+        }
+    }
+
     pub fn build<S, Prefab>(
         document: &GraphDocument<Value, Prefab>,
         registry: &GraphNodeRegistry<Value, PortDefinition<S>>,
@@ -645,11 +700,24 @@ where
     }
 
     pub fn mark_dirty(&mut self, node_id: u64) -> bool {
+        if !self.mark_node_dirty_without_revision(node_id) {
+            return false;
+        }
+        self.bump_revision();
+        true
+    }
+
+    pub fn replace_authored_inputs(&mut self, node_id: u64, inputs: &[Value]) -> bool {
         let Some(node) = self.get_node_mut(node_id) else {
             return false;
         };
+        if node.authored_inputs.len() != inputs.len() || node.authored_inputs == inputs {
+            return false;
+        }
+
+        node.authored_inputs = inputs.to_vec();
         node.execution.dirty = true;
-        node.refresh_execution_state();
+        node.seed_resolved_inputs_from_authored();
         self.bump_revision();
         true
     }
@@ -663,6 +731,42 @@ where
         }
         node.execution.dirty = true;
         node.seed_resolved_inputs_from_authored();
+        self.bump_revision();
+        true
+    }
+
+    pub fn replace_custom_data(
+        &mut self,
+        node_id: u64,
+        custom_data: Option<Box<dyn Any + Send + Sync>>,
+    ) -> bool {
+        let Some(node) = self.get_node_mut(node_id) else {
+            return false;
+        };
+        node.custom_data = custom_data;
+        true
+    }
+
+    pub fn sync_external_outputs(&mut self, node_id: u64, outputs: &[Value]) -> bool {
+        let Some(node) = self.get_node_mut(node_id) else {
+            return false;
+        };
+        if node.outputs.len() != outputs.len() || node.outputs == outputs {
+            return false;
+        }
+
+        node.outputs = outputs.to_vec();
+        node.refresh_execution_state();
+        self.mark_direct_downstream_dirty(node_id);
+        self.bump_revision();
+        true
+    }
+
+    pub fn mark_downstream_dirty(&mut self, node_id: u64) -> bool {
+        if !self.contains_node(node_id) {
+            return false;
+        }
+        self.mark_direct_downstream_dirty(node_id);
         self.bump_revision();
         true
     }
@@ -692,10 +796,22 @@ where
             }
 
             let source = links[0];
-            let value = self
-                .get_node(source.node_id)
-                .and_then(|source_node| source_node.outputs().get(source.port_index))
-                .cloned();
+            let Some(source_node) = self.get_node(source.node_id) else {
+                resolution.push(ExecutableInputResolutionState::MissingUpstream);
+                continue;
+            };
+
+            if source_node.execution_state().blocked {
+                resolution.push(ExecutableInputResolutionState::MissingUpstream);
+                continue;
+            }
+
+            if source_node.execution_state().dirty {
+                resolution.push(ExecutableInputResolutionState::PendingUpstream);
+                continue;
+            }
+
+            let value = source_node.outputs().get(source.port_index).cloned();
 
             if let Some(value) = value {
                 if let Some(slot) = resolved_inputs.get_mut(input_index) {
@@ -815,19 +931,30 @@ where
     where
         S: PortSchema,
     {
-        let ready_node_ids = self
-            .stable_node_ids()
-            .into_iter()
-            .filter(|node_id| {
-                self.get_node(*node_id)
-                    .is_some_and(ExecutableNode::is_ready)
-            })
-            .collect::<Vec<_>>();
-
         let mut outcomes = Vec::new();
-        for node_id in ready_node_ids {
-            if let Some(outcome) = self.run_node(registry, node_id, delta_time) {
-                outcomes.push(outcome);
+        loop {
+            let node_ids = self.stable_node_ids();
+            self.refresh_dirty_node_inputs(node_ids.iter().copied());
+
+            let ready_node_ids = node_ids
+                .into_iter()
+                .filter(|node_id| {
+                    self.get_node(*node_id)
+                        .is_some_and(ExecutableNode::is_ready)
+                })
+                .collect::<Vec<_>>();
+
+            if ready_node_ids.is_empty() {
+                break;
+            }
+
+            for node_id in ready_node_ids {
+                if let Some(outcome) = self.run_node(registry, node_id, delta_time) {
+                    if outcome.outputs_changed {
+                        self.mark_direct_downstream_dirty(node_id);
+                    }
+                    outcomes.push(outcome);
+                }
             }
         }
         outcomes
@@ -842,27 +969,44 @@ where
     where
         S: PortSchema,
     {
-        let mut visited = HashSet::new();
-        let mut queue = vec![node_id];
-        let mut ordered = Vec::new();
-
-        while let Some(current) = queue.pop() {
-            if !visited.insert(current) {
-                continue;
-            }
-            ordered.push(current);
-            if let Some(downstream) = self.get_downstream(current) {
-                for target in downstream.into_iter().rev() {
-                    queue.push(target);
-                }
-            }
+        let reachable = self.reachable_from(node_id);
+        if reachable.is_empty() {
+            return Vec::new();
         }
 
+        let _ = self.mark_dirty(node_id);
         let mut outcomes = Vec::new();
-        for current in ordered {
-            self.mark_dirty(current);
-            if let Some(outcome) = self.run_node(registry, current, delta_time) {
-                outcomes.push(outcome);
+        loop {
+            self.refresh_dirty_node_inputs(reachable.iter().copied());
+
+            let ready_node_ids = reachable
+                .iter()
+                .copied()
+                .filter(|current| {
+                    self.get_node(*current)
+                        .is_some_and(ExecutableNode::is_ready)
+                })
+                .collect::<Vec<_>>();
+
+            if ready_node_ids.is_empty() {
+                break;
+            }
+
+            for current in ready_node_ids {
+                if let Some(outcome) = self.run_node(registry, current, delta_time) {
+                    if outcome.outputs_changed {
+                        let downstream = self
+                            .get_downstream(current)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|target| reachable.binary_search(target).is_ok())
+                            .collect::<Vec<_>>();
+                        for target in downstream {
+                            self.mark_node_dirty_without_revision(target);
+                        }
+                    }
+                    outcomes.push(outcome);
+                }
             }
         }
         outcomes
@@ -949,6 +1093,31 @@ mod tests {
         fn process(&self, context: &mut ProcessContext<'_, i32>) -> ProcessResult {
             let value = context.get(0).copied().unwrap_or_default();
             context.set(0, value + 1);
+            ProcessResult::Success
+        }
+    }
+
+    struct ConstantFiveNode;
+
+    impl GraphNodeDefinition<i32, PortDefinition<TestSchema>> for ConstantFiveNode {
+        fn id(&self) -> NodeId {
+            NodeId::new("tests/constant_five")
+        }
+
+        fn display_name(&self) -> &str {
+            "Constant Five"
+        }
+
+        fn inputs(&self) -> Vec<PortDefinition<TestSchema>> {
+            vec![]
+        }
+
+        fn outputs(&self) -> Vec<PortDefinition<TestSchema>> {
+            vec![PortDefinition::new("Value", ())]
+        }
+
+        fn process(&self, context: &mut ProcessContext<'_, i32>) -> ProcessResult {
+            context.set(0, 5);
             ProcessResult::Success
         }
     }
@@ -1135,5 +1304,71 @@ mod tests {
         assert_eq!(graph.get_node(2).unwrap().resolved_inputs(), &[5]);
         assert_eq!(graph.get_outputs(2), Some(&[6][..]));
         assert!(!graph.get_node(2).unwrap().execution_state().dirty);
+    }
+
+    #[test]
+    fn run_ready_nodes_only_propagates_when_outputs_change() {
+        let mut registry = GraphNodeRegistry::<i32, PortDefinition<TestSchema>>::new();
+        registry.register(EchoNode);
+        registry.register(ConstantFiveNode);
+
+        let mut unchanged_graph = ExecutableGraph::<i32>::new();
+        let mut constant_source = ExecutableNode::from_parts(
+            1,
+            NodeId::new("tests/constant_five"),
+            vec![],
+            vec![],
+            vec![5],
+        );
+        let mut constant_target =
+            ExecutableNode::from_parts(2, NodeId::new("tests/echo"), vec![0], vec![0], vec![0]);
+        constant_target
+            .links
+            .add_incoming_link(0, ExecutablePortRef::new(1, 0));
+        constant_source
+            .links
+            .add_outgoing_link(0, ExecutablePortRef::new(2, 0));
+        constant_target.seed_resolved_inputs_from_authored();
+        constant_target.execution.dirty = false;
+        constant_target.refresh_execution_state();
+
+        unchanged_graph.insert_node(constant_source);
+        unchanged_graph.insert_node(constant_target);
+
+        let unchanged_outcomes = unchanged_graph.run_ready_nodes(&registry, 0.016);
+
+        assert_eq!(unchanged_outcomes.len(), 1);
+        assert!(!unchanged_outcomes[0].outputs_changed);
+        assert_eq!(unchanged_graph.get_outputs(2), Some(&[0][..]));
+        assert!(!unchanged_graph.get_node(2).unwrap().execution_state().dirty);
+
+        let mut changed_graph = ExecutableGraph::<i32>::new();
+        let mut source =
+            ExecutableNode::from_parts(10, NodeId::new("tests/echo"), vec![4], vec![4], vec![0]);
+        let mut target =
+            ExecutableNode::from_parts(11, NodeId::new("tests/echo"), vec![0], vec![0], vec![0]);
+        target
+            .links
+            .add_incoming_link(0, ExecutablePortRef::new(10, 0));
+        source
+            .links
+            .add_outgoing_link(0, ExecutablePortRef::new(11, 0));
+        source.seed_resolved_inputs_from_authored();
+        target.seed_resolved_inputs_from_authored();
+        target.execution.dirty = false;
+        target.refresh_execution_state();
+
+        changed_graph.insert_node(source);
+        changed_graph.insert_node(target);
+
+        let changed_outcomes = changed_graph.run_ready_nodes(&registry, 0.016);
+
+        assert_eq!(changed_outcomes.len(), 2);
+        assert!(changed_outcomes[0].outputs_changed);
+        assert!(changed_outcomes[1].outputs_changed);
+        assert_eq!(changed_graph.get_outputs(10), Some(&[5][..]));
+        assert_eq!(changed_graph.get_outputs(11), Some(&[6][..]));
+        assert_eq!(changed_graph.get_node(11).unwrap().resolved_inputs(), &[5]);
+        assert!(!changed_graph.get_node(11).unwrap().execution_state().dirty);
     }
 }

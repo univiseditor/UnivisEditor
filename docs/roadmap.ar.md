@@ -163,35 +163,35 @@
 
 ## Phase 5: Dirty Propagation
 
-- [ ] تعريف dirty propagation model
-- [ ] عند تغير authored input أو external mutation:
-  - [ ] mark node dirty
-- [ ] نشر dirty إلى:
-  - [ ] downstream nodes
-- [ ] تنفيذ:
-  - [ ] ready nodes فقط
-- [ ] بعد التنفيذ:
-  - [ ] مقارنة outputs السابقة والجديدة
-- [ ] إذا لم تتغير outputs:
-  - [ ] إيقاف propagation
-- [ ] إذا تغيرت outputs:
-  - [ ] متابعة propagation
+- [x] تعريف dirty propagation model
+- [x] عند تغير authored input أو external mutation:
+  - [x] mark node dirty
+- [x] نشر dirty إلى:
+  - [x] downstream nodes
+- [x] تنفيذ:
+  - [x] ready nodes فقط
+- [x] بعد التنفيذ:
+  - [x] مقارنة outputs السابقة والجديدة
+- [x] إذا لم تتغير outputs:
+  - [x] إيقاف propagation
+- [x] إذا تغيرت outputs:
+  - [x] متابعة propagation
 
 ## Phase 6: إنزال منطق التنفيذ إلى core
 
-- [ ] نقل:
-  - [ ] adjacency logic
-  - [ ] propagation
-  - [ ] ready / blocked logic
-  - [ ] scheduling
-  - [ ] execution traversal
-- [ ] إبقاء خارج core:
-  - [ ] Bevy ECS
-  - [ ] world mutation
-  - [ ] rendering
-  - [ ] UI
-- [ ] جعل runtime الأعلى:
-  - [ ] adapter فوق core
+- [x] نقل:
+  - [x] adjacency logic
+  - [x] propagation
+  - [x] ready / blocked logic
+  - [x] scheduling
+  - [x] execution traversal
+- [x] إبقاء خارج core:
+  - [x] Bevy ECS
+  - [x] world mutation
+  - [x] rendering
+  - [x] UI
+- [x] جعل runtime الأعلى:
+  - [x] adapter فوق core
 
 ## Phase 7: ربط validation بالتنفيذ
 
