@@ -15,6 +15,10 @@
 - Simplified persistence snapshot state by removing duplicated cached validation issue counts from history and pending-apply state, making `GraphValidationReport` the single source of truth there and deriving counts only when user-facing warnings need them.
 - Moved `graph_document_signature` into `univis_node_graph::document`, then updated live validation and persistence history/dirty tracking to consume the same shared document-signature helper instead of leaving signature logic split between graph state and save-file formatting code.
 - Clarified persistence naming around document identity by renaming saved/history signature fields to `document_signature` / `last_saved_document_signature` / `last_document_signature`, and removed the temporary `graph_document_signature` re-export from `univis_editor_persistence::format` so save-file helpers no longer expose document-layer utilities.
+- Added a dedicated `graph core execution` roadmap in Arabic and English plus a `graph-core-execution-model` note, locking the authored-vs-executable boundary, build semantics, and the staged execution plan before implementation started.
+- Introduced a first `ExecutableGraph` layer inside `univis_graph_core`, including executable nodes, direct links, node execution state, build reports, node diagnostics, and a tolerant `ExecutableGraph::build(document, registry)` path that reuses core validation output instead of inventing a separate build-time truth.
+- Locked execution-time data separation in the new core layer by keeping `authored_inputs`, `resolved_inputs`, and `outputs` distinct, adding explicit input-resolution states and reseeding rules, and defining initial `ready` / `blocked` semantics inside `ExecutableNode`.
+- Added the first internal experimental execution API to `ExecutableGraph`, covering node enable/disable and dirtiness controls, authored-input mutation, input resolution, direct node execution, ready-node execution, graph traversal from a starting node, output reads, adjacency queries, and per-node custom runtime data.
 
 ## 2026-03-18
 

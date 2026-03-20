@@ -1,4 +1,5 @@
 pub mod document;
+pub mod executable;
 pub mod identity;
 pub mod ports;
 pub mod processing;
@@ -12,6 +13,12 @@ pub mod prelude {
         GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentCameraState, GraphDocumentEdge,
         GraphDocumentNode, GraphDocumentOperationError, GraphDocumentPrefab,
         GraphDocumentSelectionBoundarySummary, GraphDocumentSubgraph, GraphDocumentViewState,
+    };
+    pub use crate::executable::{
+        ExecutableDirectLinks, ExecutableGraph, ExecutableGraphBuildReport,
+        ExecutableInputResolutionState, ExecutableNode, ExecutableNodeBlockReason,
+        ExecutableNodeBuildStatus, ExecutableNodeDiagnostic, ExecutableNodeRunOutcome,
+        ExecutableNodeRunStatus, ExecutablePortRef, NodeExecutionState,
     };
     pub use crate::identity::{ConnectionPolicy, NodeCategory, NodeId};
     pub use crate::ports::{PortDefinition, PortSchema};
