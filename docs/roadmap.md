@@ -195,14 +195,14 @@ The intended outcome is that `GraphDocument` remains the authored truth, while
 
 ## Phase 7: Integrate Validation With Execution
 
-- [ ] Make `validation_report` part of build readiness
-- [ ] Link:
-  - [ ] blocked node diagnostics ← validation causes
-  - [ ] topology ← execution-order seed
-- [ ] Let the core answer:
-  - [ ] can this graph execute?
-  - [ ] which nodes are blocked?
-  - [ ] why are they blocked?
+- [x] Make `validation_report` part of build readiness
+- [x] Link:
+  - [x] blocked node diagnostics ← validation causes
+  - [x] topology ← execution-order seed
+- [x] Let the core answer:
+  - [x] can this graph execute?
+  - [x] which nodes are blocked?
+  - [x] why are they blocked?
 
 ## Phase 8: Performance Model
 

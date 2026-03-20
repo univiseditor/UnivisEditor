@@ -146,7 +146,7 @@ pub(super) fn propagate_and_process_nodes_system(
     project_runtime_resources(&executable_state, &mut connectivity, &mut resolved_inputs);
 
     let mut issues_by_node = HashMap::<Entity, GraphRuntimeNodeIssue>::new();
-    for (node_id, diagnostic) in &executable_state.node_diagnostics {
+    for (node_id, diagnostic) in executable_state.graph.node_diagnostics() {
         let Some(entity) = executable_state.entity_for_node_id(*node_id) else {
             continue;
         };

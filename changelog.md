@@ -6,6 +6,10 @@
 - Added core-side synchronization hooks on `ExecutableGraph` for whole-node authored-input replacement, external output synchronization, downstream dirtiness propagation, and runtime `custom_data` handoff so higher layers can keep ECS-facing widget and visual mutations while delegating actual scheduling and propagation rules to `univis_graph_core`.
 - Reworked runtime node processing and diagnostics so `univis_editor_runtime` now feeds authored changes, visual output mutations, and custom runtime payloads into the executable graph, runs `run_ready_nodes(...)` from core, then projects resolved inputs, outputs, blocked state, trace entries, and runtime issues back into ECS and existing editor-facing resources.
 - Completed `Phase 6` of the graph-core execution roadmap in both Arabic and English by making the Bevy runtime an adapter over core execution rather than the owner of separate adjacency, propagation, readiness, scheduling, and traversal logic.
+- Folded validation directly into `ExecutableGraph` state by storing the build-time `validation_report`, node-level diagnostics, execution order seeded from topology, and partial-build state inside the executable graph instead of leaving them only on the external build report.
+- Added core-facing readiness and blocked-state helpers such as `is_build_ready`, `can_execute`, `blocked_node_ids`, and `blocked_node_diagnostics`, so higher layers can now ask execution viability questions directly of `graph_core` instead of reconstructing them from separate validation outputs.
+- Switched runtime projection code to consume execution order and node diagnostics from the executable graph itself, keeping `validation` and `execution` aligned around one in-memory source of truth.
+- Completed `Phase 7` of the graph-core execution roadmap by linking build diagnostics to execution readiness and making blocked-node answers come directly from the core executable model.
 
 ## 2026-03-19
 

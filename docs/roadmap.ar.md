@@ -195,14 +195,14 @@
 
 ## Phase 7: ربط validation بالتنفيذ
 
-- [ ] جعل `validation_report` جزءًا من build readiness
-- [ ] ربط:
-  - [ ] blocked node diagnostics ← validation causes
-  - [ ] topology ← seed لترتيب التنفيذ
-- [ ] تمكين core من الإجابة عن:
-  - [ ] هل graph قابلة للتنفيذ؟
-  - [ ] ما هي النود المحجوبة؟
-  - [ ] لماذا هي محجوبة؟
+- [x] جعل `validation_report` جزءًا من build readiness
+- [x] ربط:
+  - [x] blocked node diagnostics ← validation causes
+  - [x] topology ← seed لترتيب التنفيذ
+- [x] تمكين core من الإجابة عن:
+  - [x] هل graph قابلة للتنفيذ؟
+  - [x] ما هي النود المحجوبة؟
+  - [x] لماذا هي محجوبة؟
 
 ## Phase 8: نموذج الأداء
 

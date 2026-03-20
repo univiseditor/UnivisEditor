@@ -419,6 +419,10 @@ where
 /// Derived execution graph built from authored graph state.
 pub struct ExecutableGraph<Value> {
     nodes: HashMap<u64, ExecutableNode<Value>>,
+    validation_report: GraphValidationReport,
+    node_diagnostics: HashMap<u64, ExecutableNodeDiagnostic>,
+    execution_order: Vec<u64>,
+    is_partial_build: bool,
     revision: u64,
 }
 
@@ -426,6 +430,10 @@ impl<Value> Default for ExecutableGraph<Value> {
     fn default() -> Self {
         Self {
             nodes: HashMap::new(),
+            validation_report: GraphValidationReport::default(),
+            node_diagnostics: HashMap::new(),
+            execution_order: Vec::new(),
+            is_partial_build: false,
             revision: 0,
         }
     }
@@ -446,6 +454,63 @@ impl<Value> ExecutableGraph<Value> {
 
     pub fn contains_node(&self, node_id: u64) -> bool {
         self.nodes.contains_key(&node_id)
+    }
+
+    pub fn validation_report(&self) -> &GraphValidationReport {
+        &self.validation_report
+    }
+
+    pub fn node_diagnostics(&self) -> &HashMap<u64, ExecutableNodeDiagnostic> {
+        &self.node_diagnostics
+    }
+
+    pub fn node_diagnostic(&self, node_id: u64) -> Option<&ExecutableNodeDiagnostic> {
+        self.node_diagnostics.get(&node_id)
+    }
+
+    pub fn execution_order(&self) -> &[u64] {
+        &self.execution_order
+    }
+
+    pub fn is_partial_build(&self) -> bool {
+        self.is_partial_build
+    }
+
+    pub fn blocked_node_ids(&self) -> Vec<u64> {
+        let mut blocked = self
+            .node_diagnostics
+            .values()
+            .filter(|diagnostic| diagnostic.status == ExecutableNodeBuildStatus::Blocked)
+            .map(|diagnostic| diagnostic.node_id)
+            .collect::<Vec<_>>();
+        blocked.sort_unstable();
+        blocked
+    }
+
+    pub fn blocked_node_diagnostics(&self) -> Vec<&ExecutableNodeDiagnostic> {
+        let mut diagnostics = self
+            .node_diagnostics
+            .values()
+            .filter(|diagnostic| diagnostic.status == ExecutableNodeBuildStatus::Blocked)
+            .collect::<Vec<_>>();
+        diagnostics.sort_by_key(|diagnostic| diagnostic.node_id);
+        diagnostics
+    }
+
+    pub fn is_build_ready(&self) -> bool {
+        self.node_diagnostics.values().all(|diagnostic| {
+            !matches!(
+                diagnostic.status,
+                ExecutableNodeBuildStatus::Blocked | ExecutableNodeBuildStatus::Omitted
+            )
+        })
+    }
+
+    pub fn can_execute(&self) -> bool {
+        self.execution_order.iter().any(|node_id| {
+            self.get_node(*node_id)
+                .is_some_and(|node| !node.execution_state().blocked_by_build)
+        })
     }
 
     pub fn insert_node(&mut self, node: ExecutableNode<Value>) -> Option<ExecutableNode<Value>> {
@@ -474,8 +539,20 @@ impl<Value> ExecutableGraph<Value> {
     }
 
     fn stable_node_ids(&self) -> Vec<u64> {
-        let mut ids = self.nodes.keys().copied().collect::<Vec<_>>();
-        ids.sort_unstable();
+        let mut ids = self
+            .execution_order
+            .iter()
+            .copied()
+            .filter(|node_id| self.nodes.contains_key(node_id))
+            .collect::<Vec<_>>();
+        let mut missing = self
+            .nodes
+            .keys()
+            .copied()
+            .filter(|node_id| !ids.contains(node_id))
+            .collect::<Vec<_>>();
+        missing.sort_unstable();
+        ids.extend(missing);
         ids
     }
 }
@@ -670,6 +747,27 @@ where
         let is_partial = node_diagnostics
             .values()
             .any(|diagnostic| diagnostic.status != ExecutableNodeBuildStatus::Built);
+
+        let mut execution_order = validation_report
+            .topology
+            .ordered_nodes
+            .iter()
+            .copied()
+            .filter(|node_id| graph.contains_node(*node_id))
+            .collect::<Vec<_>>();
+        let mut missing_execution_nodes = graph
+            .nodes
+            .keys()
+            .copied()
+            .filter(|node_id| !execution_order.contains(node_id))
+            .collect::<Vec<_>>();
+        missing_execution_nodes.sort_unstable();
+        execution_order.extend(missing_execution_nodes);
+
+        graph.validation_report = validation_report.clone();
+        graph.node_diagnostics = node_diagnostics.clone();
+        graph.execution_order = execution_order;
+        graph.is_partial_build = is_partial;
 
         ExecutableGraphBuildReport {
             graph,
@@ -1053,10 +1151,12 @@ mod tests {
         ExecutableGraph, ExecutableInputResolutionState, ExecutableNode, ExecutablePortRef,
         NodeExecutionState,
     };
+    use crate::document::{GraphDocument, GraphDocumentNode};
     use crate::identity::NodeId;
     use crate::ports::{PortDefinition, PortSchema};
     use crate::processing::{GraphNodeDefinition, ProcessContext, ProcessResult};
     use crate::registry::GraphNodeRegistry;
+    use crate::schema::GraphSchema;
 
     #[derive(Clone)]
     struct TestSchema;
@@ -1068,6 +1168,19 @@ mod tests {
 
         fn ports_compatible(_from: &Self::TypeTag, _to: &Self::TypeTag) -> bool {
             true
+        }
+    }
+
+    impl GraphSchema for TestSchema {
+        fn requirement_satisfied(
+            _output: Option<&Self::Requirement>,
+            _input: Option<&str>,
+        ) -> bool {
+            true
+        }
+
+        fn requirement_label(_requirement: &Self::Requirement) -> String {
+            "test".to_string()
         }
     }
 
@@ -1370,5 +1483,56 @@ mod tests {
         assert_eq!(changed_graph.get_outputs(11), Some(&[6][..]));
         assert_eq!(changed_graph.get_node(11).unwrap().resolved_inputs(), &[5]);
         assert!(!changed_graph.get_node(11).unwrap().execution_state().dirty);
+    }
+
+    #[test]
+    fn build_keeps_validation_and_topology_inside_executable_graph() {
+        let mut registry = GraphNodeRegistry::<i32, PortDefinition<TestSchema>>::new();
+        registry.register(EchoNode);
+
+        let mut document = GraphDocument::<i32, ()>::default();
+        document
+            .insert_node(GraphDocumentNode {
+                id: 1,
+                definition_id: NodeId::new("tests/echo"),
+                position: [0.0, 0.0],
+                inputs: vec![0],
+                input_count: 1,
+                output_count: 1,
+            })
+            .unwrap();
+        document
+            .insert_node(GraphDocumentNode {
+                id: 2,
+                definition_id: NodeId::new("tests/echo"),
+                position: [100.0, 0.0],
+                inputs: vec![0],
+                input_count: 1,
+                output_count: 1,
+            })
+            .unwrap();
+        document.edges.push(crate::document::GraphDocumentEdge {
+            from_node_id: 1,
+            from_index: 0,
+            to_node_id: 2,
+            to_index: 0,
+        });
+        document.edges.push(crate::document::GraphDocumentEdge {
+            from_node_id: 2,
+            from_index: 0,
+            to_node_id: 1,
+            to_index: 0,
+        });
+
+        let build = ExecutableGraph::build(&document, &registry);
+
+        assert!(build.validation_report.has_errors());
+        assert_eq!(build.graph.validation_report().issue_count(), 1);
+        assert_eq!(build.graph.execution_order(), &[1, 2]);
+        assert_eq!(build.graph.blocked_node_ids(), vec![1, 2]);
+        assert_eq!(build.graph.blocked_node_diagnostics().len(), 2);
+        assert!(build.graph.is_partial_build());
+        assert!(!build.graph.is_build_ready());
+        assert!(!build.graph.can_execute());
     }
 }

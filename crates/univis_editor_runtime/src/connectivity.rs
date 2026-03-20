@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use univis_graph_core::prelude::{
-    ExecutableGraph, ExecutableNodeBuildStatus, ExecutableNodeDiagnostic,
-};
+use univis_graph_core::prelude::{ExecutableGraph, ExecutableNodeBuildStatus};
 use univis_node_graph::prelude::{
     AuthoredNodeInputs, GraphConnection, GraphDocumentEdgeSnapshot, GraphDocumentNodeSnapshot,
     GraphNode, NodeRegistry, NodeValue, build_graph_document_from_snapshots,
@@ -49,7 +47,6 @@ pub struct GraphExecutableRuntimeState {
     pub graph: ExecutableGraph<NodeValue>,
     pub entity_to_node_id: HashMap<Entity, u64>,
     pub node_id_to_entity: HashMap<u64, Entity>,
-    pub node_diagnostics: HashMap<u64, ExecutableNodeDiagnostic>,
 }
 
 impl GraphExecutableRuntimeState {
@@ -119,7 +116,6 @@ pub fn rebuild_connectivity_index_system(
     state.graph = build_report.graph;
     state.entity_to_node_id = build.entity_to_node_id;
     state.node_id_to_entity = build.node_id_to_entity;
-    state.node_diagnostics = build_report.node_diagnostics;
 
     project_runtime_resources(&state, &mut index, &mut resolved_inputs);
 }
@@ -137,10 +133,19 @@ pub fn project_runtime_resources(
 
     let mut node_ids = state
         .graph
-        .iter_nodes()
-        .map(|node| node.node_id())
+        .execution_order()
+        .iter()
+        .copied()
+        .filter(|node_id| state.graph.contains_node(*node_id))
         .collect::<Vec<_>>();
-    node_ids.sort_unstable();
+    if node_ids.is_empty() {
+        node_ids = state
+            .graph
+            .iter_nodes()
+            .map(|node| node.node_id())
+            .collect::<Vec<_>>();
+        node_ids.sort_unstable();
+    }
 
     for node_id in node_ids {
         let Some(node) = state.graph.get_node(node_id) else {
@@ -191,7 +196,7 @@ pub fn project_runtime_resources(
             .insert(entity, node.resolved_inputs().to_vec());
     }
 
-    for (node_id, diagnostic) in &state.node_diagnostics {
+    for (node_id, diagnostic) in state.graph.node_diagnostics() {
         if diagnostic.status != ExecutableNodeBuildStatus::Blocked {
             continue;
         }
