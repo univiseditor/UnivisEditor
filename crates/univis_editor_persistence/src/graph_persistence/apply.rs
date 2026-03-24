@@ -1,17 +1,22 @@
 use bevy::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
 use univis_editor_ui::prelude::GraphCamera;
-use univis_graph_core::prelude::{GraphValidationReport, validate_graph_document};
+use univis_graph_core::prelude::{
+    connected_input_mask, validate_graph_document, validate_schema_connection_candidate,
+    validate_structural_connection_candidate, GraphConnectionCandidate,
+    GraphConnectionValidationOptions, GraphSchemaConnectionValidationContext,
+    GraphStructuralConnectionValidationContext, GraphValidationReport,
+};
 use univis_node_graph::prelude::*;
 
 use super::state::{
-    ApplyGraphDocumentRequest, GraphHistoryState, GraphPersistenceActivation,
-    GraphPersistenceRuntimeState, GraphPersistenceSettings, GraphPersistenceStatus,
-    GraphPersistenceStatusSeverity, MutationUiState, PendingGraphApplyOrigin, PendingGraphLoad,
-    graph_persistence_enabled, set_persistence_status,
+    graph_persistence_enabled, set_persistence_status, ApplyGraphDocumentRequest,
+    GraphHistoryState, GraphPersistenceActivation, GraphPersistenceRuntimeState,
+    GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
+    MutationUiState, PendingGraphApplyOrigin, PendingGraphLoad,
 };
 
 pub(super) fn handle_apply_graph_document_requests_system(
@@ -81,8 +86,12 @@ pub(super) fn finalize_pending_graph_load_system(
     mut commands: Commands,
     mut pending: ResMut<PendingGraphLoad>,
     activation: Option<Res<GraphPersistenceActivation>>,
+    registry: Res<NodeRegistry>,
     q_ports: Query<(Entity, &GraphPort)>,
-    mut q_nodes: Query<(&mut GraphNode, Option<&mut AuthoredNodeInputs>)>,
+    mut node_queries: ParamSet<(
+        Query<&GraphNode>,
+        Query<(&mut GraphNode, Option<&mut AuthoredNodeInputs>)>,
+    )>,
     mut q_camera: Query<(&mut Transform, &mut Projection), With<GraphCamera>>,
     mut runtime: ResMut<GraphPersistenceRuntimeState>,
     mut status: ResMut<GraphPersistenceStatus>,
@@ -100,7 +109,7 @@ pub(super) fn finalize_pending_graph_load_system(
     let mut skipped_link_count = 0usize;
     let mut input_ports: HashMap<(Entity, usize), Entity> = HashMap::new();
     let mut output_ports: HashMap<(Entity, usize), Entity> = HashMap::new();
-    let mut claimed_inputs = HashSet::new();
+    let mut accepted_edges: Vec<GraphConnectionCandidate<Entity>> = Vec::new();
 
     for (port_entity, graph_port) in q_ports.iter() {
         match graph_port.port_type {
@@ -147,21 +156,93 @@ pub(super) fn finalize_pending_graph_load_system(
             continue;
         }
 
-        if !NodeValue::is_compatible(&from_port_data.value_type, &to_port_data.value_type) {
-            warn!(
-                "Skipping incompatible loaded link: {} -> {}",
-                from_port_data.value_type.display_name(),
-                to_port_data.value_type.display_name()
-            );
+        let (
+            from_definition_id,
+            from_input_count,
+            from_output_count,
+            to_definition_id,
+            to_input_count,
+            _to_output_count,
+        ) = {
+            let graph_nodes = node_queries.p0();
+            let Ok(from_graph_node) = graph_nodes.get(from_node) else {
+                skipped_link_count += 1;
+                continue;
+            };
+            let Ok(to_graph_node) = graph_nodes.get(to_node) else {
+                skipped_link_count += 1;
+                continue;
+            };
+            (
+                from_graph_node.definition_id.clone(),
+                from_graph_node.input_projection_len(),
+                from_graph_node.output_projection_len(),
+                to_graph_node.definition_id.clone(),
+                to_graph_node.input_projection_len(),
+                to_graph_node.output_projection_len(),
+            )
+        };
+
+        let source_connected_inputs = connected_input_mask(
+            from_input_count,
+            accepted_edges
+                .iter()
+                .filter(|candidate| candidate.to_node_id == from_node)
+                .map(|candidate| candidate.to_index),
+        );
+
+        let from_definition = registry.get(&from_definition_id);
+        let to_definition = registry.get(&to_definition_id);
+        let source_output = from_definition
+            .as_ref()
+            .and_then(|definition| definition.outputs().get(edge.from_index).cloned())
+            .unwrap_or_else(|| {
+                PortDefinition::new(format!("Out {}", edge.from_index + 1), ValueType::Any)
+            })
+            .as_core();
+        let target_input = to_definition
+            .as_ref()
+            .and_then(|definition| definition.inputs().get(edge.to_index).cloned())
+            .unwrap_or_else(|| {
+                PortDefinition::new(format!("In {}", edge.to_index + 1), ValueType::Any)
+            })
+            .as_core();
+        let output_requirement_token = from_definition.as_ref().and_then(|definition| {
+            definition.output_requirement_token(edge.from_index, &source_connected_inputs)
+        });
+        let candidate = GraphConnectionCandidate {
+            from_node_id: from_node,
+            from_index: edge.from_index,
+            to_node_id: to_node,
+            to_index: edge.to_index,
+        };
+
+        if let Err(error) = validate_structural_connection_candidate(
+            GraphStructuralConnectionValidationContext {
+                candidate,
+                source_output_count: from_output_count,
+                target_input_count: to_input_count,
+                source_output_available: true,
+                target_input_available: true,
+                target_accepts_multiple_connections: target_input.accepts_multiple_connections(),
+            },
+            accepted_edges.iter().copied(),
+            GraphConnectionValidationOptions::live_connection_rules(),
+        ) {
+            warn!("Skipping loaded link: {}", error);
             skipped_link_count += 1;
             continue;
         }
 
-        if !claimed_inputs.insert((to_node, edge.to_index)) {
-            warn!(
-                "Skipping loaded link: input port already connected (node {:?}, input {})",
-                to_node, edge.to_index
-            );
+        if let Err(error) =
+            validate_schema_connection_candidate(GraphSchemaConnectionValidationContext {
+                source_output: &source_output,
+                target_input: &target_input,
+                source_connected_inputs: &source_connected_inputs,
+                output_requirement_token: output_requirement_token.as_deref(),
+            })
+        {
+            warn!("Skipping loaded link: {}", error);
             skipped_link_count += 1;
             continue;
         }
@@ -174,10 +255,12 @@ pub(super) fn finalize_pending_graph_load_system(
             from_port,
             to_port,
         });
+        accepted_edges.push(candidate);
     }
 
     for (entity, inputs) in pending.node_inputs.drain(..) {
-        let Ok((mut node, mut authored_inputs)) = q_nodes.get_mut(entity) else {
+        let mut graph_nodes = node_queries.p1();
+        let Ok((mut node, mut authored_inputs)) = graph_nodes.get_mut(entity) else {
             continue;
         };
 

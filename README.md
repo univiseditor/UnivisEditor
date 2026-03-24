@@ -54,6 +54,17 @@ Current examples of deferred or intentionally excluded scope:
 
 For the current delivery plan, see [docs/roadmap.md](docs/roadmap.md).
 
+For the current graph-stack ownership map and `graph_core` API classification, see [docs/graph-core-boundaries.md](docs/graph-core-boundaries.md).
+
+For the Arabic analysis that motivated the current quality roadmap, see [docs/graph-core-analysis.ar.md](docs/graph-core-analysis.ar.md).
+
+Current connection semantics are intentionally single-source per input. `ConnectionPolicy::Multiple` remains modeled for future fan-in work, but the current workspace treats it as explicitly unsupported in validation, UI wiring, and persistence apply/load paths instead of pretending it is partially supported.
+
+The shared connection-law entry points live in `univis_graph_core::validation`
+through `GraphConnectionCandidate`, `validate_structural_connection_candidate`,
+and `validate_schema_connection_candidate`. Upper layers consume these helpers
+instead of redefining wire legality on their own.
+
 ## Architectural Model
 
 The project is organized around four layers:
@@ -228,14 +239,27 @@ For contribution guidelines and crate boundaries, see [CONTRIBUTING.md](/home/ab
 
 ## Extending The Graph
 
-Custom nodes are added by implementing `NodeDefinition` and registering them in the node registry.
+Pure-core custom nodes are added by implementing `GraphNodeDefinition` and
+registering them in `GraphNodeRegistry`. Adapter-layer editor nodes then add
+Bevy and UI hooks on top through `univis_node_graph`.
 
 Relevant examples:
 
 - [crates/univis_graph_core/examples/minimal_schema.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/minimal_schema.rs)
+- [crates/univis_graph_core/examples/registry_and_processing.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/registry_and_processing.rs)
+- [crates/univis_graph_core/examples/document_workflows.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/document_workflows.rs)
+- [crates/univis_graph_core/examples/validation_and_build.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/validation_and_build.rs)
+- [crates/univis_graph_core/examples/execution_flow.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/execution_flow.rs)
 - [examples/custom_nodes.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_nodes.rs)
 - [examples/custom_visual_node.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_visual_node.rs)
 - [examples/custom_scene_node.rs](/home/abdellah/Desktop/Univis/UnivisEditor/examples/custom_scene_node.rs)
+
+The first three `graph_core` examples show the intended stable surface. The
+`validation_and_build` and `execution_flow` examples intentionally step into the
+narrower advanced modules for diagnostics and runtime-style orchestration. In
+particular, `validation_and_build` injects raw `GraphDocumentEdge` values only
+to demonstrate invalid-document diagnostics; ordinary authoring should prefer
+`GraphDocument::connect(...)`.
 
 For a guide to building a custom schema on top of `univis_graph_core`, see [docs/custom-graph-schema.md](/home/abdellah/Desktop/Univis/UnivisEditor/docs/custom-graph-schema.md).
 

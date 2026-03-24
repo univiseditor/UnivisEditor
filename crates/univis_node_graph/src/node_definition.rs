@@ -85,119 +85,160 @@ impl NodeGraphSchema {
 
 pub type NodeGraphPortSchema = NodeGraphSchema;
 
-/// Definition of a node input or output port.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PortDefinition {
-    pub name: String,
-    pub value_type: ValueType,
-    pub description: Option<String>,
-    pub default_value: Option<NodeValue>,
+/// UI-only metadata layered on top of the core port contract.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PortUiMetadata {
     pub color: Option<Color>,
-    #[serde(default)]
-    pub requirement: Option<PortRequirement>,
-    #[serde(default)]
-    pub connection_policy: ConnectionPolicy,
-    #[serde(default)]
     pub editable_inline: bool,
-    #[serde(default)]
     pub ui_step: Option<f64>,
-    #[serde(default)]
     pub ui_min: Option<f64>,
-    #[serde(default)]
     pub ui_max: Option<f64>,
+}
+
+/// Adapter-owned port definition that composes core port metadata with UI data.
+#[derive(Debug, Clone)]
+pub struct PortDefinition {
+    core: CorePortDefinition<NodeGraphSchema>,
+    ui: PortUiMetadata,
 }
 
 impl PortDefinition {
     pub fn new(name: impl Into<String>, value_type: ValueType) -> Self {
         Self {
-            name: name.into(),
-            value_type,
-            description: None,
-            default_value: None,
-            color: None,
-            requirement: None,
-            connection_policy: ConnectionPolicy::Single,
-            editable_inline: false,
-            ui_step: None,
-            ui_min: None,
-            ui_max: None,
+            core: CorePortDefinition::new(name, value_type),
+            ui: PortUiMetadata::default(),
         }
     }
 
     pub fn with_description(mut self, desc: impl Into<String>) -> Self {
-        self.description = Some(desc.into());
+        self.core = self.core.with_description(desc);
         self
     }
 
     pub fn with_default(mut self, value: NodeValue) -> Self {
-        self.default_value = Some(value);
+        self.core = self.core.with_default(value);
         self
     }
 
     pub fn with_color(mut self, color: Color) -> Self {
-        self.color = Some(color);
+        self.ui.color = Some(color);
         self
     }
 
     pub fn with_requirement(mut self, requirement: PortRequirement) -> Self {
-        self.requirement = Some(requirement);
+        self.core = self.core.with_requirement(requirement);
         self
     }
 
     pub fn with_connection_policy(mut self, policy: ConnectionPolicy) -> Self {
-        self.connection_policy = policy;
+        self.core = self.core.with_connection_policy(policy);
         self
     }
 
+    /// Declares future multi-source intent.
+    ///
+    /// Current workspace flows still treat `ConnectionPolicy::Multiple` as
+    /// unsupported until runtime fan-in semantics are implemented end-to-end.
     pub fn allow_multiple_connections(mut self) -> Self {
-        self.connection_policy = ConnectionPolicy::Multiple;
+        self.core = self.core.allow_multiple_connections();
         self
     }
 
     pub fn editable_inline(mut self) -> Self {
-        self.editable_inline = true;
+        self.ui.editable_inline = true;
         self
     }
 
     pub fn with_ui_step(mut self, step: f64) -> Self {
-        self.ui_step = Some(step);
+        self.ui.ui_step = Some(step);
         self
     }
 
     pub fn with_ui_min(mut self, min: f64) -> Self {
-        self.ui_min = Some(min);
+        self.ui.ui_min = Some(min);
         self
     }
 
     pub fn with_ui_max(mut self, max: f64) -> Self {
-        self.ui_max = Some(max);
+        self.ui.ui_max = Some(max);
         self
     }
 
     pub fn with_ui_range(mut self, min: f64, max: f64) -> Self {
-        self.ui_min = Some(min);
-        self.ui_max = Some(max);
+        self.ui.ui_min = Some(min);
+        self.ui.ui_max = Some(max);
         self
     }
 
+    pub fn name(&self) -> &str {
+        &self.core.name
+    }
+
+    pub fn value_type(&self) -> &ValueType {
+        &self.core.type_tag
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.core.description.as_deref()
+    }
+
+    pub fn default_value(&self) -> Option<&NodeValue> {
+        self.core.default_value.as_ref()
+    }
+
+    pub fn requirement(&self) -> Option<&PortRequirement> {
+        self.core.requirement.as_ref()
+    }
+
+    pub fn connection_policy(&self) -> ConnectionPolicy {
+        self.core.connection_policy
+    }
+
+    pub fn editable_inline_enabled(&self) -> bool {
+        self.ui.editable_inline
+    }
+
+    pub fn ui_step(&self) -> Option<f64> {
+        self.ui.ui_step
+    }
+
+    pub fn ui_min(&self) -> Option<f64> {
+        self.ui.ui_min
+    }
+
+    pub fn ui_max(&self) -> Option<f64> {
+        self.ui.ui_max
+    }
+
+    pub fn color_override(&self) -> Option<Color> {
+        self.ui.color
+    }
+
+    pub fn ui_metadata(&self) -> &PortUiMetadata {
+        &self.ui
+    }
+
+    pub fn core(&self) -> &CorePortDefinition<NodeGraphSchema> {
+        &self.core
+    }
+
     pub fn resolve_color(&self) -> Color {
-        self.color.unwrap_or_else(|| {
-            self.requirement
-                .as_ref()
+        self.ui.color.unwrap_or_else(|| {
+            self.requirement()
                 .and_then(|requirement| requirement.color)
-                .unwrap_or_else(|| self.value_type.port_color())
+                .unwrap_or_else(|| self.value_type().port_color())
         })
     }
 
     pub fn display_label(&self) -> String {
-        if let Some(requirement) = &self.requirement {
-            if self.name == requirement.label {
-                format!("{} *", self.name)
+        if let Some(requirement) = self.requirement() {
+            if self.name() == requirement.label {
+                format!("{} *", self.name())
             } else {
-                format!("{} <{}>", self.name, requirement.label)
+                format!("{} <{}>", self.name(), requirement.label)
             }
         } else {
-            self.name.clone()
+            self.name().to_string()
         }
     }
 
@@ -246,26 +287,11 @@ impl PortDefinition {
     }
 
     pub fn accepts_multiple_connections(&self) -> bool {
-        self.connection_policy == ConnectionPolicy::Multiple
+        self.connection_policy() == ConnectionPolicy::Multiple
     }
 
     pub fn as_core(&self) -> CorePortDefinition<NodeGraphSchema> {
-        let mut core = CorePortDefinition::new(self.name.clone(), self.value_type.clone())
-            .with_connection_policy(self.connection_policy);
-
-        if let Some(description) = &self.description {
-            core = core.with_description(description.clone());
-        }
-
-        if let Some(default_value) = &self.default_value {
-            core = core.with_default(default_value.clone());
-        }
-
-        if let Some(requirement) = &self.requirement {
-            core = core.with_requirement(requirement.clone());
-        }
-
-        core
+        self.core.clone()
     }
 }
 
@@ -414,7 +440,7 @@ pub trait BevyNodeDefinition: Send + Sync {
     fn default_input_values(&self) -> Vec<NodeValue> {
         self.inputs()
             .iter()
-            .map(|p| p.default_value.clone().unwrap_or(NodeValue::None))
+            .map(|port| port.default_value().cloned().unwrap_or(NodeValue::None))
             .collect()
     }
 
@@ -467,79 +493,8 @@ pub use crate::live_graph::{
 };
 pub use BevyNodeDefinition as NodeDefinition;
 
-pub struct BevyNodeDefinitionAdapterRef<'a> {
-    inner: &'a dyn BevyNodeDefinition,
-}
-
-impl<'a> BevyNodeDefinitionAdapterRef<'a> {
-    pub fn new(inner: &'a dyn BevyNodeDefinition) -> Self {
-        Self { inner }
-    }
-}
-
-impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
-    for BevyNodeDefinitionAdapterRef<'_>
-{
-    fn id(&self) -> NodeId {
-        self.inner.id()
-    }
-
-    fn display_name(&self) -> &str {
-        self.inner.display_name()
-    }
-
-    fn category(&self) -> NodeCategory {
-        self.inner.category()
-    }
-
-    fn description(&self) -> Option<&str> {
-        self.inner.description()
-    }
-
-    fn inputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
-        self.inner
-            .inputs()
-            .into_iter()
-            .map(|port| port.as_core())
-            .collect()
-    }
-
-    fn outputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
-        self.inner
-            .outputs()
-            .into_iter()
-            .map(|port| port.as_core())
-            .collect()
-    }
-
-    fn output_requirement_token(
-        &self,
-        output_index: usize,
-        connected_inputs: &[bool],
-    ) -> Option<String> {
-        self.inner
-            .output_requirement_token(output_index, connected_inputs)
-    }
-
-    fn process(&self, context: &mut CoreProcessContext<'_, NodeValue>) -> ProcessResult {
-        self.inner.process(context)
-    }
-
-    fn show_in_menu(&self) -> bool {
-        self.inner.show_in_menu()
-    }
-
-    fn menu_order(&self) -> i32 {
-        self.inner.menu_order()
-    }
-
-    fn keywords(&self) -> Vec<&str> {
-        self.inner.keywords()
-    }
-
-    fn can_have_children(&self) -> bool {
-        self.inner.can_have_children()
-    }
+fn ports_to_core(ports: Vec<PortDefinition>) -> Vec<CorePortDefinition<NodeGraphSchema>> {
+    ports.into_iter().map(|port| port.as_core()).collect()
 }
 
 pub struct OwnedBevyNodeDefinitionAdapter {
@@ -572,19 +527,11 @@ impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
     }
 
     fn inputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
-        self.inner
-            .inputs()
-            .into_iter()
-            .map(|port| port.as_core())
-            .collect()
+        ports_to_core(self.inner.inputs())
     }
 
     fn outputs(&self) -> Vec<CorePortDefinition<NodeGraphSchema>> {
-        self.inner
-            .outputs()
-            .into_iter()
-            .map(|port| port.as_core())
-            .collect()
+        ports_to_core(self.inner.outputs())
     }
 
     fn output_requirement_token(
@@ -617,6 +564,5 @@ impl CoreGraphNodeDefinition<NodeValue, CorePortDefinition<NodeGraphSchema>>
     }
 }
 
-pub type CoreNodeDefinitionRef<'a> = BevyNodeDefinitionAdapterRef<'a>;
 pub type ArcBevyNodeDefinition = Arc<dyn BevyNodeDefinition>;
 pub type ArcNodeDefinition = ArcBevyNodeDefinition;

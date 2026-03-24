@@ -8,18 +8,18 @@ use crate::processing::{ProcessContext, ProcessResult};
 use crate::registry::GraphNodeRegistry;
 use crate::schema::GraphSchema;
 use crate::validation::{
-    GraphValidationIssue, GraphValidationIssueKind, GraphValidationReport, validate_graph_document,
+    validate_graph_document, GraphValidationIssue, GraphValidationIssueKind, GraphValidationReport,
 };
 
 /// Stable reference to one executable port on one node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExecutablePortRef {
+pub(crate) struct ExecutablePortRef {
     pub node_id: u64,
     pub port_index: usize,
 }
 
 impl ExecutablePortRef {
-    pub fn new(node_id: u64, port_index: usize) -> Self {
+    pub(crate) fn new(node_id: u64, port_index: usize) -> Self {
         Self {
             node_id,
             port_index,
@@ -29,46 +29,50 @@ impl ExecutablePortRef {
 
 /// Direct adjacency owned by one executable node.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ExecutableDirectLinks {
+pub(crate) struct ExecutableDirectLinks {
     incoming_by_input: Vec<Vec<ExecutablePortRef>>,
     outgoing_by_output: Vec<Vec<ExecutablePortRef>>,
 }
 
 impl ExecutableDirectLinks {
-    pub fn new(input_count: usize, output_count: usize) -> Self {
+    pub(crate) fn new(input_count: usize, output_count: usize) -> Self {
         Self {
             incoming_by_input: vec![Vec::new(); input_count],
             outgoing_by_output: vec![Vec::new(); output_count],
         }
     }
 
-    pub fn input_count(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn input_count(&self) -> usize {
         self.incoming_by_input.len()
     }
 
-    pub fn output_count(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn output_count(&self) -> usize {
         self.outgoing_by_output.len()
     }
 
-    pub fn incoming_links_for_input(&self, input_index: usize) -> Option<&[ExecutablePortRef]> {
+    pub(crate) fn incoming_links_for_input(
+        &self,
+        input_index: usize,
+    ) -> Option<&[ExecutablePortRef]> {
         self.incoming_by_input.get(input_index).map(Vec::as_slice)
     }
 
-    pub fn outgoing_links_for_output(&self, output_index: usize) -> Option<&[ExecutablePortRef]> {
+    pub(crate) fn outgoing_links_for_output(
+        &self,
+        output_index: usize,
+    ) -> Option<&[ExecutablePortRef]> {
         self.outgoing_by_output.get(output_index).map(Vec::as_slice)
     }
 
-    pub fn has_any_incoming_links(&self) -> bool {
-        self.incoming_by_input.iter().any(|links| !links.is_empty())
-    }
-
-    pub fn add_incoming_link(&mut self, input_index: usize, source: ExecutablePortRef) {
+    pub(crate) fn add_incoming_link(&mut self, input_index: usize, source: ExecutablePortRef) {
         if let Some(links) = self.incoming_by_input.get_mut(input_index) {
             links.push(source);
         }
     }
 
-    pub fn add_outgoing_link(&mut self, output_index: usize, target: ExecutablePortRef) {
+    pub(crate) fn add_outgoing_link(&mut self, output_index: usize, target: ExecutablePortRef) {
         if let Some(links) = self.outgoing_by_output.get_mut(output_index) {
             links.push(target);
         }
@@ -77,7 +81,7 @@ impl ExecutableDirectLinks {
 
 /// Mutable execution state tracked for one node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NodeExecutionState {
+pub(crate) struct NodeExecutionState {
     pub enabled: bool,
     pub dirty: bool,
     pub blocked_by_build: bool,
@@ -102,7 +106,8 @@ impl Default for NodeExecutionState {
 }
 
 impl NodeExecutionState {
-    pub fn is_runnable(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_runnable(&self) -> bool {
         self.enabled && !self.blocked && self.ready
     }
 }
@@ -183,13 +188,33 @@ pub struct ExecutableNodeRunOutcome {
 }
 
 pub struct ExecutableGraphBuildReport<Value> {
-    pub graph: ExecutableGraph<Value>,
-    pub validation_report: GraphValidationReport,
-    pub node_diagnostics: HashMap<u64, ExecutableNodeDiagnostic>,
-    pub is_partial: bool,
+    graph: ExecutableGraph<Value>,
+    validation_report: GraphValidationReport,
+    node_diagnostics: HashMap<u64, ExecutableNodeDiagnostic>,
+    is_partial: bool,
 }
 
 impl<Value> ExecutableGraphBuildReport<Value> {
+    pub fn graph(&self) -> &ExecutableGraph<Value> {
+        &self.graph
+    }
+
+    pub fn into_graph(self) -> ExecutableGraph<Value> {
+        self.graph
+    }
+
+    pub fn validation_report(&self) -> &GraphValidationReport {
+        &self.validation_report
+    }
+
+    pub fn node_diagnostics(&self) -> &HashMap<u64, ExecutableNodeDiagnostic> {
+        &self.node_diagnostics
+    }
+
+    pub fn is_partial(&self) -> bool {
+        self.is_partial
+    }
+
     pub fn node_diagnostic(&self, node_id: u64) -> Option<&ExecutableNodeDiagnostic> {
         self.node_diagnostics.get(&node_id)
     }
@@ -270,16 +295,20 @@ impl<Value> ExecutableNode<Value> {
         &self.input_resolution
     }
 
-    pub fn links(&self) -> &ExecutableDirectLinks {
+    pub(crate) fn links(&self) -> &ExecutableDirectLinks {
         &self.links
     }
 
-    pub fn execution_state(&self) -> &NodeExecutionState {
+    pub(crate) fn execution_state(&self) -> &NodeExecutionState {
         &self.execution
     }
 
     pub fn has_custom_data(&self) -> bool {
         self.custom_data.is_some()
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.execution.dirty
     }
 
     pub fn is_ready(&self) -> bool {
@@ -327,7 +356,7 @@ impl<Value> ExecutableNode<Value>
 where
     Value: Clone,
 {
-    pub fn set_authored_input(&mut self, index: usize, value: Value) -> bool {
+    pub(crate) fn set_authored_input(&mut self, index: usize, value: Value) -> bool {
         if let Some(slot) = self.authored_inputs.get_mut(index) {
             *slot = value;
             true
@@ -336,7 +365,7 @@ where
         }
     }
 
-    pub fn seed_resolved_inputs_from_authored(&mut self) {
+    pub(crate) fn seed_resolved_inputs_from_authored(&mut self) {
         self.resolved_inputs.clone_from(&self.authored_inputs);
         self.input_resolution = self
             .links
@@ -353,7 +382,8 @@ where
         self.refresh_execution_state();
     }
 
-    pub fn resolve_input_from_upstream(&mut self, index: usize, value: Value) -> bool {
+    #[cfg(test)]
+    pub(crate) fn resolve_input_from_upstream(&mut self, index: usize, value: Value) -> bool {
         let has_upstream_link = self
             .links
             .incoming_by_input
@@ -376,7 +406,8 @@ where
         true
     }
 
-    pub fn mark_input_missing_upstream(&mut self, index: usize) -> bool {
+    #[cfg(test)]
+    pub(crate) fn mark_input_missing_upstream(&mut self, index: usize) -> bool {
         let has_upstream_link = self
             .links
             .incoming_by_input
@@ -400,7 +431,8 @@ impl<Value> ExecutableNode<Value>
 where
     Value: Clone + Default,
 {
-    pub fn new(
+    #[cfg(test)]
+    pub(crate) fn new(
         node_id: u64,
         definition_id: NodeId,
         input_count: usize,
@@ -513,7 +545,10 @@ impl<Value> ExecutableGraph<Value> {
         })
     }
 
-    pub fn insert_node(&mut self, node: ExecutableNode<Value>) -> Option<ExecutableNode<Value>> {
+    pub(crate) fn insert_node(
+        &mut self,
+        node: ExecutableNode<Value>,
+    ) -> Option<ExecutableNode<Value>> {
         self.nodes.insert(node.node_id(), node)
     }
 
@@ -521,7 +556,7 @@ impl<Value> ExecutableGraph<Value> {
         self.nodes.get(&node_id)
     }
 
-    pub fn get_node_mut(&mut self, node_id: u64) -> Option<&mut ExecutableNode<Value>> {
+    pub(crate) fn get_node_mut(&mut self, node_id: u64) -> Option<&mut ExecutableNode<Value>> {
         self.nodes.get_mut(&node_id)
     }
 
@@ -529,7 +564,7 @@ impl<Value> ExecutableGraph<Value> {
         self.nodes.values()
     }
 
-    pub fn iter_nodes_mut(&mut self) -> impl Iterator<Item = &mut ExecutableNode<Value>> {
+    pub(crate) fn iter_nodes_mut(&mut self) -> impl Iterator<Item = &mut ExecutableNode<Value>> {
         self.nodes.values_mut()
     }
 
@@ -1514,11 +1549,11 @@ mod tests {
         document.connect(1, 0, 2, 0).unwrap();
 
         let build = ExecutableGraph::build(&document, &registry);
-        let source = build.graph.get_node(1).unwrap();
-        let target = build.graph.get_node(2).unwrap();
+        let source = build.graph().get_node(1).unwrap();
+        let target = build.graph().get_node(2).unwrap();
 
-        assert!(build.graph.validation_report().is_valid());
-        assert_eq!(build.graph.execution_order(), &[1, 2]);
+        assert!(build.graph().validation_report().is_valid());
+        assert_eq!(build.graph().execution_order(), &[1, 2]);
         assert_eq!(
             source.links().outgoing_links_for_output(0).unwrap().len(),
             1
@@ -1532,8 +1567,8 @@ mod tests {
             target.links().incoming_links_for_input(0).unwrap()[0].node_id,
             1
         );
-        assert!(build.graph.is_build_ready());
-        assert!(build.graph.can_execute());
+        assert!(build.graph().is_build_ready());
+        assert!(build.graph().can_execute());
     }
 
     #[test]
@@ -1587,26 +1622,27 @@ mod tests {
             })
             .unwrap();
 
-        let mut build = ExecutableGraph::build(&document, &registry);
+        let build = ExecutableGraph::build(&document, &registry);
 
-        assert!(build.is_partial);
-        assert!(build.graph.is_partial_build());
-        assert!(!build.graph.is_build_ready());
-        assert!(build.graph.can_execute());
+        assert!(build.is_partial());
+        assert!(build.graph().is_partial_build());
+        assert!(!build.graph().is_build_ready());
+        assert!(build.graph().can_execute());
         assert_eq!(
             build
-                .graph
+                .graph()
                 .node_diagnostic(2)
                 .map(|diagnostic| diagnostic.status),
             Some(ExecutableNodeBuildStatus::Omitted)
         );
 
-        let outcomes = build.graph.run_ready_nodes(&registry, 0.016);
+        let mut graph = build.into_graph();
+        let outcomes = graph.run_ready_nodes(&registry, 0.016);
 
         assert_eq!(outcomes.len(), 1);
         assert_eq!(outcomes[0].node_id, 1);
         assert_eq!(outcomes[0].status, ExecutableNodeRunStatus::Executed);
-        assert_eq!(build.graph.get_outputs(1), Some(&[5][..]));
+        assert_eq!(graph.get_outputs(1), Some(&[5][..]));
     }
 
     #[test]
@@ -1650,13 +1686,13 @@ mod tests {
 
         let build = ExecutableGraph::build(&document, &registry);
 
-        assert!(build.validation_report.has_errors());
-        assert_eq!(build.graph.validation_report().issue_count(), 1);
-        assert_eq!(build.graph.execution_order(), &[1, 2]);
-        assert_eq!(build.graph.blocked_node_ids(), vec![1, 2]);
-        assert_eq!(build.graph.blocked_node_diagnostics().len(), 2);
-        assert!(build.graph.is_partial_build());
-        assert!(!build.graph.is_build_ready());
-        assert!(!build.graph.can_execute());
+        assert!(build.validation_report().has_errors());
+        assert_eq!(build.graph().validation_report().issue_count(), 1);
+        assert_eq!(build.graph().execution_order(), &[1, 2]);
+        assert_eq!(build.graph().blocked_node_ids(), vec![1, 2]);
+        assert_eq!(build.graph().blocked_node_diagnostics().len(), 2);
+        assert!(build.graph().is_partial_build());
+        assert!(!build.graph().is_build_ready());
+        assert!(!build.graph().can_execute());
     }
 }

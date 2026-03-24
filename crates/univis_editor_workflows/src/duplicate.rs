@@ -4,11 +4,12 @@ use bevy::prelude::*;
 use univis_editor_commands::GraphCommandRequest;
 use univis_editor_persistence::graph_persistence::{
     ApplyGraphDocumentRequest, GraphPersistenceSettings, GraphPersistenceStatus,
-    GraphPersistenceStatusSeverity,
 };
-use univis_node_graph::prelude::LiveGraphDocumentState;
+use univis_node_graph::{document::GraphDocument, prelude::LiveGraphDocumentState};
 
-use crate::status::set_asset_status;
+use crate::status::{
+    apply_document_change, publish_workflow_failure, WorkflowDocumentChange, WorkflowStatusFailure,
+};
 
 pub(super) fn duplicate_selected_nodes_system(
     mut command_requests: MessageReader<GraphCommandRequest>,
@@ -25,21 +26,26 @@ pub(super) fn duplicate_selected_nodes_system(
         return;
     }
 
-    let selected_ids = live_document.document.selected_node_ids().to_vec();
+    match duplicate_selected_nodes(&live_document.document) {
+        Ok(change) => {
+            apply_document_change(&mut apply_writer, &mut status, &settings, &time, change)
+        }
+        Err(failure) => publish_workflow_failure(&mut status, failure, &settings, &time),
+    }
+}
+
+fn duplicate_selected_nodes(
+    source_document: &GraphDocument,
+) -> Result<WorkflowDocumentChange, WorkflowStatusFailure> {
+    let selected_ids = source_document.selected_node_ids().to_vec();
     if selected_ids.is_empty() {
-        set_asset_status(
-            &mut status,
-            GraphPersistenceStatusSeverity::Warning,
-            "Select one or more nodes before duplicating.".to_string(),
-            &settings,
-            &time,
-        );
-        return;
+        return Err(WorkflowStatusFailure::warning(
+            "Select one or more nodes before duplicating.",
+        ));
     }
 
     let selected_set: HashSet<u64> = selected_ids.iter().copied().collect();
-    let nodes_to_duplicate = live_document
-        .document
+    let nodes_to_duplicate = source_document
         .nodes
         .iter()
         .filter(|node| selected_set.contains(&node.id))
@@ -47,18 +53,12 @@ pub(super) fn duplicate_selected_nodes_system(
         .collect::<Vec<_>>();
 
     if nodes_to_duplicate.is_empty() {
-        set_asset_status(
-            &mut status,
-            GraphPersistenceStatusSeverity::Warning,
-            "The current selection could not be duplicated.".to_string(),
-            &settings,
-            &time,
-        );
-        return;
+        return Err(WorkflowStatusFailure::warning(
+            "The current selection could not be duplicated.",
+        ));
     }
 
-    let edges_to_duplicate = live_document
-        .document
+    let edges_to_duplicate = source_document
         .edges
         .iter()
         .filter(|edge| {
@@ -67,7 +67,7 @@ pub(super) fn duplicate_selected_nodes_system(
         .cloned()
         .collect::<Vec<_>>();
 
-    let mut document = live_document.document.clone();
+    let mut document = source_document.clone();
     let mut next_id = document.next_node_id();
     let mut id_map = HashMap::new();
     let duplicate_offset = [48.0_f32, -48.0_f32];
@@ -79,32 +79,36 @@ pub(super) fn duplicate_selected_nodes_system(
         node.position[0] += duplicate_offset[0];
         node.position[1] += duplicate_offset[1];
         id_map.insert(original_id, node.id);
-        let _ = document.insert_node(node);
+        document.insert_node(node).map_err(|error| {
+            WorkflowStatusFailure::document_operation("duplicate the selected nodes", error)
+        })?;
     }
 
     for edge in edges_to_duplicate {
-        let Some(from_node_id) = id_map.get(&edge.from_node_id).copied() else {
-            continue;
-        };
-        let Some(to_node_id) = id_map.get(&edge.to_node_id).copied() else {
-            continue;
-        };
-        let _ = document.connect(from_node_id, edge.from_index, to_node_id, edge.to_index);
+        let from_node_id = id_map.get(&edge.from_node_id).copied().ok_or_else(|| {
+            WorkflowStatusFailure::error(
+                "Failed to duplicate the selected connections because a cloned source node was missing.",
+            )
+        })?;
+        let to_node_id = id_map.get(&edge.to_node_id).copied().ok_or_else(|| {
+            WorkflowStatusFailure::error(
+                "Failed to duplicate the selected connections because a cloned target node was missing.",
+            )
+        })?;
+        document
+            .connect(from_node_id, edge.from_index, to_node_id, edge.to_index)
+            .map_err(|error| {
+                WorkflowStatusFailure::document_operation(
+                    "duplicate the selected connections",
+                    error,
+                )
+            })?;
     }
 
     document.set_selected_nodes(id_map.values().copied().collect::<Vec<_>>());
-    apply_writer.write(ApplyGraphDocumentRequest {
+    Ok(WorkflowDocumentChange {
         document,
         source_label: "duplicated selection".to_string(),
-        track_for_undo: true,
-        validation_report: None,
-    });
-
-    set_asset_status(
-        &mut status,
-        GraphPersistenceStatusSeverity::Info,
-        format!("Duplicated {} node(s).", selected_ids.len()),
-        &settings,
-        &time,
-    );
+        success_message: format!("Duplicated {} node(s).", selected_ids.len()),
+    })
 }

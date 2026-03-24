@@ -1,6 +1,6 @@
 # Graph Core Execution Model
 
-Status: Active supporting note. Kept alongside the cleanup roadmap because it defines ownership and execution-boundary rules that the roadmap only summarizes.
+Status: Active supporting note, updated through the Phase 7 docs refresh so the execution note matches the tightened public API and the current adapter boundaries.
 
 ## Purpose
 
@@ -106,7 +106,7 @@ It owns:
 - `authored_inputs`
 - `resolved_inputs`
 - `outputs`
-- `NodeExecutionState`
+- internal execution bookkeeping such as readiness, blocked state, dirtiness, and last-run metadata
 
 It does not own:
 
@@ -125,7 +125,7 @@ It does not own:
 | outputs | `ExecutableNode` |
 | document edges | `GraphDocument` |
 | direct links / adjacency | `ExecutableGraph` |
-| execution state | `ExecutableNode` via `NodeExecutionState` |
+| execution state | `ExecutableNode` via internal execution bookkeeping surfaced through higher-level executable helpers |
 | whole-graph correctness | `GraphValidationReport` |
 | per-node blocked/degraded build outcome | build report `node_diagnostics` |
 
@@ -284,9 +284,18 @@ The effective input model is:
 This means `resolved_inputs` are not a second authored buffer. They are the
 current executable view of inputs.
 
-## Execution State Model
+## Internal Execution State Model
 
-`NodeExecutionState` is owned by `ExecutableNode`.
+The detailed execution bookkeeping inside `ExecutableNode` is intentionally
+internalized after the Phase 4 API tightening pass.
+
+Downstream crates should query execution state through higher-level helpers such as:
+
+- `ExecutableGraph::is_build_ready()`
+- `ExecutableGraph::can_execute()`
+- `ExecutableGraph::blocked_node_ids()`
+- `ExecutableGraph::execution_order()`
+- `ExecutableNode::input_resolution()`
 
 The first model should support at least:
 

@@ -1,147 +1,104 @@
-# Runtime Consolidation And Legacy Cleanup Roadmap
+# Code Quality Roadmap For `graph_core`
 
-## Goal
+This roadmap is based on [`graph-core-analysis.ar.md`](./graph-core-analysis.ar.md) and focuses on raising code quality, architectural consistency, and long-term maintainability across the graph stack.
 
-Move the project from:
+## North Star
 
-- a mixed architecture where `ExecutableGraph` is present but transitional runtime and UI layers still exist
+Raise the current overall quality from roughly `7/10` to `9.5/10+` by:
 
-to:
+- [ ] removing major architectural duplication
+- [ ] making `graph_core` the single source of truth for graph rules
+- [ ] resolving partially supported features instead of leaving them half-exposed
+- [x] tightening the public API to match intended usage
+- [ ] reducing drift between core, UI, persistence, and runtime
 
-- a single execution model centered on `ExecutableGraph`
-- a thinner runtime adapter layer
-- a cleaner editor and persistence stack with old paths removed
+## Priority Outcomes
 
-The intended outcome is that authored truth stays in `GraphDocument` and
-`AuthoredNodeInputs`, execution truth stays in `ExecutableGraph`, and any ECS
-projection exists only as a display or integration cache.
+- [x] One connection-rule implementation shared by validation, UI, and persistence.
+- [x] A clear end-to-end decision on `ConnectionPolicy::Multiple`.
+- [x] A thinner `univis_node_graph` adapter with less mirroring of core types.
+- [x] A smaller, more intentional `graph_core` public surface.
+- [x] Fewer silent failures in document operations.
 
-## Decisions Locked Before Cleanup
+## Phase 0: Baseline And Ownership
 
-- `ExecutableGraph` is the only execution truth.
-- `GraphDocument` and `AuthoredNodeInputs` remain the authored truth.
-- `GraphNode.values` in ECS are cache or projection data, not authoritative execution state.
-- `GraphConnectivityIndex` and `GraphResolvedInputs` are transitional compatibility resources and should be removed.
-- Popup-based node editing is retired; inline node editing is the only editor path.
-- Validation should be consumed from `graph_core` or `LiveGraphValidationState`, not reimplemented in adapters.
-- Cleanup should prefer deletion and direct usage over adding new wrappers.
+- [x] Document crate boundaries and ownership.
+- [x] Classify public API into stable and intended, public but internal in practice, or experimental and incomplete.
+- [x] Align docs around the quality plan.
 
-## Success Signals
+## Phase 1: Single Source Of Truth For Connection Rules
 
-- No runtime system needs `GraphConnectivityIndex`.
-- No runtime or UI system needs `GraphResolvedInputs`.
-- `node_popup.rs` and `NodePopupState` no longer exist.
-- Runtime diagnostics and scene outputs read from `ExecutableGraph` directly.
-- Validation flows through `GraphValidationReport` and executable node diagnostics without parallel legacy paths.
-- The public surface of runtime, UI, and node-graph crates is smaller and clearer than before cleanup.
+- [x] Extract shared connection-evaluation helpers into `graph_core`.
+- [x] Reuse the same logic from validation, wire preview / acceptance, and persistence apply / load.
+- [x] Standardize rejection reasons so upper layers stop inventing their own rule sets.
 
-## Phase 0: Lock The Cleanup Model
+## Phase 2: Resolve `ConnectionPolicy::Multiple`
 
-- [x] List the remaining transitional structures and mark each one as:
-  - [x] truth
-  - [x] cache
-  - [x] adapter
-  - [x] legacy
-- [x] Update `docs/graph-core-execution-model.md` where the cleanup changes ownership language
-- [x] Make explicit which ECS resources still exist only for compatibility
-- [x] Define the deletion order so cleanup can happen without breaking the editor
+Current state: designed, partially modeled, not truly supported end-to-end.
 
-## Phase 1: Remove Runtime Projection Resources
+Decision gate:
 
-- [x] Migrate consumers away from:
-  - [x] `GraphConnectivityIndex`
-  - [x] `GraphResolvedInputs`
-- [x] Move the following readers to `GraphExecutableRuntimeState.graph` directly:
-  - [x] scene output collection
-  - [x] connection diagnostics
-  - [x] runtime-facing tests that still inspect projected resolved inputs
-- [x] Add any missing read helpers on `ExecutableGraph` or `GraphExecutableRuntimeState`
-- [x] Delete:
-  - [x] `GraphConnectivityIndex`
-  - [x] `GraphResolvedInputs`
-  - [x] `project_runtime_resources`
+- [ ] Fully implement it across document, validation, UI, persistence, and runtime.
+- [x] Or temporarily reduce / hide the API until it is truly supported.
 
-## Phase 2: Thin The Runtime Adapter Layer
+Recommended approach:
 
-- [x] Keep `GraphExecutableRuntimeState` focused on:
-  - [x] `ExecutableGraph`
-  - [x] entity to node-id mapping
-  - [x] node-id to entity mapping
-- [x] Remove duplicated runtime knowledge that already exists inside `ExecutableGraph`
-- [x] Keep `GraphRuntimeDiagnostics` only as a presentation resource, not as a competing source of truth
-- [x] Audit runtime systems for duplicated:
-  - [x] adjacency logic
-  - [x] execution-order logic
-  - [x] blocked-state logic
-- [x] Delete any remaining duplicated logic after moving or reusing the core version
+- [x] first make the public truth match the real implementation
+- [ ] then add full support only if the product actually needs multi-source inputs
 
-## Phase 3: Remove Popup Editing Legacy
+## Phase 3: Reduce Mirroring In `univis_node_graph`
 
-- [x] Delete `crates/univis_editor_ui/src/node_popup.rs`
-- [x] Remove `NodePopupState` from:
-  - [x] `NodeUiPlugin`
-  - [x] selection systems
-  - [x] state-sync systems
-  - [x] persistence cleanup state
-  - [x] workflow and persistence tests
-- [x] Remove any popup-only overlay state or surface flags that no longer have a user-facing role
-- [x] Ensure settings actions now map to:
-  - [x] inline editing
-  - [x] inline section expand or collapse
-  - [x] or nothing, if the control is obsolete
+- [x] Refactor `PortDefinition` toward composition instead of near-duplication.
+- [x] Reduce overlap between core node-definition contracts and Bevy-facing contracts.
+- [x] Simplify registry ownership so the adapter layer forwards less duplicated behavior.
 
-## Phase 4: Simplify Validation Access
+## Phase 4: Tighten `graph_core` Public API
 
-- [x] Move consumers to `GraphValidationReport` and executable node diagnostics directly where practical
-- [x] Keep only the live validation resource and the minimum adapter glue still needed in `node_graph`
-- [x] Remove compatibility helpers that only rewrap core validation results
-- [x] Audit persistence, UI, and tests for old `Vec<GraphValidationIssue>` style access
-- [x] Prefer one validation truth path across:
-  - [x] editor
-  - [x] persistence
-  - [x] runtime
+- [x] Audit everything exported through `prelude`.
+- [x] Move low-level items to narrower visibility when possible.
+- [x] Keep public only what downstream crates are expected to depend on directly.
 
-## Phase 5: Clarify ECS Cache Boundaries
+## Phase 5: Improve Error Flow
 
-- [x] Make it explicit in code and naming that `GraphNode.values` are projection data
-- [x] Audit systems that read `GraphNode.values` for decisions
-- [x] Move decision-making reads to:
-  - [x] `AuthoredNodeInputs`
-  - [x] `ExecutableGraph`
-- [x] Keep ECS projections only where needed for:
-  - [x] rendering
-  - [x] widgets
-  - [x] debug or inspector output
-- [x] Rename helpers or fields if needed to reduce ambiguity
+- [x] Stop ignoring `GraphDocumentOperationError` in workflow-heavy paths.
+- [x] Standardize mutation results and user-facing failure handling.
+- [x] Remove silent document-operation failures where possible.
 
-## Phase 6: Persistence And Apply Cleanup
+## Phase 6: Add Contract Tests Across Layers
 
-- [x] Remove popup-specific cleanup assumptions from persistence flows
-- [x] Reuse document signatures and validation reports from the already unified sources only
-- [x] Audit load or apply branches that still exist only for transitional compatibility
-- [x] Keep legacy save-file migration only where it still serves real old payload support
-- [x] Delete branches that became obsolete after the executable-runtime unification
+- [x] Add parity tests for validation behavior, UI connection acceptance, persistence apply rules, and runtime execution assumptions.
+- [x] Focus on cross-layer consistency, not only isolated unit behavior.
 
-## Phase 7: Tighten Public Surface And Delete Dead Code
+## Phase 7: Update Examples And Docs
 
-- [x] Remove unused exports, wrappers, and helper functions
-- [x] Prune prelude exports that no longer represent supported architecture
-- [x] Delete outdated documentation references to removed systems
-- [x] Rewrite or remove tests that only exist for deleted compatibility layers
-- [x] Keep the surviving public API intentionally small
+- [x] Make examples reflect intended stable usage.
+- [x] Remove or reduce examples that depend on APIs likely to be narrowed.
+- [x] Update workspace docs to reflect the final architecture.
 
-## Phase 8: Regression Coverage For The New Shape
+## Phase 8: Harden Live Document Rebuilds
 
-- [x] Add targeted tests for:
-  - [x] runtime reading execution truth directly from `ExecutableGraph`
-  - [x] scene outputs without `GraphResolvedInputs`
-  - [x] UI diagnostics without `GraphConnectivityIndex`
-  - [x] editor startup and persistence without popup resources
-  - [x] authored input change flowing through execution to UI or world state
-- [x] Keep tests focused on architectural guarantees, not only smoke behavior
+- [x] Stop rebuilding live `GraphDocument` snapshots by pushing raw edges directly.
+- [x] Reuse `insert_node` and `connect` invariants during snapshot rebuilds in `univis_node_graph`.
+- [x] Surface rejected or stale live edges as structured build issues instead of letting them disappear silently.
 
-## Documentation Maintenance
+## Suggested Execution Order
 
-- [x] Keep `docs/roadmap.ar.md` and `docs/roadmap.md` aligned in order and meaning
-- [x] Update `changelog.md` as each cleanup phase lands
-- [x] Audit supplementary documents and archive only what this roadmap fully supersedes
+- [x] Baseline and ownership
+- [x] Shared connection rules
+- [x] `ConnectionPolicy::Multiple` decision
+- [x] Error-flow improvements
+- [x] Adapter-layer de-duplication
+- [x] Public API tightening
+- [x] Contract tests
+- [x] Docs and examples refresh
+- [x] Live document rebuild hardening
+
+## Highest-Leverage Work
+
+If only three things are done first, they should be:
+
+- [x] unify connection rules
+- [x] resolve `ConnectionPolicy::Multiple`
+- [x] reduce `univis_node_graph` mirroring
+
+Those three changes will produce the biggest jump in quality, consistency, and maintainability.

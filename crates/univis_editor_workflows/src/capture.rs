@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use univis_editor_commands::GraphCommandRequest;
 use univis_editor_persistence::graph_persistence::{
-    GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
+    GraphPersistenceSettings, GraphPersistenceStatus,
 };
 use univis_node_graph::{
     commands::GraphMutationTracker,
@@ -11,7 +11,7 @@ use univis_node_graph::{
 };
 use univis_scene::EntityValue;
 
-use crate::status::set_asset_status;
+use crate::status::{publish_workflow_failure, publish_workflow_success, WorkflowStatusFailure};
 
 pub(super) fn capture_prefab_from_selection_system(
     mut command_requests: MessageReader<GraphCommandRequest>,
@@ -37,10 +37,11 @@ pub(super) fn capture_prefab_from_selection_system(
     let Some((name_hint, root)) =
         resolve_selected_entity_value(live_document.selected_entities(), &q_nodes)
     else {
-        set_asset_status(
+        publish_workflow_failure(
             &mut status,
-            GraphPersistenceStatusSeverity::Warning,
-            "Select an entity-producing scene node or scene output first.".to_string(),
+            WorkflowStatusFailure::warning(
+                "Select an entity-producing scene node or scene output first.",
+            ),
             &settings,
             &time,
         );
@@ -49,13 +50,12 @@ pub(super) fn capture_prefab_from_selection_system(
 
     let (id, name, updated_existing) = if let Some(prefab_id) = capture_target {
         let Some(existing) = live_document.document.prefab(&prefab_id) else {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                format!(
+                WorkflowStatusFailure::warning(format!(
                     "Prefab '{}' does not exist in the current graph.",
                     prefab_id
-                ),
+                )),
                 &settings,
                 &time,
             );
@@ -83,9 +83,8 @@ pub(super) fn capture_prefab_from_selection_system(
     });
     mutation_tracker.mark_changed();
 
-    set_asset_status(
+    publish_workflow_success(
         &mut status,
-        GraphPersistenceStatusSeverity::Info,
         if updated_existing {
             format!(
                 "Updated prefab '{}' ({}) from the current selection.",
@@ -120,10 +119,9 @@ pub(super) fn capture_subgraph_from_selection_system(
     };
 
     let Some(boundary) = live_document.document.selected_subgraph_boundary_summary() else {
-        set_asset_status(
+        publish_workflow_failure(
             &mut status,
-            GraphPersistenceStatusSeverity::Warning,
-            "Select one or more nodes before capturing a subgraph.".to_string(),
+            WorkflowStatusFailure::warning("Select one or more nodes before capturing a subgraph."),
             &settings,
             &time,
         );
@@ -133,13 +131,12 @@ pub(super) fn capture_subgraph_from_selection_system(
 
     let (id, name, updated_existing) = if let Some(subgraph_id) = capture_target {
         let Some(existing) = live_document.document.subgraph(&subgraph_id) else {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                format!(
+                WorkflowStatusFailure::warning(format!(
                     "Subgraph '{}' does not exist in the current graph.",
                     subgraph_id
-                ),
+                )),
                 &settings,
                 &time,
             );
@@ -167,14 +164,16 @@ pub(super) fn capture_subgraph_from_selection_system(
         )
     };
 
-    if !live_document
+    if let Err(error) = live_document
         .document
         .capture_selected_subgraph(id.clone(), name.clone())
     {
-        set_asset_status(
+        publish_workflow_failure(
             &mut status,
-            GraphPersistenceStatusSeverity::Warning,
-            "Unable to capture the current selection as a subgraph.".to_string(),
+            WorkflowStatusFailure::document_operation(
+                "capture the current selection as a subgraph",
+                error,
+            ),
             &settings,
             &time,
         );
@@ -182,9 +181,8 @@ pub(super) fn capture_subgraph_from_selection_system(
     }
 
     mutation_tracker.mark_changed();
-    set_asset_status(
+    publish_workflow_success(
         &mut status,
-        GraphPersistenceStatusSeverity::Info,
         if updated_existing {
             format!(
                 "Updated subgraph '{}' ({}) from {} node(s) with {} internal wire(s); omitted {} incoming and {} outgoing boundary wire(s).",

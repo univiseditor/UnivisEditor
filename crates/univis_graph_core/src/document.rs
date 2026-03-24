@@ -155,9 +155,14 @@ pub struct GraphDocumentCameraState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphDocumentOperationError {
+    EmptySelection,
     DuplicateNodeId(u64),
     MissingSourceNode(u64),
     MissingTargetNode(u64),
+    MissingSubgraph(String),
+    EmptyDocumentFragment {
+        context: String,
+    },
     SelfConnection(u64),
     InvalidOutputPort {
         node_id: u64,
@@ -183,9 +188,16 @@ pub enum GraphDocumentOperationError {
 impl std::fmt::Display for GraphDocumentOperationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::EmptySelection => write!(f, "selection does not contain any existing nodes"),
             Self::DuplicateNodeId(node_id) => write!(f, "node id {} already exists", node_id),
             Self::MissingSourceNode(node_id) => write!(f, "source node {} does not exist", node_id),
             Self::MissingTargetNode(node_id) => write!(f, "target node {} does not exist", node_id),
+            Self::MissingSubgraph(subgraph_id) => {
+                write!(f, "subgraph '{}' does not exist", subgraph_id)
+            }
+            Self::EmptyDocumentFragment { context } => {
+                write!(f, "{} does not contain any nodes", context)
+            }
             Self::SelfConnection(node_id) => write!(f, "node {} cannot connect to itself", node_id),
             Self::InvalidOutputPort {
                 node_id,
@@ -520,9 +532,13 @@ where
         Some(summary)
     }
 
-    pub fn capture_selected_subgraph(&mut self, id: String, name: String) -> bool {
+    pub fn capture_selected_subgraph(
+        &mut self,
+        id: String,
+        name: String,
+    ) -> Result<(), GraphDocumentOperationError> {
         let Some(boundary) = self.selected_subgraph_boundary_summary() else {
-            return false;
+            return Err(GraphDocumentOperationError::EmptySelection);
         };
         let selected = boundary
             .selected_node_ids
@@ -537,7 +553,7 @@ where
             .cloned()
             .collect();
         if selected_nodes.is_empty() {
-            return false;
+            return Err(GraphDocumentOperationError::EmptySelection);
         }
 
         let min_x = selected_nodes
@@ -571,17 +587,21 @@ where
                 view: GraphDocumentViewState::default(),
             }),
         });
-        true
+        Ok(())
     }
 
     pub fn merged_with_subgraph_instance(
         &self,
         subgraph_id: &str,
         origin: [f32; 2],
-    ) -> Option<GraphDocument<Value, Prefab>> {
-        let subgraph = self.subgraph(subgraph_id)?;
+    ) -> Result<GraphDocument<Value, Prefab>, GraphDocumentOperationError> {
+        let subgraph = self
+            .subgraph(subgraph_id)
+            .ok_or_else(|| GraphDocumentOperationError::MissingSubgraph(subgraph_id.to_string()))?;
         if subgraph.document.nodes.is_empty() {
-            return None;
+            return Err(GraphDocumentOperationError::EmptyDocumentFragment {
+                context: format!("subgraph '{}'", subgraph_id),
+            });
         }
 
         let min_x = subgraph
@@ -612,23 +632,18 @@ where
             cloned.position[0] = origin[0] + (cloned.position[0] - min_x);
             cloned.position[1] = origin[1] + (cloned.position[1] - min_y);
             selected_node_ids.push(new_id);
-            merged.nodes.push(cloned);
+            merged.insert_node(cloned)?;
         }
 
         for edge in &subgraph.document.edges {
-            let Some(from_node_id) = node_id_map.get(&edge.from_node_id).copied() else {
-                continue;
-            };
-            let Some(to_node_id) = node_id_map.get(&edge.to_node_id).copied() else {
-                continue;
-            };
+            let from_node_id = node_id_map.get(&edge.from_node_id).copied().ok_or(
+                GraphDocumentOperationError::MissingSourceNode(edge.from_node_id),
+            )?;
+            let to_node_id = node_id_map.get(&edge.to_node_id).copied().ok_or(
+                GraphDocumentOperationError::MissingTargetNode(edge.to_node_id),
+            )?;
 
-            merged.edges.push(GraphDocumentEdge {
-                from_node_id,
-                from_index: edge.from_index,
-                to_node_id,
-                to_index: edge.to_index,
-            });
+            merged.connect(from_node_id, edge.from_index, to_node_id, edge.to_index)?;
         }
 
         for prefab in &subgraph.document.prefabs {
@@ -639,6 +654,6 @@ where
         }
 
         merged.set_selected_nodes(selected_node_ids);
-        Some(merged)
+        Ok(merged)
     }
 }

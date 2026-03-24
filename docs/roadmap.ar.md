@@ -1,147 +1,353 @@
-# خارطة طريق دمج التشغيل وتنظيف الإرث
+# خارطة طريق رفع جودة `graph_core` إلى أعلى تقييم
 
-## الهدف
+هذه الخارطة مبنية على نتائج [`graph-core-analysis.ar.md`](./graph-core-analysis.ar.md)، وهدفها ليس إضافة ميزات جديدة أولاً، بل رفع جودة الكود والمعمارية والاتساق بين الطبقات إلى أعلى مستوى ممكن داخل الـ workspace.
 
-نقل المشروع من:
+## الهدف النهائي
 
-- معمارية مختلطة أصبح فيها `ExecutableGraph` موجودًا، لكن ما زالت حوله طبقات انتقالية في runtime وUI
+رفع التقييم العام من حوالي `7/10` إلى `9.5/10` أو أعلى عبر:
 
-إلى:
+- [ ] إزالة التكرار المعماري الكبير
+- [ ] توحيد مصدر الحقيقة لقواعد التوصيل والتحقق
+- [ ] حسم الميزات غير المكتملة بدل تركها نصف مدعومة
+- [x] تضييق الـ public API إلى ما هو مقصود فعلاً
+- [ ] جعل `graph_core` طبقة موثوقة ومتماسكة لا تحتاج الطبقات الأعلى لإعادة تفسير قواعدها
 
-- نموذج تنفيذ واحد يتمحور حول `ExecutableGraph`
-- طبقة runtime أرفع وأنحف
-- ومكدس editor وpersistence أنظف بعد إزالة المسارات القديمة
+## الدرجات المستهدفة
 
-النتيجة المستهدفة هي أن تبقى `GraphDocument` و`AuthoredNodeInputs` هما الحقيقة
-التحريرية، وأن تصبح `ExecutableGraph` هي الحقيقة التنفيذية، وأن تبقى أي إسقاطات
-داخل ECS مجرد cache للعرض أو التكامل.
+| الجانب | التقدير الحالي | الهدف |
+|---|---:|---:|
+| التموضع المعماري | 8.5 | 9.5 |
+| فصل المسؤوليات | 8.0 | 9.5 |
+| استغلال الـ crate | 7.0 | 9.0 |
+| جودة `document` | 9.0 | 9.5 |
+| جودة `validation` | 8.5 | 9.5 |
+| جودة `ExecutableGraph` | 7.5 | 9.0 |
+| وضوح الـ public API | 6.0 | 9.0 |
+| غياب التكرار | 4.5 | 9.0 |
+| الاتساق بين الطبقات | 5.5 | 9.0 |
+| اكتمال الميزات المعلنة | 5.0 | 9.0 |
+| القابلية للصيانة | 6.5 | 9.5 |
 
-## القرارات المعتمدة قبل التنظيف
+## المبادئ الحاكمة
 
-- `ExecutableGraph` هي الحقيقة التنفيذية الوحيدة.
-- `GraphDocument` و`AuthoredNodeInputs` يبقيان الحقيقة التحريرية.
-- `GraphNode.values` داخل ECS هي بيانات cache أو projection، وليست حالة تنفيذية معتمدة.
-- `GraphConnectivityIndex` و`GraphResolvedInputs` موارد توافق انتقالية ويجب حذفها.
-- التحرير عبر popup متقاعد، والتحرير inline داخل العقد هو المسار الوحيد في الواجهة.
-- التحقق يجب أن يُستهلك من `graph_core` أو `LiveGraphValidationState`، لا أن يُعاد بناؤه داخل الـ adapters.
-- التنظيف يجب أن يفضل الحذف والاستخدام المباشر بدل إضافة wrappers جديدة.
+قبل أي refactor، نعتمد المبادئ التالية:
 
-## مؤشرات النجاح
+- [ ] `graph_core` يجب أن تبقى طبقة الحقيقة الأساسية لقواعد graph.
+- [ ] أي قاعدة business أو validation تُكتب مرة واحدة فقط ثم تُستهلك من الطبقات الأخرى.
+- [ ] لا نعلن public API لا نريد دعمها فعلياً.
+- [ ] أي feature غير مكتملة يجب إما إكمالها end-to-end أو تخفيضها من الواجهة.
+- [ ] طبقة `univis_node_graph` يجب أن تصبح adapter خفيفة، لا طبقة تعيد تعريف core بالكامل.
 
-- لا يوجد نظام runtime يعتمد على `GraphConnectivityIndex`.
-- لا يوجد نظام runtime أو UI يعتمد على `GraphResolvedInputs`.
-- يختفي `node_popup.rs` و`NodePopupState` بالكامل.
-- تقرأ تشخيصات runtime وscene outputs من `ExecutableGraph` مباشرة.
-- يمر التحقق عبر `GraphValidationReport` و`node diagnostics` التنفيذية من دون مسارات قديمة موازية.
-- يصبح السطح العام في runtime وUI وnode-graph أصغر وأوضح من الوضع الحالي.
+## المرحلة 0: تثبيت خط الأساس
 
-## Phase 0: تثبيت نموذج التنظيف
+### الهدف
 
-- [x] حصر البنى الانتقالية المتبقية وتصنيف كل واحدة على أنها:
-  - [x] truth
-  - [x] cache
-  - [x] adapter
-  - [x] legacy
-- [x] تحديث `docs/graph-core-execution-model.md` حيث تغير خطة التنظيف لغة الملكية أو الحدود
-- [x] توضيح أي موارد ECS ما زالت موجودة فقط لأجل التوافق المرحلي
-- [x] تحديد ترتيب الحذف حتى يتم التنظيف من دون كسر المحرر
+منع زيادة التكرار أو drift أثناء الإصلاح.
 
-## Phase 1: حذف موارد الإسقاط في runtime
+### الأعمال
 
-- [x] نقل المستهلكين بعيدًا عن:
-  - [x] `GraphConnectivityIndex`
-  - [x] `GraphResolvedInputs`
-- [x] جعل القرّاء التالية تعتمد على `GraphExecutableRuntimeState.graph` مباشرة:
-  - [x] جمع scene outputs
-  - [x] connection diagnostics
-  - [x] اختبارات runtime التي ما زالت تفحص resolved inputs المسقطة
-- [x] إضافة أي واجهات قراءة ناقصة على `ExecutableGraph` أو `GraphExecutableRuntimeState`
-- [x] حذف:
-  - [x] `GraphConnectivityIndex`
-  - [x] `GraphResolvedInputs`
-  - [x] `project_runtime_resources`
+- [x] توثيق الحدود الرسمية بين `univis_graph_core` و`univis_node_graph` و`univis_editor_runtime` و`univis_editor_ui` و`univis_editor_persistence`
+- [x] تصنيف public API الحالية إلى مستقرة ومقصودة أو داخلية لكنها public الآن أو تجريبية وغير مكتملة
+- [x] ربط ملفات docs الحالية بهذا التقرير وهذه الخارطة
 
-## Phase 2: ترشيق طبقة runtime adapter
+### معيار النجاح
 
-- [x] إبقاء `GraphExecutableRuntimeState` مركزة على:
-  - [x] `ExecutableGraph`
-  - [x] الربط من entity إلى node-id
-  - [x] الربط من node-id إلى entity
-- [x] إزالة أي معرفة runtime مكررة موجودة أصلًا داخل `ExecutableGraph`
-- [x] إبقاء `GraphRuntimeDiagnostics` كمورد عرض فقط، لا كمصدر حقيقة منافس
-- [x] تدقيق أنظمة runtime بحثًا عن تكرار في:
-  - [x] adjacency logic
-  - [x] execution-order logic
-  - [x] blocked-state logic
-- [x] حذف أي منطق مكرر متبقٍ بعد نقل النسخة الأساسية أو إعادة استخدامها من core
+- [x] يصبح من الواضح لأي مطور ما الذي يملكه كل crate وما الذي لا يجب إعادة بنائه خارج `graph_core`
 
-## Phase 3: حذف إرث popup editing
+## المرحلة 1: توحيد قواعد التوصيل والتحقق
 
-- [x] حذف `crates/univis_editor_ui/src/node_popup.rs`
-- [x] إزالة `NodePopupState` من:
-  - [x] `NodeUiPlugin`
-  - [x] أنظمة selection
-  - [x] أنظمة state-sync
-  - [x] حالة التنظيف داخل persistence
-  - [x] اختبارات workflow وpersistence
-- [x] حذف أي حالة overlay أو surface خاصة بالـ popup ولم يعد لها دور واجهي حقيقي
-- [x] التأكد من أن إجراءات الإعدادات أصبحت الآن تشير إلى:
-  - [x] inline editing
-  - [x] inline section expand أو collapse
-  - [x] أو لا شيء، إذا صار الزر نفسه قديمًا
+### المشكلة
 
-## Phase 4: تبسيط الوصول إلى validation
+قواعد قبول الوصلات موزعة اليوم بين:
 
-- [x] نقل المستهلكين إلى `GraphValidationReport` و`node diagnostics` التنفيذية مباشرة كلما كان ذلك عمليًا
-- [x] إبقاء مورد live validation والحد الأدنى فقط من glue داخل `node_graph`
-- [x] حذف واجهات التوافق التي تعيد فقط تغليف نتائج validation القادمة من core
-- [x] تدقيق persistence وUI والاختبارات بحثًا عن أي وصول قديم من نمط `Vec<GraphValidationIssue>`
-- [x] تفضيل مسار تحقق واحد عبر:
-  - [x] editor
-  - [x] persistence
-  - [x] runtime
+- [x] `univis_graph_core::validation`
+- [x] `univis_editor_ui::wire`
+- [x] `univis_editor_persistence::graph_persistence::apply`
 
-## Phase 5: حسم حدود cache داخل ECS
+وهذا أخطر مصدر drift في المشروع.
 
-- [x] توضيح ذلك في الكود والأسماء: `GraphNode.values` هي بيانات projection
-- [x] تدقيق الأنظمة التي تقرأ `GraphNode.values` لاتخاذ القرار
-- [x] نقل قراءات القرار إلى:
-  - [x] `AuthoredNodeInputs`
-  - [x] `ExecutableGraph`
-- [x] إبقاء إسقاطات ECS فقط عندما تكون مطلوبة لأجل:
-  - [x] rendering
-  - [x] widgets
-  - [x] debug أو inspector output
-- [x] إعادة تسمية helpers أو الحقول إذا لزم الأمر لتقليل الغموض
+### الهدف
 
-## Phase 6: تنظيف persistence وapply
+جعل `graph_core` المصدر الوحيد لقواعد:
 
-- [x] إزالة افتراضات التنظيف الخاصة بالـ popup من مسارات persistence
-- [x] إعادة استخدام document signatures وvalidation reports من المصادر الموحدة فقط
-- [x] تدقيق فروع load وapply التي ما زالت موجودة فقط لأجل التوافق المرحلي
-- [x] الإبقاء على هجرة save-file القديمة فقط حيث ما زالت تخدم payloads قديمة فعلًا
-- [x] حذف الفروع التي أصبحت قديمة بعد توحيد runtime التنفيذي
+- [x] توافق الأنواع
+- [x] requirement satisfaction
+- [x] cycle prevention
+- [x] single vs multiple input policy
+- [x] صلاحية المداخل والمخارج
 
-## Phase 7: تضييق السطح العام وحذف الكود الميت
+### الأعمال
 
-- [x] حذف exports وwrappers وhelpers غير المستخدمة
-- [x] تقليم prelude exports التي لم تعد تمثل المعمارية المعتمدة
-- [x] حذف الإشارات التوثيقية القديمة إلى الأنظمة المحذوفة
-- [x] إعادة كتابة الاختبارات الخاصة بطبقات التوافق المحذوفة أو حذفها
-- [x] إبقاء الـ public API المتبقية صغيرة ومقصودة
+- [x] استخراج helper مركزية داخل `graph_core` قابلة للاستدعاء من validator وUI preview وload/apply flows
+- [x] توحيد صياغة أسباب الرفض أو توفير enum/struct معيارية لأسباب فشل التوصيل
+- [x] جعل `editor_ui` تعرض نتيجة helper المركزية بدل إعادة تنفيذ المنطق محلياً
+- [x] جعل `editor_persistence` تعتمد على نفس helper عند apply/load
 
-## Phase 8: تغطية الانحدار للشكل الجديد
+### معيار النجاح
 
-- [x] إضافة اختبارات موجّهة لـ:
-  - [x] قراءة runtime لحقيقة التنفيذ مباشرة من `ExecutableGraph`
-  - [x] scene outputs من دون `GraphResolvedInputs`
-  - [x] UI diagnostics من دون `GraphConnectivityIndex`
-  - [x] تشغيل editor وpersistence من دون موارد popup
-  - [x] انتقال تعديل authored input عبر التنفيذ حتى الواجهة أو world state
-- [x] إبقاء الاختبارات متمحورة حول الضمانات المعمارية، لا مجرد smoke behavior
+- [x] أي wire تقبلها الـ UI يجب أن تقبلها validation و persistence أيضاً
+- [x] أي wire ترفضها validation يجب أن ترفضها الـ UI بنفس السبب المنطقي
 
-## صيانة الوثائق
+### الأثر على التقييم
 
-- [x] إبقاء `docs/roadmap.ar.md` و`docs/roadmap.md` متطابقتين في الترتيب والمضمون
-- [x] تحديث `changelog.md` مع هبوط كل مرحلة من مراحل التنظيف
-- [x] مراجعة الوثائق المساندة وأرشفة ما تغطيه هذه الخارطة بالكامل فقط
+- [x] الاتساق بين الطبقات
+- [x] جودة validation
+- [x] القابلية للصيانة
+
+## المرحلة 2: حسم `ConnectionPolicy::Multiple`
+
+### المشكلة
+
+الميزة موجودة في التصميم، لكنها غير مدعومة end-to-end.
+
+### القرار المطلوب
+
+هناك مساران فقط، ولا يجب ترك الحالة الحالية مستمرة:
+
+- [ ] دعم كامل end-to-end
+- [x] إخفاء أو تعطيل feature مؤقتاً من الواجهة العامة
+
+### المسار الموصى به
+
+ابدأ بمسار مرحلي:
+
+#### الخطوة A
+
+خفض الواجهة إلى الحقيقة الحالية:
+
+- [x] إن كانت multi-source غير جاهزة runtime، فلا يجب أن تبدو وكأنها مدعومة بالكامل
+- [x] تعليمها كـ unsupported explicitly عند الحاجة
+- [x] أو تقييدها في API العلوية مؤقتاً
+
+#### الخطوة B
+
+إذا كانت feature مطلوبة فعلاً، نفذها بالكامل:
+
+- [ ] document authoring
+- [ ] validation
+- [ ] UI wire acceptance
+- [ ] persistence apply/load
+- [ ] runtime input resolution
+- [ ] semantics واضحة للفان-إن
+
+### شرط مهم
+
+لا يكفي دعم التخزين فقط. يجب تحديد semantics التنفيذ:
+
+- [x] حسم الحقيقة الحالية رسمياً: كل input فعلياً single-source فقط، وfan-in غير مدعوم productياً الآن
+- [ ] تحديد هل نأخذ أول مصدر
+- [ ] أو آخر مصدر
+- [ ] أو نجمع كل القيم
+- [ ] أو نقصر multi-source على أنواع ports محددة
+
+### معيار النجاح
+
+- [x] لا تبقى أي feature معلنة في `graph_core` غير متوافقة مع الواقع الفعلي في بقية الطبقات
+
+### الأثر على التقييم
+
+- [x] اكتمال الميزات
+- [x] صدق الـ API
+- [x] الجودة المعمارية العامة
+
+## المرحلة 3: تقليل التكرار في `univis_node_graph`
+
+### المشكلة
+
+`univis_node_graph` اليوم لا تكتفي بالتكييف فوق `graph_core`، بل تعيد تعريف أجزاء كبيرة منها:
+
+- [x] `PortDefinition`
+- [x] `NodeDefinition`
+- [x] `NodeRegistry`
+
+### الهدف
+
+تحويل `univis_node_graph` من طبقة mirroring إلى طبقة adapter خفيفة.
+
+### الأعمال
+
+#### 3.1 إعادة تصميم `PortDefinition`
+
+- [x] فصل الجزء العام عن الجزء البصري
+- [x] جعل البنية أقرب إلى composition بين core port metadata وeditor styling metadata
+- [x] تقليل builder duplication
+
+#### 3.2 إعادة تصميم `NodeDefinition`
+
+- [x] جعل العقدة الأساسية تعرف contract واحدة واضحة
+- [x] إضافة hooks Bevy/UI عبر extension layer أخف
+- [x] تقليل الحاجة إلى adapters مزدوجة
+
+#### 3.3 إعادة تصميم `NodeRegistry`
+
+- [x] تقليل ازدواجية التخزين بين registry المحلية و `GraphNodeRegistry`
+- [x] جعل ownership أوضح سواء كانت core registry هي الأصل أو local registry هي الأصل مع facade نظيفة
+- [x] منع تكرار نفس lookup APIs في طبقتين بلا قيمة إضافية
+
+### معيار النجاح
+
+- [x] ينخفض حجم الكود المكرر
+- [x] يصبح الانتقال من node definition إلى core representation مباشراً أكثر
+- [x] تقليل عدد الأماكن التي تتغير عند إضافة حقل جديد أو behavior جديد
+
+### الأثر على التقييم
+
+- [x] غياب التكرار
+- [x] فصل المسؤوليات
+- [x] القابلية للصيانة
+
+## المرحلة 4: مراجعة الـ public API في `graph_core`
+
+### المشكلة
+
+هناك أجزاء public أوسع من الحاجة الحالية، خصوصاً في `executable` وبعض helpers.
+
+### الهدف
+
+أن تصبح public surface صغيرة، مقصودة، ومفهومة.
+
+### الأعمال
+
+- [x] مراجعة كل ما يخرج من `prelude`
+- [x] تصنيف كل عنصر إلى stable public أو advanced public أو internal
+- [x] تقليل ما يمكن تحويله إلى `pub(crate)` أو وحدات غير معادة التصدير أو exports انتقائية بدل prelude واسعة
+- [x] إعادة تقييم الحاجة إلى types منخفضة المستوى مثل `ExecutableDirectLinks` و`ExecutablePortRef` و`NodeExecutionState`
+
+### معيار النجاح
+
+- [x] تصبح الواجهة أقرب لما يُستخدم فعلاً
+- [x] ينخفض الالتباس حول ما يجب على crates الأخرى استهلاكه مباشرة
+
+### الأثر على التقييم
+
+- [x] وضوح الـ public API
+- [x] استغلال الـ crate
+- [x] جودة التصميم العام
+
+## المرحلة 5: تحسين مسار الأخطاء والعمليات
+
+### المشكلة
+
+بعض workflows تتجاهل نتائج document operations أو تتعامل معها بشكل صامت.
+
+### الهدف
+
+جعل document operations موثوقة ومرئية للمستخدم وللمطور.
+
+### الأعمال
+
+- [x] منع تجاهل `GraphDocumentOperationError` في workflows الحرجة
+- [x] تحويل العمليات الحساسة إلى مسار موحد يعيد success وstructured failure وuser-facing status
+- [x] توحيد طريقة عرض الأخطاء في duplication وclipboard merge وprefab/subgraph workflows
+
+### معيار النجاح
+
+- [x] لا توجد عمليات document مهمة تفشل بصمت
+- [x] يصبح debug أسهل بكثير عند ظهور document inconsistency
+
+### الأثر على التقييم
+
+- [x] القابلية للصيانة
+- [x] جودة `document`
+- [x] الجودة العامة
+
+## المرحلة 6: اختبار العقود بدلاً من اختبار التفاصيل فقط
+
+### الهدف
+
+حماية المعمارية الجديدة من regressions بعد إزالة التكرار.
+
+### الأعمال
+
+- [x] إضافة contract tests مشتركة تغطي نفس السيناريو عبر validation وUI acceptance وpersistence apply وruntime execution
+- [x] إضافة حالات خاصة لـ cycles وinvalid ports وmissing definitions وsingle vs multiple input policy وsubgraph capture/instantiate correctness
+- [x] إضافة tests تركّز على parity بين core والقشرة الأعلى
+
+### معيار النجاح
+
+- [x] لا تعود قواعد التوصيل تتباعد بين طبقتين بعد refactor لاحق
+
+### ملاحظة
+
+هذه المرحلة لا تعني تشغيل tests الآن، بل إدراجها كجزء من roadmap التنفيذية.
+
+## المرحلة 7: تنظيف API الأمثلة والوثائق
+
+### الهدف
+
+أن تعكس الأمثلة والوثائق الحقيقة المعمارية بعد الإصلاح، لا الوضع الانتقالي.
+
+### الأعمال
+
+- [x] تحديث أمثلة `graph_core` لتشرح الاستعمال المقصود فعلاً
+- [x] تقليل أي مثال يعتمد على API نعتزم تقليصها أو إخفاءها
+- [x] تحديث README والوثائق المعمارية للإشارة إلى المصدر المركزي لقواعد التوصيل والقرار النهائي حول `ConnectionPolicy::Multiple` والحدود الجديدة بين core وadapter layer
+
+### معيار النجاح
+
+- [x] لا توجد وثيقة أو مثال يلمح إلى دعم ميزة بشكل أوسع من الواقع
+
+## المرحلة 8: تحصين إعادة بناء الوثيقة الحية
+
+### الهدف
+
+منع مسارات snapshot الحية من بناء `GraphDocument` عبر raw edge insertion أو إسقاط الوصلات غير القانونية بصمت.
+
+### الأعمال
+
+- [x] إيقاف بناء edges الحية عبر `document.edges.push(...)` داخل rebuild path
+- [x] إعادة استخدام `insert_node` و`connect` داخل `univis_node_graph` عند إعادة بناء الوثيقة من snapshotات العالم
+- [x] إظهار الوصلات المرفوضة أو stale على شكل build issues منظمة بدل اختفائها بصمت
+
+### معيار النجاح
+
+- [x] أي وصلة حية غير قانونية لا تدخل الوثيقة المعاد بناؤها بلا تشخيص واضح
+
+## ترتيب التنفيذ الموصى به
+
+- [x] المرحلة 0
+- [x] المرحلة 1
+- [x] المرحلة 2
+- [x] المرحلة 5
+- [x] المرحلة 3
+- [x] المرحلة 4
+- [x] المرحلة 6
+- [x] المرحلة 7
+- [x] المرحلة 8
+
+سبب هذا الترتيب:
+
+- [ ] نبدأ بإيقاف drift
+- [x] ثم نحسم أكبر feature gap
+- [ ] ثم نمنع الفشل الصامت
+- [ ] وبعدها فقط نقوم بالـ refactor العميق
+
+## ما الذي سيعطي أكبر قفزة في الجودة؟
+
+إذا أردنا أكبر أثر بأقل وقت نسبي، فالأولويات الثلاث الذهبية هي:
+
+- [x] توحيد قواعد التوصيل والتحقق
+- [x] حسم `ConnectionPolicy::Multiple`
+- [x] تخفيف mirroring داخل `univis_node_graph`
+
+هذه الثلاث وحدها سترفع التقييم العام بشكل واضح جداً.
+
+## تعريف "أعلى تقييم" في هذا المشروع
+
+لن نعتبر أننا وصلنا لأعلى تقييم إلا عندما تصبح هذه العبارات صحيحة:
+
+- [ ] لا توجد قاعدة توصيل معادة التنفيذ في أكثر من مكان بلا سبب
+- [ ] لا توجد feature معلنة في `graph_core` غير مدعومة فعلياً عبر الطبقات
+- [ ] `univis_node_graph` تضيف قيمة تكيفية واضحة بدل إعادة تعريف core
+- [x] public API في `graph_core` مقصودة وصغيرة ومفهومة
+- [x] أي خطأ documentي مهم لا يفشل بصمت
+- [x] tests تغطي parity بين core وما فوقها
+
+## النتيجة المتوقعة بعد تنفيذ الخارطة
+
+إذا نُفذت هذه الخارطة جيداً، فالصورة النهائية المتوقعة هي:
+
+- [ ] `graph_core` تصبح طبقة أساسية ممتازة وقابلة لإعادة الاستخدام فعلاً
+- [ ] `node_graph` تصبح adapter layer نظيفة وخفيفة
+- [ ] UI و persistence و runtime تتوقف عن إعادة تفسير قوانين core
+- [ ] التقييم العام يمكن أن يرتفع من `7/10` إلى `9.5/10` أو أعلى

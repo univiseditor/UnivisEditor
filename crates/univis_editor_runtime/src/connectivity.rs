@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use univis_graph_core::prelude::{ExecutableGraph, ExecutableNode};
+use univis_graph_core::executable::ExecutableNode;
+use univis_graph_core::prelude::ExecutableGraph;
 use univis_node_graph::prelude::{
+    build_graph_document_from_snapshots, graph_node_authored_inputs_for_snapshot,
     AuthoredNodeInputs, GraphConnection, GraphDocumentEdgeSnapshot, GraphDocumentNodeSnapshot,
-    GraphNode, NodeRegistry, NodeValue, build_graph_document_from_snapshots,
-    graph_node_authored_inputs_for_snapshot,
+    GraphNode, NodeRegistry, NodeValue,
 };
 
 #[derive(Component, Debug, Clone, Default)]
@@ -101,7 +102,7 @@ pub fn rebuild_executable_runtime_state_system(
     );
     let build_report = ExecutableGraph::build(&build.document, registry.core_registry());
 
-    state.graph = build_report.graph;
+    state.graph = build_report.into_graph();
     state.entity_to_node_id = build.entity_to_node_id;
     state.node_id_to_entity = build.node_id_to_entity;
 }

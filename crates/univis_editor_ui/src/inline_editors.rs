@@ -1,5 +1,5 @@
-use crate::node_spawn::{NodeIconFontGlyph, PortLabel};
 use crate::internal_prelude::*;
+use crate::node_spawn::{NodeIconFontGlyph, PortLabel};
 use bevy::prelude::*;
 use univis_ui::prelude::*;
 
@@ -438,9 +438,9 @@ pub(crate) fn sync_inline_widgets_from_authored_inputs_system(
 }
 
 fn supports_inline_editor(port_def: &PortDefinition) -> bool {
-    port_def.editable_inline
+    port_def.editable_inline_enabled()
         && matches!(
-            port_def.value_type,
+            port_def.value_type(),
             ValueType::Float
                 | ValueType::Int
                 | ValueType::Bool
@@ -454,7 +454,7 @@ fn inline_editor_section_for_port(port_def: &PortDefinition) -> Option<InlineNod
         return None;
     }
 
-    match port_def.name.as_str() {
+    match port_def.name() {
         "Tx" | "Ty" | "Tz" | "Rotation" | "Sx" | "Sy" | "Sz" => {
             Some(InlineNodeSectionKind::Transform)
         }
@@ -470,13 +470,13 @@ fn initial_input_value(
     authored_inputs
         .get(index)
         .cloned()
-        .or_else(|| port_def.default_value.clone())
+        .or_else(|| port_def.default_value().cloned())
         .unwrap_or(NodeValue::None)
 }
 
 fn scalar_range(port_def: &PortDefinition) -> (f32, f32) {
-    let min = port_def.ui_min.unwrap_or(-100_000.0) as f32;
-    let max = port_def.ui_max.unwrap_or(100_000.0) as f32;
+    let min = port_def.ui_min().unwrap_or(-100_000.0) as f32;
+    let max = port_def.ui_max().unwrap_or(100_000.0) as f32;
     if min < max {
         (min, max)
     } else {
@@ -582,7 +582,7 @@ fn spawn_inline_input_row(
                             node_entity,
                             port_type: PortType::Input,
                             index,
-                            value_type: port_def.value_type.clone(),
+                            value_type: port_def.value_type().clone(),
                         },
                         InputConnection::default(),
                         UNode {
@@ -610,7 +610,7 @@ fn spawn_inline_input_row(
                     UTextLabel {
                         text: port_name,
                         font_size: 13.5,
-                        color: if port_def.requirement.is_some() {
+                        color: if port_def.requirement().is_some() {
                             port_color
                         } else {
                             Color::srgb(0.74, 0.74, 0.78)
@@ -653,7 +653,7 @@ fn spawn_inline_editor_widget(
     port_def: &PortDefinition,
     value: &NodeValue,
 ) {
-    match port_def.value_type {
+    match port_def.value_type() {
         ValueType::Float => spawn_scalar_drag_value(
             parent,
             node_entity,
@@ -684,7 +684,7 @@ fn spawn_inline_editor_widget(
         ValueType::String => {
             let mut field = UTextField::new()
                 .with_text(value.as_string().unwrap_or(""))
-                .with_placeholder(port_def.name.clone())
+                .with_placeholder(port_def.name().to_string())
                 .with_size(142.0, 28.0);
             field.font_size = 14.0;
             field.padding = 8.0;
@@ -744,15 +744,15 @@ fn spawn_scalar_drag_value(
 ) {
     let (min, max) = match kind {
         InlineNumericInputKind::Color(_) => (
-            port_def.ui_min.unwrap_or(0.0) as f32,
-            port_def.ui_max.unwrap_or(1.0) as f32,
+            port_def.ui_min().unwrap_or(0.0) as f32,
+            port_def.ui_max().unwrap_or(1.0) as f32,
         ),
         _ => scalar_range(port_def),
     };
     let step = match kind {
-        InlineNumericInputKind::Int => port_def.ui_step.unwrap_or(1.0) as f32,
-        InlineNumericInputKind::Color(_) => port_def.ui_step.unwrap_or(0.05) as f32,
-        InlineNumericInputKind::Float => port_def.ui_step.unwrap_or(0.1) as f32,
+        InlineNumericInputKind::Int => port_def.ui_step().unwrap_or(1.0) as f32,
+        InlineNumericInputKind::Color(_) => port_def.ui_step().unwrap_or(0.05) as f32,
+        InlineNumericInputKind::Float => port_def.ui_step().unwrap_or(0.1) as f32,
     };
     let decimals = match kind {
         InlineNumericInputKind::Int => 0,

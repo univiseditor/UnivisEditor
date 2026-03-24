@@ -1,6 +1,8 @@
 use bevy::prelude::World;
 use univis_node_graph::document::{
-    GraphDocument, GraphDocumentNode, GraphDocumentPrefab, GraphDocumentSubgraph,
+    build_graph_document_from_snapshots, GraphDocument, GraphDocumentBuildIssue,
+    GraphDocumentEdgeSnapshot, GraphDocumentNode, GraphDocumentNodeSnapshot,
+    GraphDocumentOperationError, GraphDocumentPrefab, GraphDocumentSubgraph,
     LiveGraphDocumentState,
 };
 use univis_node_graph::node_definition::NodeId;
@@ -67,7 +69,9 @@ fn capture_selected_subgraph_normalizes_positions_and_keeps_internal_edges() {
     });
     document.set_selected_nodes([1, 2]);
 
-    assert!(document.capture_selected_subgraph("subgraph_pair".to_string(), "Pair".to_string()));
+    document
+        .capture_selected_subgraph("subgraph_pair".to_string(), "Pair".to_string())
+        .expect("subgraph capture should succeed");
 
     let subgraph = document
         .subgraph("subgraph_pair")
@@ -178,6 +182,91 @@ fn merged_with_subgraph_instance_offsets_nodes_and_selects_inserted_nodes() {
 }
 
 #[test]
+fn capture_and_reinstantiate_subgraph_round_trips_internal_shape() {
+    let mut document = GraphDocument::default();
+    document
+        .insert_node(node(1, "tests/source", [100.0, 220.0], 0, 1))
+        .expect("node 1");
+    document
+        .insert_node(node(2, "tests/middle", [260.0, 300.0], 1, 1))
+        .expect("node 2");
+    document
+        .insert_node(node(3, "tests/target", [420.0, 360.0], 1, 0))
+        .expect("node 3");
+    document.connect(1, 0, 2, 0).expect("edge 1->2");
+    document.connect(2, 0, 3, 0).expect("edge 2->3");
+    document.set_selected_nodes([1, 2, 3]);
+
+    document
+        .capture_selected_subgraph("subgraph_round_trip".to_string(), "Round Trip".to_string())
+        .expect("subgraph capture should succeed");
+
+    let merged = document
+        .merged_with_subgraph_instance("subgraph_round_trip", [640.0, 120.0])
+        .expect("captured subgraph should merge");
+
+    assert_eq!(merged.prefab_count(), document.prefab_count());
+    assert_eq!(merged.selected_node_ids().len(), 3);
+
+    let selected_nodes = merged
+        .selected_node_ids()
+        .iter()
+        .filter_map(|node_id| merged.node(*node_id))
+        .collect::<Vec<_>>();
+    assert_eq!(selected_nodes.len(), 3);
+
+    let selected_positions = selected_nodes
+        .iter()
+        .map(|node| node.position)
+        .collect::<Vec<_>>();
+    assert!(selected_positions.contains(&[640.0, 120.0]));
+    assert!(selected_positions.contains(&[800.0, 200.0]));
+    assert!(selected_positions.contains(&[960.0, 260.0]));
+
+    let selected_set = merged
+        .selected_node_ids()
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let internal_edges = merged
+        .edges
+        .iter()
+        .filter(|edge| {
+            selected_set.contains(&edge.from_node_id) && selected_set.contains(&edge.to_node_id)
+        })
+        .count();
+    assert_eq!(internal_edges, 2);
+}
+
+#[test]
+fn capture_and_instantiate_report_result_errors_for_empty_or_missing_subgraphs() {
+    let mut document = GraphDocument::default();
+
+    assert_eq!(
+        document.capture_selected_subgraph("empty".to_string(), "Empty".to_string()),
+        Err(GraphDocumentOperationError::EmptySelection)
+    );
+
+    assert!(matches!(
+        document.merged_with_subgraph_instance("missing", [0.0, 0.0]),
+        Err(GraphDocumentOperationError::MissingSubgraph(subgraph_id))
+            if subgraph_id == "missing"
+    ));
+
+    document.upsert_subgraph(GraphDocumentSubgraph {
+        id: "empty_subgraph".to_string(),
+        name: "Empty Subgraph".to_string(),
+        document: Box::new(GraphDocument::default()),
+    });
+
+    assert!(matches!(
+        document.merged_with_subgraph_instance("empty_subgraph", [0.0, 0.0]),
+        Err(GraphDocumentOperationError::EmptyDocumentFragment { context })
+            if context == "subgraph 'empty_subgraph'"
+    ));
+}
+
+#[test]
 fn retain_existing_entities_prunes_dead_mappings_nodes_edges_and_selection() {
     let mut world = World::new();
     let entity_a = world.spawn_empty().id();
@@ -212,4 +301,120 @@ fn retain_existing_entities_prunes_dead_mappings_nodes_edges_and_selection() {
     assert_eq!(live_document.document.selected_node_ids(), &[3]);
     assert!(live_document.node_id_for_entity(entity_b).is_none());
     assert!(live_document.entity_for_node_id(2).is_none());
+}
+
+#[test]
+fn snapshot_build_reuses_document_connect_and_reports_rejected_edges() {
+    let mut world = World::new();
+    let source = world.spawn_empty().id();
+    let middle = world.spawn_empty().id();
+    let target = world.spawn_empty().id();
+
+    let build = build_graph_document_from_snapshots(
+        [
+            GraphDocumentNodeSnapshot {
+                entity: source,
+                definition_id: NodeId::new("tests/source"),
+                position: [0.0, 0.0],
+                inputs: vec![],
+                input_count: 0,
+                output_count: 1,
+                selected: false,
+            },
+            GraphDocumentNodeSnapshot {
+                entity: middle,
+                definition_id: NodeId::new("tests/middle"),
+                position: [160.0, 0.0],
+                inputs: vec![NodeValue::None],
+                input_count: 1,
+                output_count: 1,
+                selected: false,
+            },
+            GraphDocumentNodeSnapshot {
+                entity: target,
+                definition_id: NodeId::new("tests/target"),
+                position: [320.0, 0.0],
+                inputs: vec![NodeValue::None],
+                input_count: 1,
+                output_count: 0,
+                selected: false,
+            },
+        ],
+        [
+            GraphDocumentEdgeSnapshot {
+                from_entity: source,
+                from_index: 0,
+                to_entity: middle,
+                to_index: 0,
+            },
+            GraphDocumentEdgeSnapshot {
+                from_entity: middle,
+                from_index: 0,
+                to_entity: source,
+                to_index: 0,
+            },
+            GraphDocumentEdgeSnapshot {
+                from_entity: middle,
+                from_index: 0,
+                to_entity: target,
+                to_index: 0,
+            },
+        ],
+        None,
+        None,
+    );
+
+    assert_eq!(build.document.edges.len(), 2);
+    assert_eq!(build.issues.len(), 1);
+    assert!(matches!(
+        &build.issues[0],
+        GraphDocumentBuildIssue::RejectedEdge { error, .. }
+            if *error
+                == GraphDocumentOperationError::CycleDetected {
+                    from_node_id: 2,
+                    to_node_id: 1,
+                }
+    ));
+}
+
+#[test]
+fn snapshot_build_reports_missing_node_mappings_for_stale_edges() {
+    let mut world = World::new();
+    let source = world.spawn_empty().id();
+    let missing = world.spawn_empty().id();
+
+    let build = build_graph_document_from_snapshots(
+        [GraphDocumentNodeSnapshot {
+            entity: source,
+            definition_id: NodeId::new("tests/source"),
+            position: [0.0, 0.0],
+            inputs: vec![],
+            input_count: 0,
+            output_count: 1,
+            selected: false,
+        }],
+        [GraphDocumentEdgeSnapshot {
+            from_entity: source,
+            from_index: 0,
+            to_entity: missing,
+            to_index: 0,
+        }],
+        None,
+        None,
+    );
+
+    assert!(build.document.edges.is_empty());
+    assert_eq!(build.issues.len(), 1);
+    assert!(matches!(
+        &build.issues[0],
+        GraphDocumentBuildIssue::MissingTargetNodeMapping {
+            from_entity,
+            to_entity,
+            from_index,
+            to_index,
+        } if *from_entity == source
+            && *to_entity == missing
+            && *from_index == 0
+            && *to_index == 0
+    ));
 }

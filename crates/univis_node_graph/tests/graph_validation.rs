@@ -1,7 +1,8 @@
 use bevy::prelude::Color;
 use univis_graph_core::prelude::{
-    GraphValidationIssueKind, analyze_graph_topology, validate_graph_document, would_create_cycle,
+    validate_graph_document, would_create_cycle, GraphValidationIssueKind,
 };
+use univis_graph_core::topology::analyze_graph_topology;
 use univis_node_graph::document::{GraphDocument, GraphDocumentEdge, GraphDocumentNode};
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, PortRequirement, ProcessContext,
@@ -225,10 +226,8 @@ fn validate_graph_document_flags_unsatisfied_requirements_and_cycles() {
         issue.kind == GraphValidationIssueKind::UnsatisfiedPortRequirement
             && issue.node_ids == vec![1, 3]
     }));
-    assert!(
-        report
-            .issues
-            .iter()
-            .any(|issue| issue.kind == GraphValidationIssueKind::CycleDetected)
-    );
+    assert!(report
+        .issues
+        .iter()
+        .any(|issue| issue.kind == GraphValidationIssueKind::CycleDetected));
 }

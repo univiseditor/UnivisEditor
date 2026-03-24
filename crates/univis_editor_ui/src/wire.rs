@@ -3,8 +3,12 @@ use std::collections::HashSet;
 
 use crate::internal_prelude::*;
 use bevy::prelude::*;
-use univis_graph_core::prelude::{connected_input_mask, would_create_cycle};
-use univis_node_graph::node_definition::NodeGraphSchema;
+use univis_graph_core::prelude::{
+    GraphConnectionCandidate, GraphConnectionValidationOptions,
+    GraphSchemaConnectionValidationContext, GraphStructuralConnectionValidationContext,
+    connected_input_mask, validate_schema_connection_candidate,
+    validate_structural_connection_candidate,
+};
 use univis_ui::prelude::*;
 
 use crate::editor::{EditorSettings, WireStyle};
@@ -134,7 +138,7 @@ pub fn wire_drag_feedback_system(
         return;
     };
 
-    let Ok((_, _, from_port_data)) = ports.get(from_port_entity) else {
+    let Ok((_, _, _)) = ports.get(from_port_entity) else {
         wire_feedback.clear();
         return;
     };
@@ -169,14 +173,11 @@ pub fn wire_drag_feedback_system(
             &registry,
             &q_nodes,
             &q_connections,
-            from_port_entity,
             from_index,
             from_node,
-            from_port_data,
             from_graph_node,
             &from_definition,
             &source_connected_inputs,
-            to_port_entity,
             port,
         );
 
@@ -498,85 +499,65 @@ fn evaluate_wire_target(
     registry: &NodeRegistry,
     q_nodes: &Query<&GraphNode>,
     q_connections: &Query<&GraphConnection>,
-    from_port_entity: Entity,
     from_index: usize,
     from_node: Entity,
-    from_port_data: &GraphPort,
     from_graph_node: &GraphNode,
     from_definition: &ArcNodeDefinition,
     source_connected_inputs: &[bool],
-    to_port_entity: Entity,
     port: &GraphPort,
 ) -> Result<(), String> {
-    let _ = from_port_entity;
-
-    if !NodeGraphSchema::ports_compatible(&from_port_data.value_type, &port.value_type) {
-        return Err(format!(
-            "Incompatible types: {} -> {}",
-            from_port_data.value_type.display_name(),
-            port.value_type.display_name()
-        ));
-    }
-
     let to_graph_node = q_nodes
         .get(port.node_entity)
         .map_err(|_| "Target node is no longer available.".to_string())?;
     let to_definition = registry
         .get(&to_graph_node.definition_id)
         .ok_or_else(|| "Target node definition is missing.".to_string())?;
+    let from_outputs = from_definition.outputs();
     let to_inputs = to_definition.inputs();
-    let to_port_definition = to_inputs
-        .get(port.index)
-        .ok_or_else(|| "Target input definition is missing.".to_string())?;
+    let source_output = from_outputs.get(from_index).map(|port| port.as_core());
+    let target_input = to_inputs.get(port.index).map(|port| port.as_core());
 
     let output_requirement_token =
         from_definition.output_requirement_token(from_index, source_connected_inputs);
 
-    if !NodeGraphSchema::requirement_satisfied(
-        to_port_definition.requirement.as_ref(),
-        output_requirement_token.as_deref(),
-    ) {
-        let requirement = to_port_definition
-            .requirement
-            .as_ref()
-            .map(NodeGraphSchema::requirement_label)
-            .unwrap_or_else(|| "value".to_string());
-        return Err(format!(
-            "Input '{}' requires '{}'.",
-            to_port_definition.name, requirement
-        ));
-    }
+    validate_structural_connection_candidate(
+        GraphStructuralConnectionValidationContext {
+            candidate: GraphConnectionCandidate {
+                from_node_id: from_node,
+                from_index,
+                to_node_id: port.node_entity,
+                to_index: port.index,
+            },
+            source_output_count: from_graph_node.output_projection_len(),
+            target_input_count: to_graph_node.input_projection_len(),
+            source_output_available: source_output.is_some(),
+            target_input_available: target_input.is_some(),
+            target_accepts_multiple_connections: target_input
+                .as_ref()
+                .is_some_and(|input| input.accepts_multiple_connections()),
+        },
+        q_connections.iter().map(|link| GraphConnectionCandidate {
+            from_node_id: link.from_node,
+            from_index: link.from_index,
+            to_node_id: link.to_node,
+            to_index: link.to_index,
+        }),
+        GraphConnectionValidationOptions::live_connection_rules(),
+    )
+    .map_err(|error| error.to_string())?;
 
-    match to_port_definition.connection_policy {
-        univis_node_graph::prelude::ConnectionPolicy::Single => {
-            if q_connections
-                .iter()
-                .any(|link| link.to_port == to_port_entity)
-            {
-                return Err(format!(
-                    "Input '{}' is already connected.",
-                    to_port_definition.name
-                ));
-            }
-        }
-        univis_node_graph::prelude::ConnectionPolicy::Multiple => {
-            return Err(format!(
-                "Input '{}' declares a multiple-source policy, but runtime fan-in is not enabled yet.",
-                to_port_definition.name
-            ));
-        }
-    }
+    let source_output = source_output
+        .as_ref()
+        .ok_or_else(|| "Source output definition is missing.".to_string())?;
+    let target_input = target_input
+        .as_ref()
+        .ok_or_else(|| "Target input definition is missing.".to_string())?;
 
-    if would_create_cycle(
-        q_connections
-            .iter()
-            .map(|link| (link.from_node, link.to_node)),
-        from_node,
-        port.node_entity,
-    ) {
-        return Err("This link would create a cycle.".to_string());
-    }
-
-    let _ = from_graph_node;
-    Ok(())
+    validate_schema_connection_candidate(GraphSchemaConnectionValidationContext {
+        source_output,
+        target_input,
+        source_connected_inputs,
+        output_requirement_token: output_requirement_token.as_deref(),
+    })
+    .map_err(|error| error.to_string())
 }

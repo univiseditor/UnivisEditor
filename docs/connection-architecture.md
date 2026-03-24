@@ -1,6 +1,6 @@
 # Connection Architecture Notes
 
-Status: Active supporting note. Kept alongside the cleanup roadmap because it explains live `GraphConnection` ownership and editor/runtime boundaries in more detail than the roadmap itself.
+Status: Active supporting note. Kept alongside the cleanup roadmap because it explains live `GraphConnection` ownership and editor/runtime boundaries in more detail than the roadmap itself. For the broader crate ownership map and `graph_core` API classification, see [`graph-core-boundaries.md`](./graph-core-boundaries.md).
 
 ## Summary
 
@@ -13,6 +13,7 @@ This gives the project a clearer split between:
 - visual wiring in the editor
 - authored graph data stored in documents
 - runtime-resolved values used during node execution
+- shared connection legality evaluated in `univis_graph_core` instead of reimplemented per layer
 
 ## Why This Change Was Needed
 
@@ -44,9 +45,25 @@ The saved graph format did not need a noisy migration.
 
 `GraphDocument` still stores connections as `edges`, but load/apply paths now rebuild live `GraphConnection` entities in memory. Save/capture paths perform the inverse and rebuild document edges from live connection entities.
 
+Live-document snapshot rebuilds now also reuse `GraphDocument::insert_node(...)` and
+`GraphDocument::connect(...)`, so an inconsistent live wire is skipped with an explicit
+build warning instead of silently entering the rebuilt document as raw edge data.
+
 That keeps file compatibility stable while improving the runtime/editor model internally.
 
-### 3. Runtime Uses `ExecutableGraph`
+### 3. Shared Connection Law Lives In `graph_core`
+
+Live wire preview, full-document validation, and persistence apply/load now reuse the same
+core-level connection helpers:
+
+- `GraphConnectionCandidate`
+- `validate_structural_connection_candidate`
+- `validate_schema_connection_candidate`
+
+This keeps the legality decision in one place even though the result is consumed by UI,
+persistence, and the validator itself.
+
+### 4. Runtime Uses `ExecutableGraph`
 
 The runtime now rebuilds `GraphExecutableRuntimeState.graph` as an `ExecutableGraph<NodeValue>` with:
 
@@ -55,9 +72,11 @@ The runtime now rebuilds `GraphExecutableRuntimeState.graph` as an `ExecutableGr
 - build diagnostics
 - topology-derived execution order
 
+Current workspace semantics remain single-source per input. `ConnectionPolicy::Multiple` is now treated as explicitly unsupported by validation, live wire acceptance, and persistence apply/load until executable fan-in semantics are designed and implemented end-to-end.
+
 This executable state is rebuilt only when graph structure changes. Node processing then uses the compiled executable graph instead of scanning every connection for every node.
 
-### 4. Authored Inputs And Resolved Inputs Are Separate
+### 5. Authored Inputs And Resolved Inputs Are Separate
 
 The editor now keeps authored input values in `AuthoredNodeInputs`.
 

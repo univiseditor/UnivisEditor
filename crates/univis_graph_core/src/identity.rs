@@ -45,5 +45,10 @@ impl NodeCategory {
 pub enum ConnectionPolicy {
     #[default]
     Single,
+    /// Reserved for future fan-in support.
+    ///
+    /// The current workspace treats multi-source inputs as unsupported:
+    /// validation reports them explicitly, the UI rejects new links, and
+    /// persistence skips them during apply/load.
     Multiple,
 }

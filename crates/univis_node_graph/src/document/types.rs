@@ -50,9 +50,68 @@ pub struct GraphDocumentEdgeSnapshot {
     pub to_index: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphDocumentBuildIssue {
+    MissingSourceNodeMapping {
+        from_entity: Entity,
+        to_entity: Entity,
+        from_index: usize,
+        to_index: usize,
+    },
+    MissingTargetNodeMapping {
+        from_entity: Entity,
+        to_entity: Entity,
+        from_index: usize,
+        to_index: usize,
+    },
+    RejectedEdge {
+        edge: GraphDocumentEdge,
+        error: GraphDocumentOperationError,
+    },
+}
+
+impl std::fmt::Display for GraphDocumentBuildIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingSourceNodeMapping {
+                from_entity,
+                to_entity,
+                from_index,
+                to_index,
+            } => write!(
+                f,
+                "edge {}:{} -> {}:{} references a source entity that is missing from the node snapshot mapping",
+                from_entity.index(),
+                from_index,
+                to_entity.index(),
+                to_index
+            ),
+            Self::MissingTargetNodeMapping {
+                from_entity,
+                to_entity,
+                from_index,
+                to_index,
+            } => write!(
+                f,
+                "edge {}:{} -> {}:{} references a target entity that is missing from the node snapshot mapping",
+                from_entity.index(),
+                from_index,
+                to_entity.index(),
+                to_index
+            ),
+            Self::RejectedEdge { edge, error } => write!(
+                f,
+                "edge {}:{} -> {}:{} was rejected while rebuilding the live document: {}",
+                edge.from_node_id, edge.from_index, edge.to_node_id, edge.to_index, error
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct GraphDocumentBuildResult {
     pub document: GraphDocument,
     pub entity_to_node_id: HashMap<Entity, u64>,
     pub node_id_to_entity: HashMap<u64, Entity>,
+    pub issues: Vec<GraphDocumentBuildIssue>,
 }

@@ -35,8 +35,15 @@ To build your own graph family, you define:
 
 ## Minimal Shape
 
+For ordinary downstream code, `univis_graph_core::prelude` is still a fine
+starting point. This note uses explicit module imports so the stable ownership
+boundaries remain visible.
+
 ```rust
-use univis_graph_core::prelude::*;
+use univis_graph_core::{
+    ports::PortSchema,
+    schema::GraphSchema,
+};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 enum MyValue {
@@ -92,6 +99,33 @@ impl GraphSchema for MySchema {
 your value type to implement `Default`, so it is best to make your schema value explicitly
 defaultable even when `None` is just a sentinel variant.
 
+## Stable Vs Advanced Surfaces
+
+Most downstream integrations should start with:
+
+- `GraphDocument::spawn_node`, `connect`, `insert_node`, and other document helpers
+- `GraphNodeRegistry`
+- `validate_graph_document`
+- `GraphNodeDefinition` plus `ProcessContext` / `ProcessResult`
+
+Use the narrower module-level APIs when you are building tooling or deeper diagnostics:
+
+- `validate_graph_document_structure`
+- `analyze_graph_topology`
+- `ExecutableGraph`
+- raw `GraphDocumentEdge` construction for persistence, migrations, whole-document tooling, or intentionally invalid fixtures
+
+If you need to evaluate a single candidate connection outside the full-document validator,
+reuse the shared connection-law helpers in `univis_graph_core::validation`:
+
+- `GraphConnectionCandidate`
+- `validate_structural_connection_candidate`
+- `validate_schema_connection_candidate`
+
+Current workspace semantics are intentionally single-source per input.
+`ConnectionPolicy::Multiple` and `PortDefinition::allow_multiple_connections()` remain
+future-facing declarations and are not supported end-to-end today.
+
 ## Choosing The Right Layer
 
 Use `univis_graph_core` when you need:
@@ -121,6 +155,15 @@ Use an adapter crate like `univis_node_graph` when you need:
 
 ## Reference Example
 
-For a complete pure-core example without Bevy, see:
+Recommended pure-core examples:
 
 - [crates/univis_graph_core/examples/minimal_schema.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/minimal_schema.rs)
+  Pure stable schema and node-definition setup without Bevy.
+- [crates/univis_graph_core/examples/registry_and_processing.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/registry_and_processing.rs)
+  Stable registry lookup, menu/search behavior, and manual processing.
+- [crates/univis_graph_core/examples/document_workflows.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/document_workflows.rs)
+  Stable document operations such as subgraph capture, prefab upsert, merge, and selection helpers.
+- [crates/univis_graph_core/examples/validation_and_build.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/validation_and_build.rs)
+  Advanced diagnostics example that deliberately injects invalid edges after the normal authored path.
+- [crates/univis_graph_core/examples/execution_flow.rs](/home/abdellah/Desktop/Univis/UnivisEditor/crates/univis_graph_core/examples/execution_flow.rs)
+  Advanced `ExecutableGraph` orchestration and runtime-style execution flow.

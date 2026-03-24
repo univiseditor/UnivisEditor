@@ -27,7 +27,7 @@ pub struct MissingNodePlaceholder {
 fn authored_inputs_from_ports(inputs: &[PortDefinition]) -> Vec<NodeValue> {
     inputs
         .iter()
-        .map(|port| port.default_value.clone().unwrap_or(NodeValue::None))
+        .map(|port| port.default_value().cloned().unwrap_or(NodeValue::None))
         .collect()
 }
 
@@ -718,7 +718,7 @@ fn spawn_port_ui_new(
                         node_entity,
                         port_type,
                         index,
-                        value_type: port_def.value_type.clone(),
+                        value_type: port_def.value_type().clone(),
                     },
                     InputConnection::default(),
                     UNode {
@@ -743,7 +743,7 @@ fn spawn_port_ui_new(
                         node_entity,
                         port_type,
                         index,
-                        value_type: port_def.value_type.clone(),
+                        value_type: port_def.value_type().clone(),
                     },
                     OutputConnections::default(),
                     UNode {
@@ -769,7 +769,7 @@ fn spawn_port_ui_new(
                 UTextLabel {
                     text: port_name,
                     font_size: 12.0,
-                    color: if port_def.requirement.is_some() {
+                    color: if port_def.requirement().is_some() {
                         port_color
                     } else {
                         Color::srgb(0.7, 0.7, 0.7)

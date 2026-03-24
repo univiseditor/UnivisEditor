@@ -8,17 +8,20 @@ pub mod schema;
 pub mod topology;
 pub mod validation;
 
+/// Default imports intended for ordinary downstream integrations.
+///
+/// More specialized executable, topology, and validation APIs remain available
+/// from their defining modules instead of being pulled into the default import
+/// surface.
 pub mod prelude {
     pub use crate::document::{
-        GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentCameraState, GraphDocumentEdge,
-        GraphDocumentNode, GraphDocumentOperationError, GraphDocumentPrefab,
-        GraphDocumentSelectionBoundarySummary, GraphDocumentSubgraph, GraphDocumentViewState,
+        GraphDocument, GraphDocumentCameraState, GraphDocumentEdge, GraphDocumentNode,
+        GraphDocumentOperationError, GraphDocumentPrefab, GraphDocumentSelectionBoundarySummary,
+        GraphDocumentSubgraph, GraphDocumentViewState, GRAPH_DOCUMENT_VERSION,
     };
     pub use crate::executable::{
-        ExecutableDirectLinks, ExecutableGraph, ExecutableGraphBuildReport,
-        ExecutableInputResolutionState, ExecutableNode, ExecutableNodeBlockReason,
-        ExecutableNodeBuildStatus, ExecutableNodeDiagnostic, ExecutableNodeRunOutcome,
-        ExecutableNodeRunStatus, ExecutablePortRef, NodeExecutionState,
+        ExecutableGraph, ExecutableNodeBuildStatus, ExecutableNodeRunOutcome,
+        ExecutableNodeRunStatus,
     };
     pub use crate::identity::{ConnectionPolicy, NodeCategory, NodeId};
     pub use crate::ports::{PortDefinition, PortSchema};
@@ -27,11 +30,12 @@ pub mod prelude {
     };
     pub use crate::registry::{ArcGraphNodeDefinition, GraphNodeRegistry};
     pub use crate::schema::GraphSchema;
-    pub use crate::topology::{
-        GraphTopologyAnalysis, analyze_graph_topology, connected_input_mask, would_create_cycle,
-    };
+    pub use crate::topology::{connected_input_mask, would_create_cycle};
     pub use crate::validation::{
+        validate_graph_document, validate_schema_connection_candidate,
+        validate_structural_connection_candidate, GraphConnectionCandidate,
+        GraphConnectionValidationError, GraphConnectionValidationOptions,
+        GraphSchemaConnectionValidationContext, GraphStructuralConnectionValidationContext,
         GraphValidationIssue, GraphValidationIssueKind, GraphValidationReport,
-        validate_graph_document, validate_graph_document_structure,
     };
 }

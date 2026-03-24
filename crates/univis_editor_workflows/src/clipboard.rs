@@ -4,12 +4,14 @@ use bevy::prelude::*;
 use univis_editor_commands::{GraphClipboardSnapshot, GraphClipboardState, GraphCommandRequest};
 use univis_editor_persistence::graph_persistence::{
     ApplyGraphDocumentRequest, GraphPersistenceSettings, GraphPersistenceStatus,
-    GraphPersistenceStatusSeverity,
 };
-use univis_node_graph::document::{GRAPH_DOCUMENT_VERSION, GraphDocument};
+use univis_node_graph::document::{GraphDocument, GRAPH_DOCUMENT_VERSION};
 use univis_node_graph::prelude::LiveGraphDocumentState;
 
-use crate::status::set_asset_status;
+use crate::status::{
+    apply_document_change, publish_workflow_failure, publish_workflow_success,
+    WorkflowDocumentChange, WorkflowStatusFailure,
+};
 
 type EditorGraphDocument = GraphDocument;
 
@@ -29,10 +31,9 @@ pub(super) fn copy_selected_nodes_to_clipboard_system(
     }
 
     let Some(snapshot) = build_clipboard_snapshot(&live_document.document) else {
-        set_asset_status(
+        publish_workflow_failure(
             &mut status,
-            GraphPersistenceStatusSeverity::Warning,
-            "Select one or more nodes before copying.".to_string(),
+            WorkflowStatusFailure::warning("Select one or more nodes before copying."),
             &settings,
             &time,
         );
@@ -42,9 +43,8 @@ pub(super) fn copy_selected_nodes_to_clipboard_system(
     let copied_count = snapshot.document.nodes.len();
     clipboard.snapshot = Some(snapshot);
 
-    set_asset_status(
+    publish_workflow_success(
         &mut status,
-        GraphPersistenceStatusSeverity::Info,
         format!("Copied {} node(s) to the clipboard.", copied_count),
         &settings,
         &time,
@@ -66,44 +66,36 @@ pub(super) fn paste_nodes_from_clipboard_system(
         };
 
         let Some(snapshot) = clipboard.snapshot.as_ref() else {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                "The clipboard is empty.".to_string(),
+                WorkflowStatusFailure::warning("The clipboard is empty."),
                 &settings,
                 &time,
             );
             continue;
         };
 
-        let Some(document) = merge_clipboard_snapshot(&live_document.document, snapshot, *position)
-        else {
-            set_asset_status(
-                &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                "The clipboard could not be pasted here.".to_string(),
-                &settings,
-                &time,
-            );
-            continue;
-        };
-
-        let pasted_count = document.selected_node_ids().len();
-        apply_writer.write(ApplyGraphDocumentRequest {
-            document,
-            source_label: "pasted clipboard".to_string(),
-            track_for_undo: true,
-            validation_report: None,
-        });
-
-        set_asset_status(
-            &mut status,
-            GraphPersistenceStatusSeverity::Info,
-            format!("Pasted {} node(s).", pasted_count),
-            &settings,
-            &time,
-        );
+        match build_clipboard_paste_change(&live_document.document, snapshot, *position) {
+            Ok(change) => {
+                apply_document_change(&mut apply_writer, &mut status, &settings, &time, change)
+            }
+            Err(failure) => publish_workflow_failure(&mut status, failure, &settings, &time),
+        }
     }
+}
+
+fn build_clipboard_paste_change(
+    current_document: &EditorGraphDocument,
+    snapshot: &GraphClipboardSnapshot,
+    origin: Vec2,
+) -> Result<WorkflowDocumentChange, WorkflowStatusFailure> {
+    let document = merge_clipboard_snapshot(current_document, snapshot, origin)?;
+    let pasted_count = document.selected_node_ids().len();
+    Ok(WorkflowDocumentChange {
+        document,
+        source_label: "pasted clipboard".to_string(),
+        success_message: format!("Pasted {} node(s).", pasted_count),
+    })
 }
 
 fn build_clipboard_snapshot(document: &EditorGraphDocument) -> Option<GraphClipboardSnapshot> {
@@ -154,9 +146,11 @@ fn merge_clipboard_snapshot(
     current_document: &EditorGraphDocument,
     snapshot: &GraphClipboardSnapshot,
     origin: Vec2,
-) -> Option<EditorGraphDocument> {
+) -> Result<EditorGraphDocument, WorkflowStatusFailure> {
     if snapshot.document.nodes.is_empty() {
-        return None;
+        return Err(WorkflowStatusFailure::warning(
+            "The clipboard snapshot does not contain any nodes.",
+        ));
     }
 
     let min_x = snapshot
@@ -187,25 +181,28 @@ fn merge_clipboard_snapshot(
         cloned.position[0] = origin.x + (cloned.position[0] - min_x);
         cloned.position[1] = origin.y + (cloned.position[1] - min_y);
         selected_node_ids.push(new_id);
-        merged.nodes.push(cloned);
+        merged.insert_node(cloned).map_err(|error| {
+            WorkflowStatusFailure::document_operation("paste the clipboard contents", error)
+        })?;
     }
 
     for edge in &snapshot.document.edges {
-        let Some(from_node_id) = node_id_map.get(&edge.from_node_id).copied() else {
-            continue;
-        };
-        let Some(to_node_id) = node_id_map.get(&edge.to_node_id).copied() else {
-            continue;
-        };
+        let from_node_id = node_id_map.get(&edge.from_node_id).copied().ok_or_else(|| {
+            WorkflowStatusFailure::error(
+                "Failed to paste the clipboard contents because one pasted edge refers to a missing source node.",
+            )
+        })?;
+        let to_node_id = node_id_map.get(&edge.to_node_id).copied().ok_or_else(|| {
+            WorkflowStatusFailure::error(
+                "Failed to paste the clipboard contents because one pasted edge refers to a missing target node.",
+            )
+        })?;
 
         merged
-            .edges
-            .push(univis_node_graph::document::GraphDocumentEdge {
-                from_node_id,
-                from_index: edge.from_index,
-                to_node_id,
-                to_index: edge.to_index,
-            });
+            .connect(from_node_id, edge.from_index, to_node_id, edge.to_index)
+            .map_err(|error| {
+                WorkflowStatusFailure::document_operation("paste the clipboard contents", error)
+            })?;
     }
 
     for prefab in &snapshot.document.prefabs {
@@ -216,5 +213,5 @@ fn merge_clipboard_snapshot(
     }
 
     merged.set_selected_nodes(selected_node_ids);
-    Some(merged)
+    Ok(merged)
 }

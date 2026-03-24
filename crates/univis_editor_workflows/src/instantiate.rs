@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use univis_editor_commands::GraphCommandRequest;
 use univis_editor_persistence::graph_persistence::{
     ApplyGraphDocumentRequest, GraphPersistenceSettings, GraphPersistenceStatus,
-    GraphPersistenceStatusSeverity,
 };
 use univis_editor_ui::node_spawn::spawn_node_from_definition_entity;
 use univis_node_graph::{
@@ -12,7 +11,10 @@ use univis_node_graph::{
     value::NodeValue,
 };
 
-use crate::status::set_asset_status;
+use crate::status::{
+    apply_document_change, publish_workflow_failure, publish_workflow_success,
+    WorkflowDocumentChange, WorkflowStatusFailure,
+};
 
 pub(super) fn insert_subgraph_instances_system(
     mut command_requests: MessageReader<GraphCommandRequest>,
@@ -42,36 +44,36 @@ pub(super) fn insert_subgraph_instances_system(
         };
 
         let Some(resolved_id) = resolved_id else {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                "No saved subgraph is available to insert.".to_string(),
+                WorkflowStatusFailure::warning("No saved subgraph is available to insert."),
                 &settings,
                 &time,
             );
             continue;
         };
 
-        let Some(document) = live_document
+        match live_document
             .document
             .merged_with_subgraph_instance(&resolved_id, [position.x, position.y])
-        else {
-            set_asset_status(
-                &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                format!("Subgraph '{}' could not be instantiated.", resolved_id),
-                &settings,
-                &time,
-            );
-            continue;
-        };
-
-        apply_writer.write(ApplyGraphDocumentRequest {
-            document,
-            source_label: format!("subgraph {}", resolved_id),
-            track_for_undo: true,
-            validation_report: None,
-        });
+            .map(|document| WorkflowDocumentChange {
+                document,
+                source_label: format!("subgraph {}", resolved_id),
+                success_message: format!("Inserted subgraph '{}'.", resolved_id),
+            })
+            .map_err(|error| {
+                WorkflowStatusFailure::document_operation(
+                    format!("instantiate subgraph '{}'", resolved_id),
+                    error,
+                )
+            }) {
+            Ok(change) => {
+                apply_document_change(&mut apply_writer, &mut status, &settings, &time, change)
+            }
+            Err(failure) => {
+                publish_workflow_failure(&mut status, failure, &settings, &time);
+            }
+        }
     }
 }
 
@@ -105,10 +107,9 @@ pub(super) fn spawn_prefab_instance_nodes_system(
         };
 
         let Some(resolved_id) = resolved_id else {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                "No saved prefab is available to instance.".to_string(),
+                WorkflowStatusFailure::warning("No saved prefab is available to instance."),
                 &settings,
                 &time,
             );
@@ -116,13 +117,12 @@ pub(super) fn spawn_prefab_instance_nodes_system(
         };
 
         if live_document.document.prefab(&resolved_id).is_none() {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Warning,
-                format!(
+                WorkflowStatusFailure::warning(format!(
                     "Prefab '{}' does not exist in the current graph.",
                     resolved_id
-                ),
+                )),
                 &settings,
                 &time,
             );
@@ -131,10 +131,11 @@ pub(super) fn spawn_prefab_instance_nodes_system(
 
         let definition_id = NodeId::new("scene/prefab_instance");
         let Some(definition) = registry.get(&definition_id) else {
-            set_asset_status(
+            publish_workflow_failure(
                 &mut status,
-                GraphPersistenceStatusSeverity::Error,
-                "The prefab instance node definition is not registered.".to_string(),
+                WorkflowStatusFailure::error(
+                    "The prefab instance node definition is not registered.",
+                ),
                 &settings,
                 &time,
             );
@@ -161,9 +162,8 @@ pub(super) fn spawn_prefab_instance_nodes_system(
         });
         mutation_tracker.mark_changed();
 
-        set_asset_status(
+        publish_workflow_success(
             &mut status,
-            GraphPersistenceStatusSeverity::Info,
             format!("Spawned prefab instance node for '{}'.", resolved_id),
             &settings,
             &time,

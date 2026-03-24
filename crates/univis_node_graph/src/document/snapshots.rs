@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use bevy::prelude::Entity;
 
 use super::{
-    GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentBuildResult, GraphDocumentCameraState,
-    GraphDocumentEdge, GraphDocumentEdgeSnapshot, GraphDocumentNode, GraphDocumentNodeSnapshot,
+    GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentBuildIssue, GraphDocumentBuildResult,
+    GraphDocumentCameraState, GraphDocumentEdge, GraphDocumentEdgeSnapshot, GraphDocumentNode,
+    GraphDocumentNodeSnapshot,
 };
 
 pub fn build_graph_document_from_snapshots<I, J>(
@@ -24,6 +25,7 @@ where
     let mut entity_to_node_id = HashMap::new();
     let mut node_id_to_entity = HashMap::new();
     let mut selected_node_ids = Vec::new();
+    let mut issues = Vec::new();
     let mut next_node_id = existing_ids
         .and_then(|ids| ids.values().copied().max())
         .unwrap_or(0)
@@ -63,18 +65,39 @@ where
 
     for edge in edge_snapshots {
         let Some(from_node_id) = entity_to_node_id.get(&edge.from_entity).copied() else {
+            issues.push(GraphDocumentBuildIssue::MissingSourceNodeMapping {
+                from_entity: edge.from_entity,
+                to_entity: edge.to_entity,
+                from_index: edge.from_index,
+                to_index: edge.to_index,
+            });
             continue;
         };
         let Some(to_node_id) = entity_to_node_id.get(&edge.to_entity).copied() else {
+            issues.push(GraphDocumentBuildIssue::MissingTargetNodeMapping {
+                from_entity: edge.from_entity,
+                to_entity: edge.to_entity,
+                from_index: edge.from_index,
+                to_index: edge.to_index,
+            });
             continue;
         };
 
-        document.edges.push(GraphDocumentEdge {
+        let edge = GraphDocumentEdge {
             from_node_id,
             from_index: edge.from_index,
             to_node_id,
             to_index: edge.to_index,
-        });
+        };
+
+        if let Err(error) = document.connect(
+            edge.from_node_id,
+            edge.from_index,
+            edge.to_node_id,
+            edge.to_index,
+        ) {
+            issues.push(GraphDocumentBuildIssue::RejectedEdge { edge, error });
+        }
     }
 
     document.set_camera(camera);
@@ -84,5 +107,6 @@ where
         document,
         entity_to_node_id,
         node_id_to_entity,
+        issues,
     }
 }

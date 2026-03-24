@@ -122,7 +122,7 @@ pub(super) fn propagate_and_process_nodes_system(
             && executable_state
                 .graph
                 .get_node(node_id)
-                .is_some_and(|node| node.execution_state().dirty)
+                .is_some_and(|node| node.is_dirty())
         {
             dirty_reasons
                 .entry(entity)

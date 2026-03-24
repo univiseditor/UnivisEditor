@@ -93,11 +93,9 @@ fn node_value_conversions_and_display_strings_work() {
     let (tag, payload) = tagged.as_tagged().expect("expected tagged payload");
     assert_eq!(tag, "mesh");
     assert_eq!(payload, &json!({ "id": 1 }));
-    assert!(
-        NodeValue::string("hello world")
-            .to_display_string()
-            .contains("hello")
-    );
+    assert!(NodeValue::string("hello world")
+        .to_display_string()
+        .contains("hello"));
 }
 
 #[test]
@@ -146,13 +144,10 @@ fn port_definition_builders_and_color_resolution_work() {
         .with_default(NodeValue::float(2.5))
         .with_color(Color::srgb(0.8, 0.2, 0.4));
 
-    assert_eq!(port.name, "Strength");
-    assert_eq!(port.value_type, ValueType::Float);
-    assert_eq!(
-        port.description.as_deref(),
-        Some("Controls output strength")
-    );
-    assert_eq!(port.default_value, Some(NodeValue::float(2.5)));
+    assert_eq!(port.name(), "Strength");
+    assert_eq!(port.value_type(), &ValueType::Float);
+    assert_eq!(port.description(), Some("Controls output strength"));
+    assert_eq!(port.default_value(), Some(&NodeValue::float(2.5)));
 
     let resolved = port.resolve_color().to_srgba();
     assert!((resolved.red - 0.8).abs() < 0.01);
@@ -160,7 +155,7 @@ fn port_definition_builders_and_color_resolution_work() {
     assert!((resolved.blue - 0.4).abs() < 0.01);
 
     let any_port = PortDefinition::output_any("Anything");
-    assert_eq!(any_port.value_type, ValueType::Any);
+    assert_eq!(any_port.value_type(), &ValueType::Any);
 }
 
 #[test]

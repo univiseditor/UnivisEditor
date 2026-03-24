@@ -51,6 +51,10 @@ impl<S: PortSchema> PortDefinition<S> {
         self
     }
 
+    /// Declares future multi-source intent.
+    ///
+    /// Current workspace flows still treat `ConnectionPolicy::Multiple` as
+    /// unsupported until runtime fan-in semantics are implemented end-to-end.
     pub fn allow_multiple_connections(mut self) -> Self {
         self.connection_policy = ConnectionPolicy::Multiple;
         self

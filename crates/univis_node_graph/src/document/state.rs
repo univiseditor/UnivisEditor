@@ -28,6 +28,15 @@ impl LiveGraphDocumentState {
             Some(&self.entity_to_node_id),
         );
 
+        if !build.issues.is_empty() {
+            for issue in &build.issues {
+                bevy::log::warn!(
+                    "Skipped inconsistent live graph edge while rebuilding GraphDocument: {}",
+                    issue
+                );
+            }
+        }
+
         let mut document = build.document;
         document.prefabs = self.document.prefabs.clone();
         document.subgraphs = self.document.subgraphs.clone();

@@ -471,10 +471,10 @@ pub fn sync_connection_inspector_summary_system(
             .ok()
             .and_then(|node| registry.get(&node.definition_id))
             .and_then(|definition| definition.inputs().get(port.index).cloned())
-            .map(|definition| match definition.connection_policy {
+            .map(|definition| match definition.connection_policy() {
                 ConnectionPolicy::Single => "single source".to_string(),
                 ConnectionPolicy::Multiple => {
-                    "multiple sources (declared, not yet runtime-enabled)".to_string()
+                    "multiple sources (currently unsupported)".to_string()
                 }
             });
         if let Some(policy_label) = policy_label {
