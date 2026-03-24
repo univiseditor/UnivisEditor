@@ -1,9 +1,11 @@
 # Graph Core Execution Model
 
+Status: Active supporting note. Kept alongside the cleanup roadmap because it defines ownership and execution-boundary rules that the roadmap only summarizes.
+
 ## Purpose
 
-This note defines the execution boundary for `univis_graph_core` before
-implementation starts.
+This note defines the execution boundary for `univis_graph_core` and is updated
+as the runtime cleanup plan progresses.
 
 The project should explicitly own two kinds of truth:
 
@@ -16,23 +18,28 @@ directly linked, and optimized for control, readiness, and propagation.
 
 ## Current Baseline
 
-Today, the project already has the main ingredients needed to define the target
-execution model:
+Today, the project already has the main ingredients needed for the execution
+model:
 
 - `GraphDocument<Value, Prefab>` in `univis_graph_core`
 - `GraphNodeRegistry<Value, PortDefinition<S>>` in `univis_graph_core`
 - validation and topology analysis in `univis_graph_core`
 - a Bevy-side live model built around:
   - `GraphConnection` entities
-  - `GraphConnectivityIndex`
-  - `GraphResolvedInputs`
   - `AuthoredNodeInputs`
+  - `GraphExecutableRuntimeState`
+  - `GraphNode.values`
   - `NodeInputSignature`
   - `NodeOutputSignature`
+  - `GraphRuntimeDiagnostics`
 
-The next step is to move the pure execution semantics downward into
-`graph_core`, while leaving Bevy responsible only for ECS projection, world
-mutation, rendering, and editor interaction.
+The old runtime projection resources:
+
+- `GraphConnectivityIndex`
+- `GraphResolvedInputs`
+
+have already been removed. The next cleanup step is to reduce the remaining
+adapter and cache layers around `ExecutableGraph`.
 
 ## Layer Definitions
 
@@ -121,6 +128,63 @@ It does not own:
 | execution state | `ExecutableNode` via `NodeExecutionState` |
 | whole-graph correctness | `GraphValidationReport` |
 | per-node blocked/degraded build outcome | build report `node_diagnostics` |
+
+## Transitional Structure Classification
+
+The remaining structures should be read using the following categories:
+
+| Structure | Classification | Notes |
+| --- | --- | --- |
+| `GraphDocument` | truth | persisted authored graph |
+| `AuthoredNodeInputs` | truth | ECS-side authored mirror for live editing |
+| `ExecutableGraph` | truth | sole execution truth |
+| `GraphExecutableRuntimeState` | adapter | ECS bridge to executable truth plus entity mapping |
+| `GraphNode.values` | cache | projected resolved inputs and outputs for display or integration |
+| `NodeInputSignature` | cache | local change tracking for authored input projection |
+| `NodeOutputSignature` | cache | local change tracking for output projection |
+| `GraphRuntimeDiagnostics` | adapter | presentation-oriented summary derived from executable truth |
+| `GraphSceneOutputs` | adapter | world-facing sink summary derived from executable truth |
+| `LiveGraphValidationState` | adapter | live validation cache and minimal Bevy glue over core validation |
+| popup UI path | removed legacy | deleted in cleanup phase 3 |
+
+Any new structure introduced during cleanup should explicitly fit one of these
+categories. If it does not, it is likely duplicating responsibility.
+
+## Compatibility Resources Remaining
+
+The following ECS-side data still exist mainly for integration compatibility:
+
+- `GraphExecutableRuntimeState`
+- `GraphNode.values`
+- `NodeInputSignature`
+- `NodeOutputSignature`
+- `GraphRuntimeDiagnostics`
+- `GraphSceneOutputs`
+- `LiveGraphValidationState`
+
+These are acceptable only so long as they do not compete with the truth owned
+by `GraphDocument`, `AuthoredNodeInputs`, or `ExecutableGraph`.
+
+Two rules should remain explicit:
+
+- adapters may summarize or project execution truth
+- caches may mirror execution truth
+
+but neither may become an independent decision-making source.
+
+In code, this now means:
+
+- authored decisions should read `AuthoredNodeInputs`
+- execution decisions should read `ExecutableGraph`
+- ECS projection updates should prefer `GraphNode` projection helpers over
+  treating `values` as authoritative state
+
+For persistence specifically:
+
+- save and autosave should reuse the live validation report when the saved
+  document matches the live authored document
+- persistence cleanup may clear UI resources when they exist, but should not
+  require overlay or menu resources to be present in order to function
 
 ## Build Semantics
 
@@ -279,8 +343,8 @@ policy, not an ad-hoc adapter detail.
 Today, Bevy-side runtime code owns:
 
 - live `GraphConnection` entities
-- compiled adjacency in `GraphConnectivityIndex`
-- resolved input caches
+- `GraphExecutableRuntimeState` as executable bridge state
+- projected node input and output caches
 - output signatures and change tracking
 
 The target architecture is to move the pure parts of that model into
@@ -296,6 +360,20 @@ In other words:
 
 - `graph_core` should own execution semantics
 - Bevy should own integration
+
+## Cleanup Deletion Order
+
+Cleanup should happen in this order:
+
+1. remove projection resources that duplicate execution truth
+2. thin runtime adapters until they only bridge ECS and `ExecutableGraph`
+3. remove popup editing legacy and popup-only overlay state
+4. simplify validation access so core validation is consumed directly
+5. clarify all ECS caches and prevent them from acting as truth
+6. tighten persistence and public API surface after the architectural shift
+
+This order matters because deleting UI legacy before runtime truth converges can
+hide architectural mistakes instead of removing them.
 
 ## Non-Goals Of This Model
 

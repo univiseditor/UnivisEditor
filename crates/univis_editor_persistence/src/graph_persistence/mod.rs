@@ -6,7 +6,6 @@ mod io;
 mod state;
 
 use bevy::prelude::*;
-use univis_editor_ui::overlay::GraphOverlayState;
 
 use self::apply::{
     finalize_pending_graph_load_system, handle_apply_graph_document_requests_system,
@@ -40,7 +39,6 @@ impl Plugin for GraphPersistencePlugin {
             .init_resource::<GraphHistoryState>()
             .init_resource::<GraphPersistenceActivation>()
             .init_resource::<GraphPersistenceStatus>()
-            .init_resource::<GraphOverlayState>()
             .init_resource::<PendingGraphLoad>()
             .add_message::<SaveGraphRequest>()
             .add_message::<LoadGraphRequest>()

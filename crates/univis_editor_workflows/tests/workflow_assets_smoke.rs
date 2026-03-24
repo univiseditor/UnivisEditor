@@ -6,11 +6,11 @@ use univis_editor_persistence::graph_persistence::{
     GraphPersistencePlugin, GraphPersistenceSettings, GraphPersistenceStatus,
 };
 use univis_editor_ui::menu::{ContextMenuState, execute_spawn_node_commands_system};
-use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::prelude::sync_live_graph_document_state;
 use univis_editor_workflows::GraphAssetWorkflowPlugin;
 use univis_node_graph::commands::GraphMutationTracker;
 use univis_node_graph::document::LiveGraphDocumentState;
+use univis_node_graph::live_graph::AuthoredNodeInputs;
 use univis_node_graph::node_definition::{
     GraphNode, GraphPort, NodeCategory, NodeDefinition, NodeId, PortDefinition, PortType,
     ProcessContext, ProcessResult, Selected,
@@ -144,7 +144,6 @@ fn build_test_app() -> App {
         .init_resource::<DragState>()
         .init_resource::<WireConnectionState>()
         .init_resource::<ContextMenuState>()
-        .init_resource::<NodePopupState>()
         .add_plugins(GraphCommandsPlugin)
         .add_plugins(GraphPersistencePlugin)
         .add_plugins(GraphAssetWorkflowPlugin)
@@ -263,7 +262,7 @@ fn set_output_entity(app: &mut App, entity: Entity, name: &str) {
         let mut node = entity_ref
             .get_mut::<GraphNode>()
             .expect("graph node should exist");
-        node.values.outputs[0] = NodeValue::entity(root);
+        let _ = node.set_output_projection(0, NodeValue::entity(root));
     }
 }
 
@@ -410,13 +409,14 @@ fn smoke_capture_prefab_and_subgraph_then_reinsert_latest_assets() {
     update_frames(&mut app, 2);
 
     let world = app.world_mut();
-    let mut query = world.query::<&GraphNode>();
-    let prefab_instance = query
+    let mut query = world.query::<(&GraphNode, Option<&AuthoredNodeInputs>)>();
+    let (_, prefab_instance_inputs) = query
         .iter(world)
-        .find(|node| node.definition_id.as_str() == "scene/prefab_instance")
+        .find(|(node, _)| node.definition_id.as_str() == "scene/prefab_instance")
         .expect("prefab instance node should exist");
     assert_eq!(
-        prefab_instance.values.inputs.first(),
+        prefab_instance_inputs
+            .and_then(|inputs| inputs.values.first()),
         Some(&NodeValue::string(prefab_id))
     );
 }

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use univis_node_graph::node_registry::VisualSyncNode;
-use univis_node_graph::prelude::{AuthoredNodeInputs, GraphNode, NodeRegistry, NodeValue};
+use univis_node_graph::prelude::{AuthoredNodeInputs, GraphNode, NodeRegistry};
 
 use crate::connectivity::{NodeInputSignature, NodeOutputSignature};
 
@@ -14,26 +14,20 @@ pub(super) fn initialize_node_defaults_system(
             continue;
         };
 
-        let default_inputs = definition.default_input_values();
-        for (i, default_val) in default_inputs.iter().enumerate() {
-            if i < node.values.inputs.len() {
-                node.values.inputs[i] = default_val.clone();
-            }
-        }
-
-        for output in node.values.outputs.iter_mut() {
-            *output = NodeValue::None;
-        }
+        let mut authored_inputs = AuthoredNodeInputs {
+            values: definition.default_input_values(),
+        };
+        authored_inputs.ensure_len(node.input_projection_len());
+        node.sync_input_projection_from_authored(&authored_inputs);
+        node.clear_output_projection();
 
         commands.entity(entity).insert((
-            AuthoredNodeInputs {
-                values: node.values.inputs.clone(),
-            },
+            authored_inputs.clone(),
             NodeInputSignature {
-                inputs: node.values.inputs.clone(),
+                inputs: authored_inputs.values,
             },
             NodeOutputSignature {
-                outputs: node.values.outputs.clone(),
+                outputs: node.output_projection_values().to_vec(),
             },
         ));
 

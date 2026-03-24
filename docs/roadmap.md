@@ -1,235 +1,147 @@
-# Graph Core Execution Roadmap
+# Runtime Consolidation And Legacy Cleanup Roadmap
 
 ## Goal
 
-Move `graph_core` from:
+Move the project from:
 
-- an authoring and validation kernel
+- a mixed architecture where `ExecutableGraph` is present but transitional runtime and UI layers still exist
 
 to:
 
-- the authoring truth of the graph
-- and the execution truth of the graph
+- a single execution model centered on `ExecutableGraph`
+- a thinner runtime adapter layer
+- a cleaner editor and persistence stack with old paths removed
 
-The intended outcome is that `GraphDocument` remains the authored truth, while
-`ExecutableGraph` becomes the execution truth.
+The intended outcome is that authored truth stays in `GraphDocument` and
+`AuthoredNodeInputs`, execution truth stays in `ExecutableGraph`, and any ECS
+projection exists only as a display or integration cache.
 
-## Decisions Locked Before Coding
+## Decisions Locked Before Cleanup
 
-- `ExecutableGraph` should not expose `S` as part of its public surface.
-- Schema concerns stay inside:
-  - `GraphNodeRegistry`
-  - `PortDefinition`
-  - `build` and `validation` paths
-- Building from a document should be tolerant:
-  - build as much as possible
-  - do not collapse the whole graph on the first issue
-- Build output should not be a simple `Result`.
-- Execution APIs start as internal and experimental, not stable public APIs.
+- `ExecutableGraph` is the only execution truth.
+- `GraphDocument` and `AuthoredNodeInputs` remain the authored truth.
+- `GraphNode.values` in ECS are cache or projection data, not authoritative execution state.
+- `GraphConnectivityIndex` and `GraphResolvedInputs` are transitional compatibility resources and should be removed.
+- Popup-based node editing is retired; inline node editing is the only editor path.
+- Validation should be consumed from `graph_core` or `LiveGraphValidationState`, not reimplemented in adapters.
+- Cleanup should prefer deletion and direct usage over adding new wrappers.
 
-## Build Semantics
+## Success Signals
 
-- validation happens before or during build
-- build may produce a partial executable graph
-- node diagnostics are the primary per-node truth for blocked/degraded build outcomes
+- No runtime system needs `GraphConnectivityIndex`.
+- No runtime or UI system needs `GraphResolvedInputs`.
+- `node_popup.rs` and `NodePopupState` no longer exist.
+- Runtime diagnostics and scene outputs read from `ExecutableGraph` directly.
+- Validation flows through `GraphValidationReport` and executable node diagnostics without parallel legacy paths.
+- The public surface of runtime, UI, and node-graph crates is smaller and clearer than before cleanup.
 
-## Phase 0: Lock The Execution Model
+## Phase 0: Lock The Cleanup Model
 
-- [x] Create: `docs/graph-core-execution-model.md`
-- [x] Define the boundary between:
-  - [x] `GraphDocument`
+- [x] List the remaining transitional structures and mark each one as:
+  - [x] truth
+  - [x] cache
+  - [x] adapter
+  - [x] legacy
+- [x] Update `docs/graph-core-execution-model.md` where the cleanup changes ownership language
+- [x] Make explicit which ECS resources still exist only for compatibility
+- [x] Define the deletion order so cleanup can happen without breaking the editor
+
+## Phase 1: Remove Runtime Projection Resources
+
+- [x] Migrate consumers away from:
+  - [x] `GraphConnectivityIndex`
+  - [x] `GraphResolvedInputs`
+- [x] Move the following readers to `GraphExecutableRuntimeState.graph` directly:
+  - [x] scene output collection
+  - [x] connection diagnostics
+  - [x] runtime-facing tests that still inspect projected resolved inputs
+- [x] Add any missing read helpers on `ExecutableGraph` or `GraphExecutableRuntimeState`
+- [x] Delete:
+  - [x] `GraphConnectivityIndex`
+  - [x] `GraphResolvedInputs`
+  - [x] `project_runtime_resources`
+
+## Phase 2: Thin The Runtime Adapter Layer
+
+- [x] Keep `GraphExecutableRuntimeState` focused on:
   - [x] `ExecutableGraph`
-  - [x] `ExecutableNode`
-- [x] Define ownership of:
-  - [x] `authored_inputs`
-  - [x] `resolved_inputs`
-  - [x] `outputs`
-- [x] Define ownership of:
-  - [x] `edges`
-  - [x] `direct links`
-  - [x] `execution state`
-- [x] Make explicit that:
-  - [x] `GraphDocument` is not the runtime graph
-  - [x] `ExecutableGraph` is the derived execution structure
-
-## Phase 1: Introduce The Executable Layer
-
-- [x] Create: `crates/univis_graph_core/src/executable.rs`
-- [x] Define:
-  - [x] `ExecutableGraph<Value>`
-  - [x] `ExecutableNode<Value>`
-  - [x] `NodeExecutionState`
-- [x] Add direct relationship storage:
-  - [x] incoming links
-  - [x] outgoing links
-- [x] Add core node data:
-  - [x] `node_id`
-  - [x] `definition_id`
-  - [x] `authored_inputs`
-  - [x] `resolved_inputs`
-  - [x] `outputs`
-- [x] Add core execution state:
-  - [x] `enabled`
-  - [x] `dirty`
-  - [x] `blocked`
-  - [x] `ready`
-  - [x] `last_result`
-  - [x] `last_run_revision`
-
-## Phase 2: Build From `GraphDocument`
-
-- [x] Define an explicit build API such as:
-  - [x] `ExecutableGraph::build(document, registry)`
-- [x] Pass:
-  - [x] `&GraphDocument`
-  - [x] `&GraphNodeRegistry`
-- [x] Define:
-  - [x] `ExecutableGraphBuildReport<Value>`
-  - [x] `ExecutableNodeDiagnostic`
-  - [x] `ExecutableNodeBuildStatus`
-  - [x] `ExecutableNodeBlockReason`
-
-### Target Build Report Shape
-
-- [x] `ExecutableGraphBuildReport` should contain:
-  - [x] `graph`
-  - [x] `validation_report`
-  - [x] `node_diagnostics`
-  - [x] `is_partial`
-- [x] The report should not split state into separate:
-  - [x] `issues`
-  - [x] `blocked_node_ids`
-- [x] Instead, each node should expose:
-  - [x] an explicit status
-  - [x] explicit block or degradation reasons
-
-### Build Responsibilities
-
-- [x] Convert:
-  - [x] `GraphDocumentNode -> ExecutableNode`
-  - [x] `GraphDocumentEdge -> direct links`
-- [x] Link ports using definitions from `registry`
-- [x] Initialize:
-  - [x] `authored_inputs`
-  - [x] initial `resolved_inputs` buffers
-  - [x] initial `outputs` buffers
-- [x] Record the following in the build report:
-  - [x] missing definitions
-  - [x] invalid ports
-  - [x] cycles / blocked topology
-  - [x] type incompatibility
-  - [x] requirement mismatch
-
-### Build Rule
-
-- [x] Building is tolerant:
-  - [x] it does not fail globally on the first issue
-  - [x] it reports what was built
-  - [x] and reports what was blocked and why
-
-## Phase 3: Lock Data Separation
-
-- [x] Inside `ExecutableNode`:
-  - [x] keep `authored_inputs` distinct
-  - [x] keep `resolved_inputs` distinct
-  - [x] keep `outputs` distinct
-- [x] Define an explicit flow:
-  - [x] how `authored_inputs` become `resolved_inputs`
-- [x] Prevent:
-  - [x] authored and resolved data from being mixed
-- [x] Guarantee:
-  - [x] outputs never mutate authored state
-- [x] Define:
-  - [x] ready condition
-  - [x] blocked condition
-
-## Phase 4: Internal Experimental Execution API
-
-> This API is internal and unstable at this stage.
-
-- [x] Add APIs inside `ExecutableGraph`:
-  - [x] `enable_node(node_id)`
-  - [x] `disable_node(node_id)`
-  - [x] `mark_dirty(node_id)`
-  - [x] `set_authored_input(node_id, index, value)`
-  - [x] `resolve_inputs(node_id)`
-  - [x] `run_node(node_id)`
-  - [x] `run_ready_nodes()`
-  - [x] `run_from(node_id)`
-- [x] Add read helpers:
-  - [x] `get_outputs(node_id)`
-  - [x] `get_upstream(node_id)`
-  - [x] `get_downstream(node_id)`
-
-## Phase 5: Dirty Propagation
-
-- [x] Define the dirty propagation model
-- [x] When authored input changes or external mutation happens:
-  - [x] mark the node dirty
-- [x] Propagate dirty state to:
-  - [x] downstream nodes
-- [x] Execute:
-  - [x] ready nodes only
-- [x] After execution:
-  - [x] compare previous and new outputs
-- [x] If outputs did not change:
-  - [x] stop propagation
-- [x] If outputs changed:
-  - [x] continue propagation
-
-## Phase 6: Move Execution Logic Downward
-
-- [x] Move:
+  - [x] entity to node-id mapping
+  - [x] node-id to entity mapping
+- [x] Remove duplicated runtime knowledge that already exists inside `ExecutableGraph`
+- [x] Keep `GraphRuntimeDiagnostics` only as a presentation resource, not as a competing source of truth
+- [x] Audit runtime systems for duplicated:
   - [x] adjacency logic
-  - [x] propagation
-  - [x] ready / blocked logic
-  - [x] scheduling
-  - [x] execution traversal
-- [x] Keep outside core:
-  - [x] Bevy ECS
-  - [x] world mutation
+  - [x] execution-order logic
+  - [x] blocked-state logic
+- [x] Delete any remaining duplicated logic after moving or reusing the core version
+
+## Phase 3: Remove Popup Editing Legacy
+
+- [x] Delete `crates/univis_editor_ui/src/node_popup.rs`
+- [x] Remove `NodePopupState` from:
+  - [x] `NodeUiPlugin`
+  - [x] selection systems
+  - [x] state-sync systems
+  - [x] persistence cleanup state
+  - [x] workflow and persistence tests
+- [x] Remove any popup-only overlay state or surface flags that no longer have a user-facing role
+- [x] Ensure settings actions now map to:
+  - [x] inline editing
+  - [x] inline section expand or collapse
+  - [x] or nothing, if the control is obsolete
+
+## Phase 4: Simplify Validation Access
+
+- [x] Move consumers to `GraphValidationReport` and executable node diagnostics directly where practical
+- [x] Keep only the live validation resource and the minimum adapter glue still needed in `node_graph`
+- [x] Remove compatibility helpers that only rewrap core validation results
+- [x] Audit persistence, UI, and tests for old `Vec<GraphValidationIssue>` style access
+- [x] Prefer one validation truth path across:
+  - [x] editor
+  - [x] persistence
+  - [x] runtime
+
+## Phase 5: Clarify ECS Cache Boundaries
+
+- [x] Make it explicit in code and naming that `GraphNode.values` are projection data
+- [x] Audit systems that read `GraphNode.values` for decisions
+- [x] Move decision-making reads to:
+  - [x] `AuthoredNodeInputs`
+  - [x] `ExecutableGraph`
+- [x] Keep ECS projections only where needed for:
   - [x] rendering
-  - [x] UI
-- [x] Make higher runtime layers:
-  - [x] adapters over core
+  - [x] widgets
+  - [x] debug or inspector output
+- [x] Rename helpers or fields if needed to reduce ambiguity
 
-## Phase 7: Integrate Validation With Execution
+## Phase 6: Persistence And Apply Cleanup
 
-- [x] Make `validation_report` part of build readiness
-- [x] Link:
-  - [x] blocked node diagnostics ← validation causes
-  - [x] topology ← execution-order seed
-- [x] Let the core answer:
-  - [x] can this graph execute?
-  - [x] which nodes are blocked?
-  - [x] why are they blocked?
+- [x] Remove popup-specific cleanup assumptions from persistence flows
+- [x] Reuse document signatures and validation reports from the already unified sources only
+- [x] Audit load or apply branches that still exist only for transitional compatibility
+- [x] Keep legacy save-file migration only where it still serves real old payload support
+- [x] Delete branches that became obsolete after the executable-runtime unification
 
-## Phase 8: Performance Model
+## Phase 7: Tighten Public Surface And Delete Dead Code
 
-- [x] Create: `docs/graph-core-performance-model.md`
-- [x] Define:
-  - [x] what is stored permanently in `ExecutableGraph`
-  - [x] what is rebuilt only when structure changes
-  - [x] what marks a node dirty
-  - [x] when outputs are considered changed
-  - [x] the cost of core operations
-- [x] Decide:
-  - [x] when to rebuild
-  - [x] when to rerun execution
+- [x] Remove unused exports, wrappers, and helper functions
+- [x] Prune prelude exports that no longer represent supported architecture
+- [x] Delete outdated documentation references to removed systems
+- [x] Rewrite or remove tests that only exist for deleted compatibility layers
+- [x] Keep the surviving public API intentionally small
 
-## Phase 9: Execution Tests
+## Phase 8: Regression Coverage For The New Shape
 
-- [x] Test:
-  - [x] build from document
-  - [x] direct linking
-  - [x] node diagnostics
-  - [x] dirty propagation
-  - [x] disabled nodes
-  - [x] blocked nodes
-  - [x] partial execution
-  - [x] unchanged-output short-circuit
+- [x] Add targeted tests for:
+  - [x] runtime reading execution truth directly from `ExecutableGraph`
+  - [x] scene outputs without `GraphResolvedInputs`
+  - [x] UI diagnostics without `GraphConnectivityIndex`
+  - [x] editor startup and persistence without popup resources
+  - [x] authored input change flowing through execution to UI or world state
+- [x] Keep tests focused on architectural guarantees, not only smoke behavior
 
 ## Documentation Maintenance
 
-- [ ] Keep `docs/roadmap.ar.md` and `docs/roadmap.md` aligned in order and meaning
-- [ ] Keep the locked decisions at the top of the roadmap updated as implementation evolves
+- [x] Keep `docs/roadmap.ar.md` and `docs/roadmap.md` aligned in order and meaning
+- [x] Update `changelog.md` as each cleanup phase lands
+- [x] Audit supplementary documents and archive only what this roadmap fully supersedes

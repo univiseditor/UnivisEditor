@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use univis_ui::prelude::*;
@@ -86,8 +86,6 @@ pub fn delete_node_system(
     mut live_document: ResMut<LiveGraphDocumentState>,
     mut drag_state: ResMut<DragState>,
     mut wire_state: ResMut<WireConnectionState>,
-    mut popup: ResMut<NodePopupState>,
-    mut overlay: ResMut<GraphOverlayState>,
     q_connections: Query<(Entity, &GraphConnection)>,
     mut mutations: ResMut<GraphMutationTracker>,
 ) {
@@ -137,16 +135,6 @@ pub fn delete_node_system(
         .is_some_and(|entity| deleted_set.contains(&entity))
     {
         wire_state.clear();
-    }
-
-    if popup
-        .open_for
-        .is_some_and(|entity| deleted_set.contains(&entity))
-    {
-        popup.open_for = None;
-        if overlay.active_surface == GraphOverlaySurface::NodePopup {
-            overlay.active_surface = GraphOverlaySurface::None;
-        }
     }
 
     mutations.mark_changed();

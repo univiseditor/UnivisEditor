@@ -1,8 +1,8 @@
 use bevy::prelude::*;
-use univis_node_graph::prelude::{GraphNode, NodeValue};
+use univis_node_graph::prelude::NodeValue;
 use univis_scene::{SceneDocument, SceneStats, scene_document_signature};
 
-use crate::connectivity::GraphResolvedInputs;
+use crate::connectivity::GraphExecutableRuntimeState;
 
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct GraphSceneOutputs {
@@ -38,23 +38,23 @@ fn scene_sink_mode(definition_id: &str) -> SceneSinkMode {
 }
 
 pub(super) fn collect_scene_outputs_system(
-    q_nodes: Query<(Entity, &GraphNode)>,
-    resolved_inputs: Res<GraphResolvedInputs>,
+    executable_state: Res<GraphExecutableRuntimeState>,
     mut scene_outputs: ResMut<GraphSceneOutputs>,
 ) {
     let mut next_outputs = Vec::new();
 
-    for (node_entity, node) in q_nodes.iter() {
-        let mode = match scene_sink_mode(node.definition_id.as_str()) {
+    for node in executable_state.graph.iter_nodes() {
+        let Some(node_entity) = executable_state.entity_for_node_id(node.node_id()) else {
+            continue;
+        };
+        let mode = match scene_sink_mode(node.definition_id().as_str()) {
             SceneSinkMode::World => GraphSceneOutputMode::World,
             SceneSinkMode::None => continue,
         };
 
-        let scene = resolved_inputs
-            .by_node
-            .get(&node_entity)
-            .and_then(|inputs| inputs.first())
-            .or_else(|| node.values.inputs.first())
+        let scene = node
+            .resolved_inputs()
+            .first()
             .and_then(NodeValue::as_entity)
             .cloned()
             .map(SceneDocument::from_entity_value);
@@ -63,7 +63,7 @@ pub(super) fn collect_scene_outputs_system(
 
         next_outputs.push(GraphSceneSinkOutput {
             node_entity,
-            definition_id: node.definition_id.as_str().to_string(),
+            definition_id: node.definition_id().as_str().to_string(),
             mode,
             scene,
             stats,

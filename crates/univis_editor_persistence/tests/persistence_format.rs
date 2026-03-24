@@ -86,7 +86,7 @@ fn prepare_graph_document_write_generates_payload_signature_and_validation_count
         prepared.document_signature,
         graph_document_signature(&document).unwrap()
     );
-    assert_eq!(prepared.validation_issue_count, 0);
+    assert_eq!(prepared.validation_issue_count(), 0);
     assert_eq!(prepared.document.nodes.len(), document.nodes.len());
     assert_eq!(prepared.document.edges.len(), document.edges.len());
     assert_eq!(
@@ -160,7 +160,7 @@ fn prepare_graph_document_write_reports_validation_issues_for_unknown_nodes() {
 
     let prepared = prepare_graph_document_write(document, true, &registry)
         .expect("serialization should still succeed");
-    assert_eq!(prepared.validation_issue_count, 2);
+    assert_eq!(prepared.validation_issue_count(), 2);
 }
 
 #[test]

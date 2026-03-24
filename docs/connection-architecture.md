@@ -1,10 +1,12 @@
-# Connection Architecture Report
+# Connection Architecture Notes
+
+Status: Active supporting note. Kept alongside the cleanup roadmap because it explains live `GraphConnection` ownership and editor/runtime boundaries in more detail than the roadmap itself.
 
 ## Summary
 
 UnivisEditor now uses a Blender-like live connection model for graph wiring.
 
-Instead of keeping all live links in a central `Connecting(Vec<...>)` resource, each wire is represented as its own `GraphConnection` entity. The runtime compiles those links into adjacency data and propagates values through dependency order.
+Instead of keeping all live links in a central `Connecting(Vec<...>)` resource, each wire is represented as its own `GraphConnection` entity. The runtime then builds an `ExecutableGraph` from the authored document and propagates values through executable dependency order.
 
 This gives the project a clearer split between:
 
@@ -44,16 +46,16 @@ The saved graph format did not need a noisy migration.
 
 That keeps file compatibility stable while improving the runtime/editor model internally.
 
-### 3. Runtime Uses Compiled Connectivity
+### 3. Runtime Uses `ExecutableGraph`
 
-The runtime now builds a `GraphConnectivityIndex` with:
+The runtime now rebuilds `GraphExecutableRuntimeState.graph` as an `ExecutableGraph<NodeValue>` with:
 
-- incoming sources by node input
-- outgoing targets by node output
-- ordered nodes
-- blocked nodes
+- direct incoming and outgoing executable links
+- executable node state
+- build diagnostics
+- topology-derived execution order
 
-This index is rebuilt only when graph structure changes. Node processing then uses the compiled adjacency instead of scanning every connection for every node.
+This executable state is rebuilt only when graph structure changes. Node processing then uses the compiled executable graph instead of scanning every connection for every node.
 
 ### 4. Authored Inputs And Resolved Inputs Are Separate
 
@@ -64,7 +66,7 @@ This solves an important architectural problem:
 - authored inputs are the values the user typed or saved
 - resolved inputs are the values that actually arrive at runtime after connection propagation
 
-Without this separation, persistence and popup editing could accidentally serialize transient runtime values instead of user-authored values.
+Without this separation, persistence and inline editing could accidentally serialize transient runtime values instead of user-authored values.
 
 ## Benefits
 
@@ -104,7 +106,7 @@ The fix was to:
 
 - initialize authored inputs at spawn time
 - restore authored inputs on load/apply
-- make popup editing update authored inputs explicitly
+- make inline editing update authored inputs explicitly
 - keep runtime-resolved values separate
 
 ### Custom-Body Source Nodes
@@ -160,9 +162,10 @@ The following paths were explicitly validated while landing this work:
 
 - `crates/univis_node_graph/src/pin.rs`
 - `crates/univis_node_graph/src/node_registry.rs`
+- `crates/univis_graph_core/src/executable.rs`
 - `crates/univis_editor_runtime/src/connectivity.rs`
 - `crates/univis_editor_runtime/src/diagnostics.rs`
 - `crates/univis_editor_persistence/src/graph_persistence/io.rs`
 - `crates/univis_editor_persistence/src/graph_persistence/apply.rs`
 - `crates/univis_editor_ui/src/wire.rs`
-- `crates/univis_editor_ui/src/node_popup.rs`
+- `crates/univis_editor_ui/src/inline_editors.rs`

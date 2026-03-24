@@ -1,17 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bevy::prelude::*;
 use univis_graph_core::prelude::{ExecutableNodeBuildStatus, ExecutableNodeRunStatus};
 use univis_node_graph::prelude::{AuthoredNodeInputs, GraphNode, NodeRegistry, ProcessResult};
 
-use crate::connectivity::{
-    GraphConnectivityIndex, GraphExecutableRuntimeState, GraphResolvedInputs, NodeInputSignature,
-    NodeOutputSignature, project_runtime_resources,
-};
+use crate::connectivity::{GraphExecutableRuntimeState, NodeInputSignature, NodeOutputSignature};
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct GraphRuntimeDiagnostics {
-    pub blocked_nodes: Vec<Entity>,
+    /// Presentation-oriented runtime issues derived from executable truth.
     pub node_issues: Vec<GraphRuntimeNodeIssue>,
 }
 
@@ -61,11 +58,9 @@ pub struct GraphRuntimeTraceEntry {
 pub(super) fn propagate_and_process_nodes_system(
     registry: Res<NodeRegistry>,
     mut executable_state: ResMut<GraphExecutableRuntimeState>,
-    mut connectivity: ResMut<GraphConnectivityIndex>,
     mut diagnostics: ResMut<GraphRuntimeDiagnostics>,
     trace_settings: Res<GraphRuntimeTraceSettings>,
     mut runtime_trace: ResMut<GraphRuntimeTrace>,
-    mut resolved_inputs: ResMut<GraphResolvedInputs>,
     mut q_nodes: Query<(
         Entity,
         &mut GraphNode,
@@ -75,9 +70,8 @@ pub(super) fn propagate_and_process_nodes_system(
     )>,
     time: Res<Time>,
 ) {
-    let connectivity_changed = connectivity.is_changed();
+    let executable_graph_changed = executable_state.is_changed();
     let node_count_hint = executable_state.entity_to_node_id.len().max(1);
-    let mut known_nodes = HashSet::with_capacity(node_count_hint);
     let mut dirty_reasons = HashMap::<Entity, Vec<String>>::with_capacity(node_count_hint);
     let mut definition_ids = HashMap::<Entity, String>::with_capacity(node_count_hint);
 
@@ -88,7 +82,6 @@ pub(super) fn propagate_and_process_nodes_system(
     for (entity, mut node, authored_inputs, mut input_signature, output_signature) in
         q_nodes.iter_mut()
     {
-        known_nodes.insert(entity);
         definition_ids.insert(entity, node.definition_id.to_string());
 
         let Some(node_id) = executable_state.node_id_for_entity(entity) else {
@@ -114,10 +107,10 @@ pub(super) fn propagate_and_process_nodes_system(
                 .push("authored inputs changed".to_string());
         }
 
-        if output_signature.outputs != node.values.outputs
+        if output_signature.outputs != node.output_projection_values()
             && executable_state
                 .graph
-                .sync_external_outputs(node_id, &node.values.outputs)
+                .sync_external_outputs(node_id, node.output_projection_values())
         {
             dirty_reasons
                 .entry(entity)
@@ -125,7 +118,7 @@ pub(super) fn propagate_and_process_nodes_system(
                 .push("visual or external output changed".to_string());
         }
 
-        if connectivity_changed
+        if executable_graph_changed
             && executable_state
                 .graph
                 .get_node(node_id)
@@ -143,7 +136,6 @@ pub(super) fn propagate_and_process_nodes_system(
     let outcomes = executable_state
         .graph
         .run_ready_nodes(registry.core_registry(), time.delta_secs());
-    project_runtime_resources(&executable_state, &mut connectivity, &mut resolved_inputs);
 
     let mut issues_by_node = HashMap::<Entity, GraphRuntimeNodeIssue>::new();
     for (node_id, diagnostic) in executable_state.graph.node_diagnostics() {
@@ -254,33 +246,29 @@ pub(super) fn propagate_and_process_nodes_system(
         q_nodes.iter_mut()
     {
         let Some(node_id) = executable_state.node_id_for_entity(entity) else {
-            output_signature.outputs.clone_from(&node.values.outputs);
+            output_signature.outputs = node.output_projection_values().to_vec();
             continue;
         };
 
         let Some(executable_node) = executable_state.graph.get_node(node_id) else {
-            output_signature.outputs.clone_from(&node.values.outputs);
+            output_signature.outputs = node.output_projection_values().to_vec();
             continue;
         };
 
-        node.values.inputs = executable_node.resolved_inputs().to_vec();
-        node.values.outputs = executable_node.outputs().to_vec();
-        output_signature.outputs.clone_from(&node.values.outputs);
+        node.replace_input_projection(executable_node.resolved_inputs());
+        node.replace_output_projection(executable_node.outputs());
+        output_signature.outputs = node.output_projection_values().to_vec();
     }
 
-    diagnostics.blocked_nodes = connectivity.blocked_nodes.clone();
     diagnostics.node_issues = sorted_issues(issues_by_node);
 
-    if !diagnostics.blocked_nodes.is_empty() && connectivity_changed {
+    let blocked_entities = executable_state.blocked_entities();
+    if !blocked_entities.is_empty() && executable_graph_changed {
         warn!(
             "Graph runtime skipped {} node(s) because the graph contains a cycle or blocked dependency path.",
-            diagnostics.blocked_nodes.len()
+            blocked_entities.len()
         );
     }
-
-    resolved_inputs
-        .by_node
-        .retain(|entity, _| known_nodes.contains(entity));
 
     if trace_settings.enabled && runtime_trace.entries.len() > trace_settings.max_entries {
         let keep_from = runtime_trace.entries.len() - trace_settings.max_entries;

@@ -1,10 +1,13 @@
 use bevy::prelude::*;
 use serde_json::json;
-use univis_editor_app::{NodeGraphPlugin, prelude::*};
+use univis_editor_app::NodeGraphPlugin;
 use univis_editor_nodes_builtin::scene_support::{
     apply_resolved_transform, base_entity_or_empty, entity_extension_input, finish_entity_process,
-    popup_color, popup_float, popup_string, resolve_transform, scene_entity_output,
+    inline_color, inline_float, inline_string, resolve_transform, scene_entity_output,
     transform_fallback_inputs, transform_override_input,
+};
+use univis_editor_ui::prelude::{
+    GraphCamera, InfiniteGrid, InfiniteGridPlugin, InfiniteGridSettings,
 };
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
@@ -55,10 +58,10 @@ impl NodeDefinition for Mesh2DNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_string("Shape", "quad"),
-            popup_float("Width", 2.0, 0.1, Some(0.01), None),
-            popup_float("Height", 2.0, 0.1, Some(0.01), None),
-            popup_color("Color", Color::srgb(0.3, 0.8, 0.7)),
+            inline_string("Shape", "quad"),
+            inline_float("Width", 2.0, 0.1, Some(0.01), None),
+            inline_float("Height", 2.0, 0.1, Some(0.01), None),
+            inline_color("Color", Color::srgb(0.3, 0.8, 0.7)),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -121,7 +124,7 @@ impl NodeDefinition for SpriteFrameNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![entity_extension_input(), popup_string("Frame Tag", "idle")]
+        vec![entity_extension_input(), inline_string("Frame Tag", "idle")]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {

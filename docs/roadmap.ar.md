@@ -1,235 +1,147 @@
-# خارطة طريق تنفيذ `graph_core`
+# خارطة طريق دمج التشغيل وتنظيف الإرث
 
 ## الهدف
 
-تحويل `graph_core` من:
+نقل المشروع من:
 
-- نواة توصيف وتحقق
+- معمارية مختلطة أصبح فيها `ExecutableGraph` موجودًا، لكن ما زالت حوله طبقات انتقالية في runtime وUI
 
 إلى:
 
-- الحقيقة التحريرية للغراف
-- والحقيقة التنفيذية للغراف
+- نموذج تنفيذ واحد يتمحور حول `ExecutableGraph`
+- طبقة runtime أرفع وأنحف
+- ومكدس editor وpersistence أنظف بعد إزالة المسارات القديمة
 
-النتيجة المستهدفة هي أن تبقى `GraphDocument` هي authored truth، بينما تصبح
-`ExecutableGraph` هي execution truth.
+النتيجة المستهدفة هي أن تبقى `GraphDocument` و`AuthoredNodeInputs` هما الحقيقة
+التحريرية، وأن تصبح `ExecutableGraph` هي الحقيقة التنفيذية، وأن تبقى أي إسقاطات
+داخل ECS مجرد cache للعرض أو التكامل.
 
-## القرارات المعتمدة قبل التنفيذ
+## القرارات المعتمدة قبل التنظيف
 
-- سطح `ExecutableGraph` لا يحمل `S` كجزء من الواجهة العامة.
-- الـ schema تبقى داخل:
-  - `GraphNodeRegistry`
-  - `PortDefinition`
-  - مسارات `build` و`validation`
-- البناء من document يجب أن يكون متسامحًا:
-  - يبني ما يمكن بناؤه
-  - ولا يسقط كل graph على أول مشكلة
-- ناتج البناء ليس `Result` بسيطًا، بل تقرير بناء صريح.
-- API التنفيذ في البداية داخلية وتجريبية، وليست واجهة عامة مستقرة.
+- `ExecutableGraph` هي الحقيقة التنفيذية الوحيدة.
+- `GraphDocument` و`AuthoredNodeInputs` يبقيان الحقيقة التحريرية.
+- `GraphNode.values` داخل ECS هي بيانات cache أو projection، وليست حالة تنفيذية معتمدة.
+- `GraphConnectivityIndex` و`GraphResolvedInputs` موارد توافق انتقالية ويجب حذفها.
+- التحرير عبر popup متقاعد، والتحرير inline داخل العقد هو المسار الوحيد في الواجهة.
+- التحقق يجب أن يُستهلك من `graph_core` أو `LiveGraphValidationState`، لا أن يُعاد بناؤه داخل الـ adapters.
+- التنظيف يجب أن يفضل الحذف والاستخدام المباشر بدل إضافة wrappers جديدة.
 
-## Build Semantics
+## مؤشرات النجاح
 
-- يحدث التحقق قبل البناء أو أثناءه
-- قد ينتج البناء graph تنفيذية جزئية
-- `node diagnostics` هي الحقيقة الأساسية على مستوى كل node لحالات الحجب أو التدهور أثناء البناء
+- لا يوجد نظام runtime يعتمد على `GraphConnectivityIndex`.
+- لا يوجد نظام runtime أو UI يعتمد على `GraphResolvedInputs`.
+- يختفي `node_popup.rs` و`NodePopupState` بالكامل.
+- تقرأ تشخيصات runtime وscene outputs من `ExecutableGraph` مباشرة.
+- يمر التحقق عبر `GraphValidationReport` و`node diagnostics` التنفيذية من دون مسارات قديمة موازية.
+- يصبح السطح العام في runtime وUI وnode-graph أصغر وأوضح من الوضع الحالي.
 
-## Phase 0: تثبيت نموذج التنفيذ
+## Phase 0: تثبيت نموذج التنظيف
 
-- [x] إنشاء ملف: `docs/graph-core-execution-model.md`
-- [x] تعريف الفرق بين:
-  - [x] `GraphDocument`
+- [x] حصر البنى الانتقالية المتبقية وتصنيف كل واحدة على أنها:
+  - [x] truth
+  - [x] cache
+  - [x] adapter
+  - [x] legacy
+- [x] تحديث `docs/graph-core-execution-model.md` حيث تغير خطة التنظيف لغة الملكية أو الحدود
+- [x] توضيح أي موارد ECS ما زالت موجودة فقط لأجل التوافق المرحلي
+- [x] تحديد ترتيب الحذف حتى يتم التنظيف من دون كسر المحرر
+
+## Phase 1: حذف موارد الإسقاط في runtime
+
+- [x] نقل المستهلكين بعيدًا عن:
+  - [x] `GraphConnectivityIndex`
+  - [x] `GraphResolvedInputs`
+- [x] جعل القرّاء التالية تعتمد على `GraphExecutableRuntimeState.graph` مباشرة:
+  - [x] جمع scene outputs
+  - [x] connection diagnostics
+  - [x] اختبارات runtime التي ما زالت تفحص resolved inputs المسقطة
+- [x] إضافة أي واجهات قراءة ناقصة على `ExecutableGraph` أو `GraphExecutableRuntimeState`
+- [x] حذف:
+  - [x] `GraphConnectivityIndex`
+  - [x] `GraphResolvedInputs`
+  - [x] `project_runtime_resources`
+
+## Phase 2: ترشيق طبقة runtime adapter
+
+- [x] إبقاء `GraphExecutableRuntimeState` مركزة على:
   - [x] `ExecutableGraph`
-  - [x] `ExecutableNode`
-- [x] تحديد ownership لكل من:
-  - [x] `authored_inputs`
-  - [x] `resolved_inputs`
-  - [x] `outputs`
-- [x] تحديد ownership لكل من:
-  - [x] `edges`
-  - [x] `direct links`
-  - [x] `execution state`
-- [x] توضيح أن:
-  - [x] `GraphDocument` ليست runtime graph
-  - [x] `ExecutableGraph` هي البنية المشتقة للتنفيذ
-
-## Phase 1: إدخال الطبقة التنفيذية
-
-- [x] إنشاء ملف: `crates/univis_graph_core/src/executable.rs`
-- [x] تعريف:
-  - [x] `ExecutableGraph<Value>`
-  - [x] `ExecutableNode<Value>`
-  - [x] `NodeExecutionState`
-- [x] إضافة بنية علاقات مباشرة:
-  - [x] incoming links
-  - [x] outgoing links
-- [x] إضافة البيانات الأساسية لكل node:
-  - [x] `node_id`
-  - [x] `definition_id`
-  - [x] `authored_inputs`
-  - [x] `resolved_inputs`
-  - [x] `outputs`
-- [x] إضافة حالة التنفيذ الأساسية:
-  - [x] `enabled`
-  - [x] `dirty`
-  - [x] `blocked`
-  - [x] `ready`
-  - [x] `last_result`
-  - [x] `last_run_revision`
-
-## Phase 2: البناء من `GraphDocument`
-
-- [x] تعريف API بناء صريحة مثل:
-  - [x] `ExecutableGraph::build(document, registry)`
-- [x] تمرير:
-  - [x] `&GraphDocument`
-  - [x] `&GraphNodeRegistry`
-- [x] تعريف:
-  - [x] `ExecutableGraphBuildReport<Value>`
-  - [x] `ExecutableNodeDiagnostic`
-  - [x] `ExecutableNodeBuildStatus`
-  - [x] `ExecutableNodeBlockReason`
-
-### شكل تقرير البناء المستهدف
-
-- [x] يحتوي `ExecutableGraphBuildReport` على:
-  - [x] `graph`
-  - [x] `validation_report`
-  - [x] `node_diagnostics`
-  - [x] `is_partial`
-- [x] لا يعتمد التقرير على فصل:
-  - [x] `issues`
-  - [x] `blocked_node_ids`
-- [x] بدل ذلك، يملك لكل node:
-  - [x] status واضح
-  - [x] reasons صريحة للحجب أو التقييد
-
-### مسؤوليات البناء
-
-- [x] تحويل:
-  - [x] `GraphDocumentNode -> ExecutableNode`
-  - [x] `GraphDocumentEdge -> direct links`
-- [x] ربط المنافذ باستخدام definitions من `registry`
-- [x] تهيئة:
-  - [x] `authored_inputs`
-  - [x] buffers الابتدائية لـ `resolved_inputs`
-  - [x] buffers الابتدائية لـ `outputs`
-- [x] تسجيل الحالات التالية داخل التقرير:
-  - [x] missing definitions
-  - [x] invalid ports
-  - [x] cycles / blocked topology
-  - [x] type incompatibility
-  - [x] requirement mismatch
-
-### قاعدة البناء
-
-- [x] البناء متسامح:
-  - [x] لا يفشل كليًا على أول خطأ
-  - [x] يسجل ما بُني
-  - [x] ويسجل ما حُجب ولماذا
-
-## Phase 3: تثبيت فصل البيانات التنفيذية
-
-- [x] داخل `ExecutableNode`:
-  - [x] تثبيت الفصل بين `authored_inputs`
-  - [x] تثبيت الفصل بين `resolved_inputs`
-  - [x] تثبيت الفصل بين `outputs`
-- [x] تعريف flow صريح:
-  - [x] كيف تتحول `authored_inputs` إلى `resolved_inputs`
-- [x] منع:
-  - [x] أي خلط بين authored وresolved
-- [x] ضمان:
-  - [x] أن `outputs` لا تعدل authored state
-- [x] تعريف:
-  - [x] ready condition
-  - [x] blocked condition
-
-## Phase 4: API تنفيذ داخلية وتجريبية
-
-> هذه API داخلية وغير مستقرة في هذه المرحلة.
-
-- [x] إضافة API داخل `ExecutableGraph`:
-  - [x] `enable_node(node_id)`
-  - [x] `disable_node(node_id)`
-  - [x] `mark_dirty(node_id)`
-  - [x] `set_authored_input(node_id, index, value)`
-  - [x] `resolve_inputs(node_id)`
-  - [x] `run_node(node_id)`
-  - [x] `run_ready_nodes()`
-  - [x] `run_from(node_id)`
-- [x] إضافة واجهات قراءة:
-  - [x] `get_outputs(node_id)`
-  - [x] `get_upstream(node_id)`
-  - [x] `get_downstream(node_id)`
-
-## Phase 5: Dirty Propagation
-
-- [x] تعريف dirty propagation model
-- [x] عند تغير authored input أو external mutation:
-  - [x] mark node dirty
-- [x] نشر dirty إلى:
-  - [x] downstream nodes
-- [x] تنفيذ:
-  - [x] ready nodes فقط
-- [x] بعد التنفيذ:
-  - [x] مقارنة outputs السابقة والجديدة
-- [x] إذا لم تتغير outputs:
-  - [x] إيقاف propagation
-- [x] إذا تغيرت outputs:
-  - [x] متابعة propagation
-
-## Phase 6: إنزال منطق التنفيذ إلى core
-
-- [x] نقل:
+  - [x] الربط من entity إلى node-id
+  - [x] الربط من node-id إلى entity
+- [x] إزالة أي معرفة runtime مكررة موجودة أصلًا داخل `ExecutableGraph`
+- [x] إبقاء `GraphRuntimeDiagnostics` كمورد عرض فقط، لا كمصدر حقيقة منافس
+- [x] تدقيق أنظمة runtime بحثًا عن تكرار في:
   - [x] adjacency logic
-  - [x] propagation
-  - [x] ready / blocked logic
-  - [x] scheduling
-  - [x] execution traversal
-- [x] إبقاء خارج core:
-  - [x] Bevy ECS
-  - [x] world mutation
+  - [x] execution-order logic
+  - [x] blocked-state logic
+- [x] حذف أي منطق مكرر متبقٍ بعد نقل النسخة الأساسية أو إعادة استخدامها من core
+
+## Phase 3: حذف إرث popup editing
+
+- [x] حذف `crates/univis_editor_ui/src/node_popup.rs`
+- [x] إزالة `NodePopupState` من:
+  - [x] `NodeUiPlugin`
+  - [x] أنظمة selection
+  - [x] أنظمة state-sync
+  - [x] حالة التنظيف داخل persistence
+  - [x] اختبارات workflow وpersistence
+- [x] حذف أي حالة overlay أو surface خاصة بالـ popup ولم يعد لها دور واجهي حقيقي
+- [x] التأكد من أن إجراءات الإعدادات أصبحت الآن تشير إلى:
+  - [x] inline editing
+  - [x] inline section expand أو collapse
+  - [x] أو لا شيء، إذا صار الزر نفسه قديمًا
+
+## Phase 4: تبسيط الوصول إلى validation
+
+- [x] نقل المستهلكين إلى `GraphValidationReport` و`node diagnostics` التنفيذية مباشرة كلما كان ذلك عمليًا
+- [x] إبقاء مورد live validation والحد الأدنى فقط من glue داخل `node_graph`
+- [x] حذف واجهات التوافق التي تعيد فقط تغليف نتائج validation القادمة من core
+- [x] تدقيق persistence وUI والاختبارات بحثًا عن أي وصول قديم من نمط `Vec<GraphValidationIssue>`
+- [x] تفضيل مسار تحقق واحد عبر:
+  - [x] editor
+  - [x] persistence
+  - [x] runtime
+
+## Phase 5: حسم حدود cache داخل ECS
+
+- [x] توضيح ذلك في الكود والأسماء: `GraphNode.values` هي بيانات projection
+- [x] تدقيق الأنظمة التي تقرأ `GraphNode.values` لاتخاذ القرار
+- [x] نقل قراءات القرار إلى:
+  - [x] `AuthoredNodeInputs`
+  - [x] `ExecutableGraph`
+- [x] إبقاء إسقاطات ECS فقط عندما تكون مطلوبة لأجل:
   - [x] rendering
-  - [x] UI
-- [x] جعل runtime الأعلى:
-  - [x] adapter فوق core
+  - [x] widgets
+  - [x] debug أو inspector output
+- [x] إعادة تسمية helpers أو الحقول إذا لزم الأمر لتقليل الغموض
 
-## Phase 7: ربط validation بالتنفيذ
+## Phase 6: تنظيف persistence وapply
 
-- [x] جعل `validation_report` جزءًا من build readiness
-- [x] ربط:
-  - [x] blocked node diagnostics ← validation causes
-  - [x] topology ← seed لترتيب التنفيذ
-- [x] تمكين core من الإجابة عن:
-  - [x] هل graph قابلة للتنفيذ؟
-  - [x] ما هي النود المحجوبة؟
-  - [x] لماذا هي محجوبة؟
+- [x] إزالة افتراضات التنظيف الخاصة بالـ popup من مسارات persistence
+- [x] إعادة استخدام document signatures وvalidation reports من المصادر الموحدة فقط
+- [x] تدقيق فروع load وapply التي ما زالت موجودة فقط لأجل التوافق المرحلي
+- [x] الإبقاء على هجرة save-file القديمة فقط حيث ما زالت تخدم payloads قديمة فعلًا
+- [x] حذف الفروع التي أصبحت قديمة بعد توحيد runtime التنفيذي
 
-## Phase 8: نموذج الأداء
+## Phase 7: تضييق السطح العام وحذف الكود الميت
 
-- [x] إنشاء ملف: `docs/graph-core-performance-model.md`
-- [x] تعريف:
-  - [x] ما يُخزن دائمًا في `ExecutableGraph`
-  - [x] ما يُعاد بناؤه فقط عند تغير البنية
-  - [x] ما الذي يسبب dirty
-  - [x] متى تعتبر outputs متغيرة
-  - [x] تكلفة العمليات الأساسية
-- [x] تحديد:
-  - [x] متى نعيد build
-  - [x] متى نعيد execution
+- [x] حذف exports وwrappers وhelpers غير المستخدمة
+- [x] تقليم prelude exports التي لم تعد تمثل المعمارية المعتمدة
+- [x] حذف الإشارات التوثيقية القديمة إلى الأنظمة المحذوفة
+- [x] إعادة كتابة الاختبارات الخاصة بطبقات التوافق المحذوفة أو حذفها
+- [x] إبقاء الـ public API المتبقية صغيرة ومقصودة
 
-## Phase 9: اختبارات التنفيذ
+## Phase 8: تغطية الانحدار للشكل الجديد
 
-- [x] اختبار:
-  - [x] build من document
-  - [x] direct linking
-  - [x] node diagnostics
-  - [x] dirty propagation
-  - [x] disabled nodes
-  - [x] blocked nodes
-  - [x] partial execution
-  - [x] unchanged output short-circuit
+- [x] إضافة اختبارات موجّهة لـ:
+  - [x] قراءة runtime لحقيقة التنفيذ مباشرة من `ExecutableGraph`
+  - [x] scene outputs من دون `GraphResolvedInputs`
+  - [x] UI diagnostics من دون `GraphConnectivityIndex`
+  - [x] تشغيل editor وpersistence من دون موارد popup
+  - [x] انتقال تعديل authored input عبر التنفيذ حتى الواجهة أو world state
+- [x] إبقاء الاختبارات متمحورة حول الضمانات المعمارية، لا مجرد smoke behavior
 
 ## صيانة الوثائق
 
-- [ ] إبقاء `docs/roadmap.ar.md` و`docs/roadmap.md` متطابقتين في الترتيب والمضمون
-- [ ] إبقاء القرارات المعتمدة في أعلى الخارطة محدثة عند أي تغيير في التنفيذ
+- [x] إبقاء `docs/roadmap.ar.md` و`docs/roadmap.md` متطابقتين في الترتيب والمضمون
+- [x] تحديث `changelog.md` مع هبوط كل مرحلة من مراحل التنظيف
+- [x] مراجعة الوثائق المساندة وأرشفة ما تغطيه هذه الخارطة بالكامل فقط

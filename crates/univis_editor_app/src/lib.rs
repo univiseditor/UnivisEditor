@@ -17,12 +17,6 @@ use univis_editor_workflows::GraphAssetWorkflowPlugin;
 use univis_node_graph::node_registry::NodeRegistryPlugin;
 
 pub mod prelude {
-    pub use univis_editor_persistence::prelude::*;
-    pub use univis_editor_runtime::prelude::*;
-    pub use univis_editor_ui::prelude::*;
-    #[allow(unused_imports)]
-    pub use univis_node_graph::prelude::*;
-
     pub use crate::NodeGraphPlugin;
 }
 

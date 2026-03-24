@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use univis_editor_commands::GraphCommandRequest;
 use univis_editor_ui::prelude::GraphCamera;
+use univis_graph_core::prelude::validate_graph_document;
 use univis_node_graph::prelude::*;
 
 use crate::format::{
     GraphSaveMetaV1, ParsedGraphDocument, PreparedGraphWrite, parse_graph_document_payload,
-    parse_graph_save_metadata, prepare_graph_document_write_with_meta_and_issue_count,
+    parse_graph_save_metadata, prepare_graph_document_write_with_meta_and_validation_report,
     serialize_graph_document,
 };
 
@@ -91,20 +92,22 @@ pub(super) fn handle_save_graph_requests_system(
             &live_document.document,
         ) {
             Ok(prepared) => {
-                runtime.last_saved_document_signature = Some(prepared.document_signature);
+                runtime.last_saved_document_signature =
+                    Some(prepared.document_signature.clone());
                 runtime.dirty = false;
                 runtime.initialized = true;
                 runtime.autosave_elapsed_secs = 0.0;
                 runtime.open_confirm_until_secs = None;
                 runtime.requires_resave_after_migration = false;
 
-                if prepared.validation_issue_count > 0 {
+                if prepared.validation_issue_count() > 0 {
                     set_persistence_status(
                         &mut status,
                         GraphPersistenceStatusSeverity::Warning,
                         format!(
                             "Graph saved to {} with {} validation issue(s).",
-                            path, prepared.validation_issue_count
+                            path,
+                            prepared.validation_issue_count()
                         ),
                         time.elapsed_secs_f64(),
                         settings.status_duration_secs,
@@ -240,7 +243,7 @@ pub(super) fn handle_load_graph_requests_system(
             return;
         }
     };
-    let validation_report = validate_graph_document_report(&save_file, &registry);
+    let validation_report = validate_graph_document(&save_file, registry.core_registry());
     if validation_report.has_errors() {
         warn!(
             "Loaded graph document {} with {} validation issue(s)",
@@ -406,16 +409,16 @@ pub(super) fn autosave_dirty_graph_system(
                 Ok(backup_path) => {
                     set_persistence_status(
                         &mut status,
-                        if prepared.validation_issue_count > 0 {
+                        if prepared.validation_issue_count() > 0 {
                             GraphPersistenceStatusSeverity::Warning
                         } else {
                             GraphPersistenceStatusSeverity::Info
                         },
-                        if prepared.validation_issue_count > 0 {
+                        if prepared.validation_issue_count() > 0 {
                             format!(
                                 "Autosaved graph to {} with {} validation issue(s).",
                                 backup_path.display(),
-                                prepared.validation_issue_count
+                                prepared.validation_issue_count()
                             )
                         } else {
                             format!("Autosaved graph to {}", backup_path.display())
@@ -484,17 +487,17 @@ fn persist_graph_to_path(
 ) -> Result<PreparedGraphWrite, String> {
     let document = build_graph_document(q_connections, q_nodes, q_camera, source_document);
     let existing_meta = load_existing_graph_save_meta(path).unwrap_or_default();
-    let validation_issue_count =
+    let validation_report =
         if graph_document_signature(&document)? == graph_document_signature(source_document)? {
-            live_validation.report.issue_count()
+            live_validation.report.clone()
         } else {
-            validate_graph_document_report(&document, registry).issue_count()
+            validate_graph_document(&document, registry.core_registry())
         };
-    let prepared = prepare_graph_document_write_with_meta_and_issue_count(
+    let prepared = prepare_graph_document_write_with_meta_and_validation_report(
         document,
         pretty_json,
         existing_meta,
-        validation_issue_count,
+        validation_report,
     )?;
     write_graph_payload(path, &prepared.payload)?;
     Ok(prepared)
@@ -518,11 +521,9 @@ fn build_graph_document(
             entity,
             definition_id: node.definition_id.clone(),
             position: [transform.translation.x, transform.translation.y],
-            inputs: authored_inputs
-                .map(|inputs| inputs.values.clone())
-                .unwrap_or_else(|| node.values.inputs.clone()),
-            input_count: node.values.inputs.len(),
-            output_count: node.values.outputs.len(),
+            inputs: graph_node_authored_inputs_for_snapshot(node, authored_inputs),
+            input_count: node.input_projection_len(),
+            output_count: node.output_projection_len(),
             selected: selected.is_some(),
         });
     }

@@ -1,5 +1,5 @@
 //! Graph interaction systems split by editing responsibility.
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::ecs::relationship::Relationship;
 use bevy::prelude::*;
 use univis_ui::prelude::*;

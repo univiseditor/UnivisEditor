@@ -3,8 +3,8 @@ use std::any::Any;
 
 use crate::scene_support::{
     apply_resolved_transform, base_entity_or_empty, entity_extension_input, fallback_transform,
-    finish_entity_process, missing_entity_input, popup_bool, popup_color, popup_float,
-    popup_string, pure_entity_requirement_token, resolve_transform, scene_entity_input,
+    finish_entity_process, inline_bool, inline_color, inline_float, inline_string,
+    missing_entity_input, pure_entity_requirement_token, resolve_transform, scene_entity_input,
     scene_entity_output, transform_fallback_inputs, transform_override_input,
 };
 use bevy::prelude::*;
@@ -146,7 +146,7 @@ impl NodeDefinition for VisibilityNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![entity_extension_input(), popup_bool("Visible", true)]
+        vec![entity_extension_input(), inline_bool("Visible", true)]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
@@ -209,8 +209,8 @@ impl NodeDefinition for AnchorNode {
     fn inputs(&self) -> Vec<PortDefinition> {
         vec![
             entity_extension_input(),
-            popup_float("Ax", 0.0, 0.1, Some(-1.0), Some(1.0)),
-            popup_float("Ay", 0.0, 0.1, Some(-1.0), Some(1.0)),
+            inline_float("Ax", 0.0, 0.1, Some(-1.0), Some(1.0)),
+            inline_float("Ay", 0.0, 0.1, Some(-1.0), Some(1.0)),
         ]
     }
 
@@ -275,7 +275,7 @@ impl NodeDefinition for PrefabInstanceNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![popup_string("Prefab Id", "prefab_1")]
+        vec![inline_string("Prefab Id", "prefab_1")]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
@@ -337,10 +337,10 @@ impl NodeDefinition for SpriteNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_float("Width", 1.0, 0.1, Some(0.0), None),
-            popup_float("Height", 1.0, 0.1, Some(0.0), None),
-            popup_color("Color", Color::WHITE),
-            popup_string("Sprite Id", ""),
+            inline_float("Width", 1.0, 0.1, Some(0.0), None),
+            inline_float("Height", 1.0, 0.1, Some(0.0), None),
+            inline_color("Color", Color::WHITE),
+            inline_string("Sprite Id", ""),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -413,7 +413,7 @@ impl NodeDefinition for Camera2DNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_float("Zoom", 1.0, 0.1, Some(0.01), None),
+            inline_float("Zoom", 1.0, 0.1, Some(0.01), None),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -473,9 +473,9 @@ impl NodeDefinition for ScaleNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_float("Sx", 1.0, 0.1, Some(0.0), None),
-            popup_float("Sy", 1.0, 0.1, Some(0.0), None),
-            popup_float("Sz", 1.0, 0.1, Some(0.0), None),
+            inline_float("Sx", 1.0, 0.1, Some(0.0), None),
+            inline_float("Sy", 1.0, 0.1, Some(0.0), None),
+            inline_float("Sz", 1.0, 0.1, Some(0.0), None),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -546,7 +546,7 @@ impl NodeDefinition for RotationNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_float("Degrees", 0.0, 1.0, None, None),
+            inline_float("Degrees", 0.0, 1.0, None, None),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -613,7 +613,7 @@ impl NodeDefinition for ZOrderNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_float("Z", 0.0, 0.1, None, None),
+            inline_float("Z", 0.0, 0.1, None, None),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -798,7 +798,7 @@ impl NodeDefinition for GroupNode {
             transform_override_input(),
             scene_entity_input("Child A").with_description("First child entity"),
             scene_entity_input("Child B").with_description("Optional second child entity"),
-            popup_string("Name", "Group"),
+            inline_string("Name", "Group"),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs
@@ -863,7 +863,7 @@ impl NodeDefinition for NameNode {
     }
 
     fn inputs(&self) -> Vec<PortDefinition> {
-        vec![entity_extension_input(), popup_string("Name", "Entity")]
+        vec![entity_extension_input(), inline_string("Name", "Entity")]
     }
 
     fn outputs(&self) -> Vec<PortDefinition> {
@@ -918,9 +918,9 @@ impl NodeDefinition for TextNode {
         let mut inputs = vec![
             entity_extension_input(),
             transform_override_input(),
-            popup_string("Content", "Hello"),
-            popup_float("Font Size", 24.0, 1.0, Some(1.0), None),
-            popup_color("Color", Color::WHITE),
+            inline_string("Content", "Hello"),
+            inline_float("Font Size", 24.0, 1.0, Some(1.0), None),
+            inline_color("Color", Color::WHITE),
         ];
         inputs.extend(transform_fallback_inputs());
         inputs

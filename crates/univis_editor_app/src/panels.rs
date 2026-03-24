@@ -11,11 +11,12 @@ use univis_editor_runtime::{
     GraphRuntimeTraceSettings, GraphSceneOutputs,
 };
 use univis_editor_ui::prelude::{
-    GraphCamera, GraphConnectionInspectorSummary, GraphPortPreviewSummary, Selected,
+    GraphCamera, GraphConnectionInspectorSummary, GraphPortPreviewSummary,
 };
+use univis_graph_core::prelude::GraphValidationIssue;
 use univis_node_graph::prelude::{
-    GraphDocument, GraphDocumentEdge, GraphValidationIssue, LiveGraphDocumentState,
-    LiveGraphValidationState, NodeRegistry,
+    GraphDocument, GraphDocumentEdge, LiveGraphDocumentState, LiveGraphValidationState,
+    NodeRegistry, Selected,
 };
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

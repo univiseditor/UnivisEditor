@@ -7,6 +7,7 @@ edition = "2024"
 bevy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+univis_graph_core = { path = "../univis_graph_core" }
 univis_node_graph = { path = "../univis_node_graph" }
 univis_scene = { path = "../univis_scene" }
 univis_editor_commands = { path = "../univis_editor_commands" }

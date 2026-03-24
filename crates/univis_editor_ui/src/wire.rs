@@ -1,8 +1,9 @@
 //! Wire interaction and rendering systems.
 use std::collections::HashSet;
 
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::prelude::*;
+use univis_graph_core::prelude::{connected_input_mask, would_create_cycle};
 use univis_node_graph::node_definition::NodeGraphSchema;
 use univis_ui::prelude::*;
 
@@ -146,7 +147,7 @@ pub fn wire_drag_feedback_system(
         return;
     };
     let source_connected_inputs = connected_input_mask(
-        from_graph_node.values.inputs.len(),
+        from_definition.inputs().len(),
         q_connections
             .iter()
             .filter(|link| link.to_node == from_node)

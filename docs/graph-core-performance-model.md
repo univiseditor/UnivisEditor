@@ -1,5 +1,7 @@
 # Graph Core Performance Model
 
+Status: Active supporting note. Kept alongside the cleanup roadmap because it locks rebuild, rerun, and dirty-propagation expectations that are still useful after implementation.
+
 ## Purpose
 
 This note defines the intended performance model for `univis_graph_core` after

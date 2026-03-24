@@ -22,7 +22,7 @@ pub struct ResolvedTransform {
     pub source: TransformResolutionSource,
 }
 
-pub fn popup_float(
+pub fn inline_float(
     name: impl Into<String>,
     default: f64,
     step: f64,
@@ -31,7 +31,7 @@ pub fn popup_float(
 ) -> PortDefinition {
     let mut port = PortDefinition::input_float(name)
         .with_default(NodeValue::float(default))
-        .editable_in_popup()
+        .editable_inline()
         .with_ui_step(step);
 
     if let Some(min) = min {
@@ -44,10 +44,10 @@ pub fn popup_float(
     port
 }
 
-pub fn popup_bool(name: impl Into<String>, default: bool) -> PortDefinition {
+pub fn inline_bool(name: impl Into<String>, default: bool) -> PortDefinition {
     PortDefinition::input_bool(name)
         .with_default(NodeValue::bool(default))
-        .editable_in_popup()
+        .editable_inline()
 }
 
 pub fn scene_entity_requirement(component_key: &str) -> PortRequirement {
@@ -82,13 +82,13 @@ pub fn transform_override_input() -> PortDefinition {
 
 pub fn transform_fallback_inputs() -> [PortDefinition; 7] {
     [
-        popup_float("Tx", 0.0, 1.0, None, None),
-        popup_float("Ty", 0.0, 1.0, None, None),
-        popup_float("Tz", 0.0, 1.0, None, None),
-        popup_float("Rotation", 0.0, 1.0, None, None),
-        popup_float("Sx", 1.0, 0.1, Some(0.0), None),
-        popup_float("Sy", 1.0, 0.1, Some(0.0), None),
-        popup_float("Sz", 1.0, 0.1, Some(0.0), None),
+        inline_float("Tx", 0.0, 1.0, None, None),
+        inline_float("Ty", 0.0, 1.0, None, None),
+        inline_float("Tz", 0.0, 1.0, None, None),
+        inline_float("Rotation", 0.0, 1.0, None, None),
+        inline_float("Sx", 1.0, 0.1, Some(0.0), None),
+        inline_float("Sy", 1.0, 0.1, Some(0.0), None),
+        inline_float("Sz", 1.0, 0.1, Some(0.0), None),
     ]
 }
 
@@ -206,16 +206,16 @@ pub fn missing_entity_input(ctx: &mut ProcessContext, index: usize) -> ProcessRe
     ProcessResult::MissingInput(index)
 }
 
-pub fn popup_color(name: impl Into<String>, default: Color) -> PortDefinition {
+pub fn inline_color(name: impl Into<String>, default: Color) -> PortDefinition {
     PortDefinition::new(name, ValueType::Color)
         .with_default(NodeValue::Color(default))
-        .editable_in_popup()
+        .editable_inline()
         .with_ui_step(0.05)
         .with_ui_range(0.0, 1.0)
 }
 
-pub fn popup_string(name: impl Into<String>, default: impl Into<String>) -> PortDefinition {
+pub fn inline_string(name: impl Into<String>, default: impl Into<String>) -> PortDefinition {
     PortDefinition::input_string(name)
         .with_default(NodeValue::string(default))
-        .editable_in_popup()
+        .editable_inline()
 }

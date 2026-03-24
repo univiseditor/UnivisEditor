@@ -1,14 +1,17 @@
 use bevy::prelude::*;
-use univis_editor_runtime::{GraphResolvedInputs, NodeRuntimePlugin};
+use univis_editor_runtime::{GraphExecutableRuntimeState, GraphSceneOutputs, NodeRuntimePlugin};
 use univis_node_graph::prelude::{
     AuthoredNodeInputs, GraphConnection, GraphNode, NodeCategory, NodeDefinition, NodeId,
     NodeRegistry, NodeRegistryPlugin, PortDefinition, ProcessContext, ProcessResult,
 };
 use univis_node_graph::value::{NodeValue, ValueType};
+use univis_scene::EntityValue;
 
 struct RuntimeSourceNode;
 struct RuntimeSinkNode;
 struct RuntimeVisualSourceNode;
+struct RuntimeEntitySourceNode;
+struct RuntimeSceneSinkNode;
 
 #[derive(Component)]
 struct TestVisualValue(String);
@@ -107,9 +110,60 @@ impl NodeDefinition for RuntimeVisualSourceNode {
         let Some(mut node) = world.get_mut::<GraphNode>(node_entity) else {
             return;
         };
-        if node.values.outputs.first() != Some(&next_value) {
-            node.values.outputs[0] = next_value;
-        }
+        let _ = node.set_output_projection(0, next_value);
+    }
+}
+
+impl NodeDefinition for RuntimeEntitySourceNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("tests/runtime_entity_source")
+    }
+
+    fn display_name(&self) -> &str {
+        "Runtime Entity Source"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new("Tests")
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::new("Output", ValueType::Any)]
+    }
+
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        ctx.set(0, NodeValue::entity(EntityValue::named("Runtime Root")));
+        ProcessResult::Success
+    }
+}
+
+impl NodeDefinition for RuntimeSceneSinkNode {
+    fn id(&self) -> NodeId {
+        NodeId::new("scene/scene")
+    }
+
+    fn display_name(&self) -> &str {
+        "Runtime Scene Sink"
+    }
+
+    fn category(&self) -> NodeCategory {
+        NodeCategory::new("Tests")
+    }
+
+    fn inputs(&self) -> Vec<PortDefinition> {
+        vec![PortDefinition::new("Entity", ValueType::Any)]
+    }
+
+    fn outputs(&self) -> Vec<PortDefinition> {
+        vec![]
+    }
+
+    fn process(&self, _ctx: &mut ProcessContext) -> ProcessResult {
+        ProcessResult::Success
     }
 }
 
@@ -150,15 +204,15 @@ fn runtime_propagates_values_through_graph_connections() {
     {
         let world = app.world_mut();
         let mut source_ref = world.entity_mut(source);
-        source_ref
+        let next_value = NodeValue::string("hello");
+        let _ = source_ref
             .get_mut::<GraphNode>()
             .expect("source node")
-            .values
-            .inputs[0] = NodeValue::string("hello");
+            .set_input_projection(0, next_value.clone());
         source_ref
             .get_mut::<AuthoredNodeInputs>()
             .expect("authored inputs")
-            .values[0] = NodeValue::string("hello");
+            .values[0] = next_value;
     }
 
     app.update();
@@ -166,18 +220,87 @@ fn runtime_propagates_values_through_graph_connections() {
 
     let world = app.world_mut();
     let sink_node = world.entity(sink).get::<GraphNode>().expect("sink node");
-    assert_eq!(
-        sink_node.values.outputs.first(),
-        Some(&NodeValue::string("hello"))
-    );
+    assert_eq!(sink_node.output_projection(0), Some(&NodeValue::string("hello")));
 
     let resolved = world
-        .resource::<GraphResolvedInputs>()
-        .by_node
-        .get(&sink)
-        .cloned()
+        .resource::<GraphExecutableRuntimeState>()
+        .node_for_entity(sink)
+        .map(|node| node.resolved_inputs().to_vec())
         .expect("resolved inputs for sink");
     assert_eq!(resolved.first(), Some(&NodeValue::string("hello")));
+}
+
+#[test]
+fn runtime_uses_authored_inputs_as_execution_truth_even_when_projection_is_stale() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<NodeRegistry>()
+        .add_plugins(NodeRuntimePlugin);
+
+    {
+        let mut registry = app.world_mut().resource_mut::<NodeRegistry>();
+        registry.register(RuntimeSourceNode);
+        registry.register(RuntimeSinkNode);
+    }
+
+    let source = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/runtime_source"), 1, 1))
+        .id();
+    let sink = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("tests/runtime_sink"), 1, 1))
+        .id();
+
+    app.world_mut().spawn(GraphConnection {
+        from_node: source,
+        from_index: 0,
+        to_node: sink,
+        to_index: 0,
+        from_port: Entity::PLACEHOLDER,
+        to_port: Entity::PLACEHOLDER,
+    });
+
+    app.update();
+
+    {
+        let world = app.world_mut();
+        let mut source_ref = world.entity_mut(source);
+        let _ = source_ref
+            .get_mut::<GraphNode>()
+            .expect("source node")
+            .set_input_projection(0, NodeValue::string("stale-projection"));
+        source_ref
+            .get_mut::<AuthoredNodeInputs>()
+            .expect("authored inputs")
+            .values[0] = NodeValue::string("authoritative-authored");
+    }
+
+    app.update();
+    app.update();
+
+    let world = app.world();
+    let executable_state = world.resource::<GraphExecutableRuntimeState>();
+    let executable_source = executable_state
+        .node_for_entity(source)
+        .expect("source executable node");
+    let executable_sink = executable_state
+        .node_for_entity(sink)
+        .expect("sink executable node");
+    let sink_projection = world.entity(sink).get::<GraphNode>().expect("sink node");
+
+    assert_eq!(
+        executable_source.authored_inputs().first(),
+        Some(&NodeValue::string("authoritative-authored"))
+    );
+    assert_eq!(
+        executable_sink.resolved_inputs().first(),
+        Some(&NodeValue::string("authoritative-authored"))
+    );
+    assert_eq!(
+        sink_projection.output_projection(0),
+        Some(&NodeValue::string("authoritative-authored"))
+    );
 }
 
 #[test]
@@ -221,15 +344,14 @@ fn runtime_propagates_external_output_changes_through_graph_connections() {
         .entity_mut(source)
         .get_mut::<GraphNode>()
         .expect("visual source node")
-        .values
-        .outputs[0] = NodeValue::string("from-visual");
+        .set_output_projection(0, NodeValue::string("from-visual"));
 
     app.update();
 
     let world = app.world_mut();
     let sink_node = world.entity(sink).get::<GraphNode>().expect("sink node");
     assert_eq!(
-        sink_node.values.outputs.first(),
+        sink_node.output_projection(0),
         Some(&NodeValue::string("from-visual"))
     );
 }
@@ -284,7 +406,52 @@ fn runtime_propagates_polled_visual_changes_through_graph_connections() {
     let world = app.world_mut();
     let sink_node = world.entity(sink).get::<GraphNode>().expect("sink node");
     assert_eq!(
-        sink_node.values.outputs.first(),
+        sink_node.output_projection(0),
         Some(&NodeValue::string("from-widget"))
     );
+}
+
+#[test]
+fn scene_outputs_are_collected_from_executable_graph_scene_sinks() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<NodeRegistry>()
+        .add_plugins(NodeRuntimePlugin);
+
+    {
+        let mut registry = app.world_mut().resource_mut::<NodeRegistry>();
+        registry.register(RuntimeEntitySourceNode);
+        registry.register(RuntimeSceneSinkNode);
+    }
+
+    let source = app
+        .world_mut()
+        .spawn(GraphNode::new(
+            NodeId::new("tests/runtime_entity_source"),
+            0,
+            1,
+        ))
+        .id();
+    let sink = app
+        .world_mut()
+        .spawn(GraphNode::new(NodeId::new("scene/scene"), 1, 0))
+        .id();
+
+    app.world_mut().spawn(GraphConnection {
+        from_node: source,
+        from_index: 0,
+        to_node: sink,
+        to_index: 0,
+        from_port: Entity::PLACEHOLDER,
+        to_port: Entity::PLACEHOLDER,
+    });
+
+    app.update();
+    app.update();
+
+    let scene_outputs = app.world().resource::<GraphSceneOutputs>();
+    assert_eq!(scene_outputs.sinks.len(), 1);
+    assert_eq!(scene_outputs.sinks[0].node_entity, sink);
+    assert!(scene_outputs.sinks[0].scene.is_some());
+    assert!(scene_outputs.sinks[0].signature.is_some());
 }

@@ -1,8 +1,8 @@
 use bevy::prelude::Color;
-use univis_node_graph::document::{GraphDocument, GraphDocumentEdge, GraphDocumentNode};
-use univis_node_graph::graph_validation::{
+use univis_graph_core::prelude::{
     GraphValidationIssueKind, analyze_graph_topology, validate_graph_document, would_create_cycle,
 };
+use univis_node_graph::document::{GraphDocument, GraphDocumentEdge, GraphDocumentNode};
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, PortRequirement, ProcessContext,
     ProcessResult,
@@ -175,11 +175,11 @@ fn validate_graph_document_flags_missing_definitions_and_incompatible_ports() {
         ..GraphDocument::default()
     };
 
-    let issues = validate_graph_document(&document, &registry);
-    assert!(issues.iter().any(|issue| {
+    let report = validate_graph_document(&document, registry.core_registry());
+    assert!(report.issues.iter().any(|issue| {
         issue.kind == GraphValidationIssueKind::MissingNodeDefinition && issue.node_ids == vec![3]
     }));
-    assert!(issues.iter().any(|issue| {
+    assert!(report.issues.iter().any(|issue| {
         issue.kind == GraphValidationIssueKind::IncompatiblePortTypes
             && issue.node_ids == vec![1, 2]
     }));
@@ -220,13 +220,14 @@ fn validate_graph_document_flags_unsatisfied_requirements_and_cycles() {
         ..GraphDocument::default()
     };
 
-    let issues = validate_graph_document(&document, &registry);
-    assert!(issues.iter().any(|issue| {
+    let report = validate_graph_document(&document, registry.core_registry());
+    assert!(report.issues.iter().any(|issue| {
         issue.kind == GraphValidationIssueKind::UnsatisfiedPortRequirement
             && issue.node_ids == vec![1, 3]
     }));
     assert!(
-        issues
+        report
+            .issues
             .iter()
             .any(|issue| issue.kind == GraphValidationIssueKind::CycleDetected)
     );

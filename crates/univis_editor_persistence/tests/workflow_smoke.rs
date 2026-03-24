@@ -7,12 +7,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use univis_editor_commands::{GraphCommandRequest, GraphCommandsPlugin};
 use univis_editor_persistence::format::{parse_graph_document_payload, parse_graph_save_metadata};
 use univis_editor_persistence::graph_persistence::{
-    GraphHistoryState, GraphPersistencePlugin, GraphPersistenceRuntimeState,
+    ApplyGraphDocumentRequest, GraphHistoryState, GraphPersistencePlugin, GraphPersistenceRuntimeState,
     GraphPersistenceSettings, GraphPersistenceStatus, GraphPersistenceStatusSeverity,
 };
 use univis_editor_ui::menu::ContextMenuState;
 use univis_editor_ui::menu::execute_spawn_node_commands_system;
-use univis_editor_ui::node_popup::NodePopupState;
+use univis_editor_ui::overlay::GraphOverlayState;
 use univis_editor_ui::prelude::sync_live_graph_document_state;
 use univis_node_graph::commands::GraphMutationTracker;
 use univis_node_graph::document::{
@@ -96,7 +96,6 @@ fn build_test_app() -> App {
         .init_resource::<DragState>()
         .init_resource::<WireConnectionState>()
         .init_resource::<ContextMenuState>()
-        .init_resource::<NodePopupState>()
         .add_plugins(GraphCommandsPlugin)
         .add_plugins(GraphPersistencePlugin)
         .add_systems(Update, execute_spawn_node_commands_system)
@@ -113,6 +112,36 @@ fn build_test_app() -> App {
         settings.autosave_enabled = false;
         settings.file_path = unique_temp_path("default").to_string_lossy().into_owned();
         settings.backup_directory = unique_temp_path("backups").to_string_lossy().into_owned();
+    }
+
+    app.update();
+    app
+}
+
+fn build_persistence_only_app() -> App {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<NodeRegistry>()
+        .add_plugins(GraphCommandsPlugin)
+        .add_plugins(GraphPersistencePlugin)
+        .add_systems(PostUpdate, sync_live_graph_document_state);
+
+    {
+        let mut registry = app.world_mut().resource_mut::<NodeRegistry>();
+        registry.register(WorkflowValueNode);
+        registry.register(WorkflowSinkNode);
+    }
+
+    {
+        let mut settings = app.world_mut().resource_mut::<GraphPersistenceSettings>();
+        settings.autosave_enabled = false;
+        settings.file_path = unique_temp_path("persistence_only")
+            .to_string_lossy()
+            .into_owned();
+        settings.backup_directory = unique_temp_path("persistence_only_backups")
+            .to_string_lossy()
+            .into_owned();
     }
 
     app.update();
@@ -313,6 +342,46 @@ fn smoke_save_and_load_round_trip_restores_graph_shape_and_values() {
     );
 
     let _ = fs::remove_file(save_path);
+}
+
+#[test]
+fn smoke_apply_graph_document_works_without_optional_ui_state_resources() {
+    let mut app = build_persistence_only_app();
+
+    let document = GraphDocument {
+        nodes: vec![GraphDocumentNode {
+            id: 1,
+            definition_id: NodeId::new("tests/workflow_value"),
+            position: [32.0, 48.0],
+            inputs: vec![NodeValue::string("from-apply")],
+            input_count: 1,
+            output_count: 1,
+        }],
+        ..GraphDocument::default()
+    };
+
+    app.world_mut()
+        .write_message(ApplyGraphDocumentRequest {
+            document,
+            source_label: "apply without ui state".to_string(),
+            track_for_undo: false,
+            validation_report: None,
+        })
+        .expect("apply request should enqueue");
+    update_frames(&mut app, 2);
+
+    assert_eq!(node_count(&mut app), 1);
+    assert!(!app.world().contains_resource::<ContextMenuState>());
+    assert!(!app.world().contains_resource::<GraphOverlayState>());
+    assert!(!app.world().contains_resource::<DragState>());
+    assert!(!app.world().contains_resource::<WireConnectionState>());
+
+    let live_document = &app.world().resource::<LiveGraphDocumentState>().document;
+    assert_eq!(live_document.nodes.len(), 1);
+    assert_eq!(
+        live_document.nodes[0].inputs.first(),
+        Some(&NodeValue::string("from-apply"))
+    );
 }
 
 #[test]

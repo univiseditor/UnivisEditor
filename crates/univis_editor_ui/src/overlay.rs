@@ -11,5 +11,4 @@ pub enum GraphOverlaySurface {
     None,
     ContextMenu,
     CanvasIslandMenu,
-    NodePopup,
 }

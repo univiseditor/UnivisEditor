@@ -2,8 +2,8 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use std::collections::HashMap;
 use univis_editor_ui::menu::ContextMenuState;
-use univis_editor_ui::node_popup::NodePopupState;
 use univis_editor_ui::overlay::{GraphOverlayState, GraphOverlaySurface};
+use univis_graph_core::prelude::GraphValidationReport;
 use univis_node_graph::prelude::*;
 
 const DEFAULT_SAVE_FILE_PATH: &str = "assets/graphs/current_graph.json";
@@ -219,22 +219,28 @@ impl PendingGraphLoad {
 
 #[derive(SystemParam)]
 pub(super) struct MutationUiState<'w> {
-    pub drag_state: ResMut<'w, DragState>,
-    pub wire_state: ResMut<'w, WireConnectionState>,
-    pub popup: ResMut<'w, NodePopupState>,
-    pub menu_state: ResMut<'w, ContextMenuState>,
-    pub overlay: ResMut<'w, GraphOverlayState>,
+    pub drag_state: Option<ResMut<'w, DragState>>,
+    pub wire_state: Option<ResMut<'w, WireConnectionState>>,
+    pub menu_state: Option<ResMut<'w, ContextMenuState>>,
+    pub overlay: Option<ResMut<'w, GraphOverlayState>>,
 }
 
 impl MutationUiState<'_> {
     pub fn reset(&mut self) {
-        self.drag_state.clear();
-        self.wire_state.clear();
-        self.popup.open_for = None;
-        self.menu_state.is_open = false;
-        self.menu_state.mode = univis_editor_ui::menu::ContextMenuMode::Actions;
-        self.menu_state.search_query.clear();
-        self.overlay.active_surface = GraphOverlaySurface::None;
+        if let Some(drag_state) = &mut self.drag_state {
+            drag_state.clear();
+        }
+        if let Some(wire_state) = &mut self.wire_state {
+            wire_state.clear();
+        }
+        if let Some(menu_state) = &mut self.menu_state {
+            menu_state.is_open = false;
+            menu_state.mode = univis_editor_ui::menu::ContextMenuMode::Actions;
+            menu_state.search_query.clear();
+        }
+        if let Some(overlay) = &mut self.overlay {
+            overlay.active_surface = GraphOverlaySurface::None;
+        }
     }
 }
 

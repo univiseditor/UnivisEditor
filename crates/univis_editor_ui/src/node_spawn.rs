@@ -1,6 +1,6 @@
 //! Helpers for spawning graph nodes from registered definitions.
 use crate::inline_editors::{default_inline_section_state, spawn_inline_input_panel};
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::prelude::*;
 use std::sync::Arc;
 use univis_ui::prelude::*;
@@ -82,8 +82,11 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
 
     let definition_clone = Arc::clone(definition);
     let node_width = 300.0;
+    let authored_inputs = AuthoredNodeInputs {
+        values: authored_inputs.clone(),
+    };
     let mut graph_node = GraphNode::new(definition_id, input_count, output_count);
-    graph_node.values.inputs = authored_inputs.clone();
+    graph_node.sync_input_projection_from_authored(&authored_inputs);
 
     let root_entity = commands
         .spawn((
@@ -93,9 +96,7 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
             },
             Transform::from_xyz(position.x, position.y, 1.0),
             graph_node,
-            AuthoredNodeInputs {
-                values: authored_inputs.clone(),
-            },
+            authored_inputs.clone(),
             UInteraction::default(),
             UBorder {
                 color: Color::WHITE,
@@ -251,7 +252,7 @@ pub fn spawn_node_from_definition_entity<'w, 's>(
                                 main,
                                 root_entity,
                                 &inputs,
-                                &authored_inputs,
+                                &authored_inputs.values,
                             );
 
                             if !has_custom_body && !spawned_inputs {
@@ -333,9 +334,11 @@ pub fn spawn_placeholder_node_entity<'w, 's>(
         .collect();
     let title = format!("Missing: {}", original_definition_id);
     let node_width = 270.0;
-    let authored_inputs = vec![NodeValue::None; input_count];
+    let authored_inputs = AuthoredNodeInputs {
+        values: vec![NodeValue::None; input_count],
+    };
     let mut graph_node = GraphNode::new(original_definition_id.clone(), input_count, output_count);
-    graph_node.values.inputs = authored_inputs.clone();
+    graph_node.sync_input_projection_from_authored(&authored_inputs);
 
     let root_entity = commands
         .spawn((
@@ -345,9 +348,7 @@ pub fn spawn_placeholder_node_entity<'w, 's>(
             },
             Transform::from_xyz(position.x, position.y, 1.0),
             graph_node,
-            AuthoredNodeInputs {
-                values: authored_inputs,
-            },
+            authored_inputs,
             MissingNodePlaceholder {
                 original_definition_id: original_definition_id.clone(),
             },
@@ -515,12 +516,15 @@ pub fn spawn_component_mode_node_entity<'w, 's>(
         vec![]
     };
     let authored_inputs = authored_inputs_from_ports(&inputs);
+    let authored_inputs = AuthoredNodeInputs {
+        values: authored_inputs,
+    };
     let mut graph_node = GraphNode::new(
         NodeId::new(format!("component/{}", component_kind)),
         inputs.len(),
         outputs.len(),
     );
-    graph_node.values.inputs = authored_inputs.clone();
+    graph_node.sync_input_projection_from_authored(&authored_inputs);
 
     let root_entity = commands
         .spawn((
@@ -530,9 +534,7 @@ pub fn spawn_component_mode_node_entity<'w, 's>(
             },
             Transform::from_xyz(position.x, position.y, 1.0),
             graph_node,
-            AuthoredNodeInputs {
-                values: authored_inputs,
-            },
+            authored_inputs,
             UInteraction::default(),
             UBorder {
                 color: Color::WHITE,

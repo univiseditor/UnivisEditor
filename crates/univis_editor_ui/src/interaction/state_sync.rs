@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::prelude::*;
 
 pub fn sanitize_graph_editor_state(
@@ -6,8 +6,6 @@ pub fn sanitize_graph_editor_state(
     mut live_document: ResMut<LiveGraphDocumentState>,
     mut drag_state: ResMut<DragState>,
     mut wire_state: ResMut<WireConnectionState>,
-    mut popup: ResMut<NodePopupState>,
-    mut overlay: ResMut<GraphOverlayState>,
     q_nodes: Query<(), With<GraphNode>>,
     q_connections: Query<(Entity, &GraphConnection)>,
     q_ports: Query<&GraphPort>,
@@ -57,14 +55,6 @@ pub fn sanitize_graph_editor_state(
             .is_some_and(|entity| q_ports.get(entity).is_err())
     {
         wire_state.clear();
-    }
-
-    if popup.open_for.is_some_and(|entity| !node_exists(entity)) {
-        popup.open_for = None;
-    }
-
-    if overlay.active_surface == GraphOverlaySurface::NodePopup && popup.open_for.is_none() {
-        overlay.active_surface = GraphOverlaySurface::None;
     }
 }
 
@@ -166,11 +156,9 @@ pub fn sync_live_graph_document_state(
             entity,
             definition_id: node.definition_id.clone(),
             position: [transform.translation.x, transform.translation.y],
-            inputs: authored_inputs
-                .map(|inputs| inputs.values.clone())
-                .unwrap_or_else(|| node.values.inputs.clone()),
-            input_count: node.values.inputs.len(),
-            output_count: node.values.outputs.len(),
+            inputs: graph_node_authored_inputs_for_snapshot(node, authored_inputs),
+            input_count: node.input_projection_len(),
+            output_count: node.output_projection_len(),
             selected: selected.is_some(),
         });
     }

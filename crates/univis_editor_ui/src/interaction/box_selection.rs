@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;

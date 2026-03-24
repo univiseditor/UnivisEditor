@@ -1,44 +1,20 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use univis_graph_core::prelude::{ExecutableGraph, ExecutableNodeBuildStatus};
+use univis_graph_core::prelude::{ExecutableGraph, ExecutableNode};
 use univis_node_graph::prelude::{
     AuthoredNodeInputs, GraphConnection, GraphDocumentEdgeSnapshot, GraphDocumentNodeSnapshot,
     GraphNode, NodeRegistry, NodeValue, build_graph_document_from_snapshots,
+    graph_node_authored_inputs_for_snapshot,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GraphInputSource {
-    pub source_node: Entity,
-    pub source_index: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GraphOutputTarget {
-    pub target_node: Entity,
-    pub target_index: usize,
-}
-
-#[derive(Resource, Debug, Clone, Default)]
-pub struct GraphConnectivityIndex {
-    pub incoming_by_node_input: HashMap<Entity, Vec<Option<GraphInputSource>>>,
-    pub outgoing_by_node_output: HashMap<Entity, Vec<Vec<GraphOutputTarget>>>,
-    pub ordered_nodes: Vec<Entity>,
-    pub blocked_nodes: Vec<Entity>,
-}
-
-#[derive(Resource, Debug, Clone, Default)]
-pub struct GraphResolvedInputs {
-    pub by_node: HashMap<Entity, Vec<NodeValue>>,
-}
-
 #[derive(Component, Debug, Clone, Default)]
-pub struct NodeInputSignature {
+pub(crate) struct NodeInputSignature {
     pub inputs: Vec<NodeValue>,
 }
 
 #[derive(Component, Debug, Clone, Default)]
-pub struct NodeOutputSignature {
+pub(crate) struct NodeOutputSignature {
     pub outputs: Vec<NodeValue>,
 }
 
@@ -57,13 +33,27 @@ impl GraphExecutableRuntimeState {
     pub fn entity_for_node_id(&self, node_id: u64) -> Option<Entity> {
         self.node_id_to_entity.get(&node_id).copied()
     }
+
+    pub fn node_for_entity(&self, entity: Entity) -> Option<&ExecutableNode<NodeValue>> {
+        self.node_id_for_entity(entity)
+            .and_then(|node_id| self.graph.get_node(node_id))
+    }
+
+    pub fn blocked_entities(&self) -> Vec<Entity> {
+        let mut blocked = self
+            .graph
+            .blocked_node_ids()
+            .into_iter()
+            .filter_map(|node_id| self.entity_for_node_id(node_id))
+            .collect::<Vec<_>>();
+        blocked.sort_by_key(|entity| entity.index());
+        blocked
+    }
 }
 
-pub fn rebuild_connectivity_index_system(
+pub fn rebuild_executable_runtime_state_system(
     registry: Res<NodeRegistry>,
     mut state: ResMut<GraphExecutableRuntimeState>,
-    mut index: ResMut<GraphConnectivityIndex>,
-    mut resolved_inputs: ResMut<GraphResolvedInputs>,
     q_nodes: Query<(Entity, &GraphNode, Option<&AuthoredNodeInputs>)>,
     q_added_nodes: Query<Entity, Added<GraphNode>>,
     q_connections: Query<&GraphConnection>,
@@ -88,11 +78,9 @@ pub fn rebuild_connectivity_index_system(
             |(entity, node, authored_inputs)| GraphDocumentNodeSnapshot {
                 entity,
                 definition_id: node.definition_id.clone(),
-                inputs: authored_inputs
-                    .map(|inputs| inputs.values.clone())
-                    .unwrap_or_else(|| node.values.inputs.clone()),
-                input_count: node.values.inputs.len(),
-                output_count: node.values.outputs.len(),
+                inputs: graph_node_authored_inputs_for_snapshot(node, authored_inputs),
+                input_count: node.input_projection_len(),
+                output_count: node.output_projection_len(),
                 position: [0.0, 0.0],
                 selected: false,
             },
@@ -116,96 +104,4 @@ pub fn rebuild_connectivity_index_system(
     state.graph = build_report.graph;
     state.entity_to_node_id = build.entity_to_node_id;
     state.node_id_to_entity = build.node_id_to_entity;
-
-    project_runtime_resources(&state, &mut index, &mut resolved_inputs);
-}
-
-pub fn project_runtime_resources(
-    state: &GraphExecutableRuntimeState,
-    index: &mut GraphConnectivityIndex,
-    resolved_inputs: &mut GraphResolvedInputs,
-) {
-    index.incoming_by_node_input.clear();
-    index.outgoing_by_node_output.clear();
-    index.ordered_nodes.clear();
-    index.blocked_nodes.clear();
-    resolved_inputs.by_node.clear();
-
-    let mut node_ids = state
-        .graph
-        .execution_order()
-        .iter()
-        .copied()
-        .filter(|node_id| state.graph.contains_node(*node_id))
-        .collect::<Vec<_>>();
-    if node_ids.is_empty() {
-        node_ids = state
-            .graph
-            .iter_nodes()
-            .map(|node| node.node_id())
-            .collect::<Vec<_>>();
-        node_ids.sort_unstable();
-    }
-
-    for node_id in node_ids {
-        let Some(node) = state.graph.get_node(node_id) else {
-            continue;
-        };
-        let Some(entity) = state.entity_for_node_id(node_id) else {
-            continue;
-        };
-
-        let mut incoming = vec![None; node.input_count()];
-        for (input_index, slot) in incoming.iter_mut().enumerate() {
-            *slot = node
-                .links()
-                .incoming_links_for_input(input_index)
-                .and_then(|links| links.first())
-                .and_then(|link| {
-                    state
-                        .entity_for_node_id(link.node_id)
-                        .map(|source_node| GraphInputSource {
-                            source_node,
-                            source_index: link.port_index,
-                        })
-                });
-        }
-
-        let mut outgoing = vec![Vec::new(); node.output_count()];
-        for (output_index, targets) in outgoing.iter_mut().enumerate() {
-            if let Some(links) = node.links().outgoing_links_for_output(output_index) {
-                for link in links {
-                    if let Some(target_node) = state.entity_for_node_id(link.node_id) {
-                        targets.push(GraphOutputTarget {
-                            target_node,
-                            target_index: link.port_index,
-                        });
-                    }
-                }
-            }
-        }
-
-        index.incoming_by_node_input.insert(entity, incoming);
-        index.outgoing_by_node_output.insert(entity, outgoing);
-        index.ordered_nodes.push(entity);
-        if node.is_blocked() {
-            index.blocked_nodes.push(entity);
-        }
-        resolved_inputs
-            .by_node
-            .insert(entity, node.resolved_inputs().to_vec());
-    }
-
-    for (node_id, diagnostic) in state.graph.node_diagnostics() {
-        if diagnostic.status != ExecutableNodeBuildStatus::Blocked {
-            continue;
-        }
-        if let Some(entity) = state.entity_for_node_id(*node_id) {
-            if !index.blocked_nodes.contains(&entity) {
-                index.blocked_nodes.push(entity);
-            }
-        }
-    }
-
-    index.blocked_nodes.sort_by_key(|entity| entity.index());
 }

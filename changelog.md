@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-24
+
+- Completed the cleanup-roadmap closeout for `Phase 5`, `Phase 6`, and `Phase 7`, then closed documentation maintenance by aligning the Arabic and English roadmaps, refreshing supporting architecture notes, and recording the active status of the notes that remain useful beside the roadmap.
+- Clarified ECS projection boundaries around `GraphNode.values` by introducing explicit projection helpers in `univis_node_graph`, moving authored-input decisions toward `AuthoredNodeInputs` and executable-state reads toward `ExecutableGraph`, and updating spawn, inline-edit, persistence, runtime, and workflow paths to stop treating projected input buffers as authored truth.
+- Cleaned persistence and apply flows so `GraphPersistencePlugin` no longer assumes UI overlay resources must exist, while save and autosave now carry full `GraphValidationReport` data through `PreparedGraphWrite` and derive validation counts from the unified report instead of passing separate counts through the write path.
+- Tightened the remaining public surface by internalizing runtime-only cache components such as `NodeInputSignature` and `NodeOutputSignature`, shrinking `univis_editor_runtime::prelude`, splitting `univis_editor_ui` into a narrow public prelude plus an internal one for crate-local convenience, and reducing `univis_editor_app::prelude` to the plugin-oriented API the crate is meant to expose.
+- Refreshed documentation maintenance for the cleanup roadmap by updating `docs/connection-architecture.md` to describe the `ExecutableGraph`-centered model and inline editing, recording active status on the supporting architecture notes, and keeping the Arabic and English cleanup roadmaps aligned through completed phases and maintenance checklists.
+- Updated shipped examples to the current public API by switching them away from broad app preludes, replacing retired popup-edit helpers with inline-edit helpers, and aligning the visual example with the current `sync_visual` and projection-helper model.
+
 ## 2026-03-20
 
 - Moved the remaining runtime execution path onto `ExecutableGraph` by introducing a `GraphExecutableRuntimeState` adapter resource in `univis_editor_runtime`, rebuilding executable state from the authored graph snapshot, and projecting compatibility resources such as connectivity and resolved-input caches from the core execution graph instead of maintaining a second execution engine in Bevy systems.

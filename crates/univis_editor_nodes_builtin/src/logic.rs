@@ -1,6 +1,6 @@
 //! Built-in logic nodes.
 use bevy::prelude::*;
-use univis_node_graph::live_graph::GraphNode;
+use univis_node_graph::live_graph::AuthoredNodeInputs;
 use univis_node_graph::node_definition::{
     NodeCategory, NodeDefinition, NodeId, PortDefinition, ProcessContext, ProcessResult,
 };
@@ -335,7 +335,7 @@ impl NodeDefinition for NoteNode {
             PortDefinition::input_string("Text")
                 .with_default(NodeValue::string("Write a note..."))
                 .with_description("Visible note text")
-                .editable_in_popup(),
+                .editable_inline(),
         ]
     }
 
@@ -384,8 +384,8 @@ impl NodeDefinition for NoteNode {
 
     fn sync_visual(&self, world: &mut World, node_entity: Entity) {
         let note_text = world
-            .get::<GraphNode>(node_entity)
-            .and_then(|node| node.values.inputs.first())
+            .get::<AuthoredNodeInputs>(node_entity)
+            .and_then(|inputs| inputs.values.first())
             .and_then(NodeValue::as_string)
             .map(str::trim)
             .filter(|text| !text.is_empty())

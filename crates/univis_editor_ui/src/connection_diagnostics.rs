@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
-use univis_editor_runtime::{GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity};
+use univis_editor_runtime::{
+    GraphExecutableRuntimeState, GraphRuntimeDiagnostics, GraphRuntimeIssueSeverity,
+};
 use univis_node_graph::prelude::{
     AuthoredNodeInputs, ConnectionPolicy, GraphConnection, GraphNode, GraphPort, InputConnection,
     LiveGraphDocumentState, NodeRegistry, NodeValue, OutputConnections, PortType,
@@ -73,8 +75,8 @@ pub fn refresh_connection_ui_diagnostics_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     registry: Res<NodeRegistry>,
     live_document: Res<LiveGraphDocumentState>,
+    executable_state: Res<GraphExecutableRuntimeState>,
     runtime_diagnostics: Res<GraphRuntimeDiagnostics>,
-    resolved_inputs: Res<univis_editor_runtime::GraphResolvedInputs>,
     wire_feedback: Res<WireDragFeedback>,
     q_nodes: Query<(Entity, &GraphNode, Option<&AuthoredNodeInputs>)>,
     q_ports: Query<(
@@ -109,10 +111,9 @@ pub fn refresh_connection_ui_diagnostics_system(
     diagnostics.hovered_port = hovered_port;
     diagnostics.focused_port = hovered_port.or(diagnostics.pinned_port);
 
-    let blocked_nodes = runtime_diagnostics
-        .blocked_nodes
-        .iter()
-        .copied()
+    let blocked_nodes = executable_state
+        .blocked_entities()
+        .into_iter()
         .collect::<HashSet<_>>();
     let mut issue_by_node = HashMap::<Entity, (UiDiagnosticSeverity, String)>::new();
     let mut missing_inputs = HashSet::<(Entity, usize)>::new();
@@ -160,10 +161,9 @@ pub fn refresh_connection_ui_diagnostics_system(
 
         let info = match port.port_type {
             PortType::Input => {
-                let resolved_preview = resolved_inputs
-                    .by_node
-                    .get(&port.node_entity)
-                    .and_then(|values| values.get(port.index))
+                let resolved_preview = executable_state
+                    .node_for_entity(port.node_entity)
+                    .and_then(|node| node.resolved_inputs().get(port.index))
                     .and_then(preview_if_present);
                 let authored_preview = q_nodes
                     .get(port.node_entity)
@@ -252,10 +252,9 @@ pub fn refresh_connection_ui_diagnostics_system(
                 }
             }
             PortType::Output => {
-                let preview = q_nodes
-                    .get(port.node_entity)
-                    .ok()
-                    .and_then(|(_, node, _)| node.values.outputs.get(port.index))
+                let preview = executable_state
+                    .node_for_entity(port.node_entity)
+                    .and_then(|node| node.outputs().get(port.index))
                     .and_then(preview_if_present);
                 let target_count = output_connections
                     .map(|connections| connections.targets.len())
@@ -305,10 +304,9 @@ pub fn refresh_connection_ui_diagnostics_system(
             .get(&connection.to_node)
             .cloned()
             .unwrap_or_else(|| format!("Node#{:?}", connection.to_node));
-        let preview = q_nodes
-            .get(connection.from_node)
-            .ok()
-            .and_then(|(_, node, _)| node.values.outputs.get(connection.from_index))
+        let preview = executable_state
+            .node_for_entity(connection.from_node)
+            .and_then(|node| node.outputs().get(connection.from_index))
             .and_then(preview_if_present);
 
         let info = if blocked_nodes.contains(&connection.from_node)

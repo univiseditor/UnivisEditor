@@ -1,5 +1,7 @@
 # Save File Format
 
+Status: Active supporting note. Kept alongside the cleanup roadmap because it documents the persisted save-file contract rather than the runtime-cleanup sequence.
+
 ## Summary
 
 UnivisEditor now saves graphs through a versioned save-file envelope instead of writing raw

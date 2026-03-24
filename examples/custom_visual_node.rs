@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use univis_editor_app::{NodeGraphPlugin, prelude::*};
+use univis_editor_app::NodeGraphPlugin;
+use univis_editor_ui::prelude::{
+    GraphCamera, InfiniteGrid, InfiniteGridPlugin, InfiniteGridSettings,
+};
 use univis_node_graph::register_node;
 use univis_node_graph::{
     node_definition::{
@@ -64,7 +67,7 @@ impl NodeDefinition for HeatPreviewNode {
         vec![
             PortDefinition::input_float("Temperature C")
                 .with_default(NodeValue::float(22.0))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(1.0)
                 .with_ui_range(-20.0, 100.0),
         ]
@@ -142,7 +145,7 @@ impl NodeDefinition for HeatPreviewNode {
                 });
 
             panel.spawn(UTextLabel {
-                text: "Edit from gear popup".to_string(),
+                text: "Edit inline on the node".to_string(),
                 font_size: 10.0,
                 color: Color::srgb(0.62, 0.75, 0.95),
                 autosize: false,
@@ -150,50 +153,48 @@ impl NodeDefinition for HeatPreviewNode {
             });
         });
     }
-}
+    fn sync_visual(&self, world: &mut World, node_entity: Entity) {
+        let temp = world
+            .get::<GraphNode>(node_entity)
+            .and_then(|node| {
+                node.output_projection(0)
+                    .or_else(|| node.input_projection(0))
+                    .and_then(NodeValue::as_float)
+            })
+            .unwrap_or(22.0) as f32;
 
-pub fn heat_preview_visual_hook(world: &mut World, node_entity: Entity) {
-    let temp = world
-        .get::<GraphNode>(node_entity)
-        .and_then(|node| {
-            node.values
-                .get_output(0)
-                .or_else(|| node.values.get_input(0))
-                .and_then(NodeValue::as_float)
-        })
-        .unwrap_or(22.0) as f32;
+        let normalized = ((temp + 20.0) / 120.0).clamp(0.0, 1.0);
+        let heat_color = Color::srgb(
+            0.2 + normalized * 0.75,
+            0.25 + normalized * 0.2,
+            1.0 - normalized * 0.8,
+        );
 
-    let normalized = ((temp + 20.0) / 120.0).clamp(0.0, 1.0);
-    let heat_color = Color::srgb(
-        0.2 + normalized * 0.75,
-        0.25 + normalized * 0.2,
-        1.0 - normalized * 0.8,
-    );
-
-    let mut text_query = world.query::<(&HeatValueLabel, &mut UTextLabel)>();
-    for (marker, mut label) in text_query.iter_mut(world) {
-        if marker.node_entity == node_entity {
-            label.text = format!("{temp:.1} C");
+        let mut text_query = world.query::<(&HeatValueLabel, &mut UTextLabel)>();
+        for (marker, mut label) in text_query.iter_mut(world) {
+            if marker.node_entity == node_entity {
+                label.text = format!("{temp:.1} C");
+            }
         }
-    }
 
-    let mut bar_query = world.query::<(&HeatBarFill, &mut UNode)>();
-    for (marker, mut fill) in bar_query.iter_mut(world) {
-        if marker.node_entity == node_entity {
-            fill.width = UVal::Percent(normalized.clamp(0.04, 1.0));
-            fill.background_color = heat_color;
+        let mut bar_query = world.query::<(&HeatBarFill, &mut UNode)>();
+        for (marker, mut fill) in bar_query.iter_mut(world) {
+            if marker.node_entity == node_entity {
+                fill.width = UVal::Percent(normalized.clamp(0.04, 1.0));
+                fill.background_color = heat_color;
+            }
         }
-    }
 
-    let mut panel_query = world.query::<(&HeatPanel, &mut UNode)>();
-    for (marker, mut panel) in panel_query.iter_mut(world) {
-        if marker.node_entity == node_entity {
-            panel.background_color = Color::srgba(
-                0.06 + normalized * 0.18,
-                0.09 + normalized * 0.08,
-                0.16 + normalized * 0.04,
-                1.0,
-            );
+        let mut panel_query = world.query::<(&HeatPanel, &mut UNode)>();
+        for (marker, mut panel) in panel_query.iter_mut(world) {
+            if marker.node_entity == node_entity {
+                panel.background_color = Color::srgba(
+                    0.06 + normalized * 0.18,
+                    0.09 + normalized * 0.08,
+                    0.16 + normalized * 0.04,
+                    1.0,
+                );
+            }
         }
     }
 }

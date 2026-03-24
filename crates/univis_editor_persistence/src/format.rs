@@ -2,12 +2,12 @@ use bevy::prelude::{Color, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::time::{SystemTime, UNIX_EPOCH};
+use univis_graph_core::prelude::{GraphValidationReport, validate_graph_document};
 use univis_node_graph::document::{
     GRAPH_DOCUMENT_VERSION, GraphDocument, GraphDocumentCameraState, GraphDocumentEdge,
     GraphDocumentNode, GraphDocumentPrefab, GraphDocumentSubgraph, GraphDocumentViewState,
     graph_document_signature,
 };
-use univis_node_graph::graph_validation::validate_graph_document_report;
 use univis_node_graph::node_definition::NodeId;
 use univis_node_graph::node_registry::NodeRegistry;
 use univis_node_graph::value::NodeValue;
@@ -31,7 +31,13 @@ pub struct PreparedGraphWrite {
     pub document: GraphDocument,
     pub payload: String,
     pub document_signature: String,
-    pub validation_issue_count: usize,
+    pub validation_report: GraphValidationReport,
+}
+
+impl PreparedGraphWrite {
+    pub fn validation_issue_count(&self) -> usize {
+        self.validation_report.issue_count()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -674,7 +680,7 @@ fn finalize_prepared_graph_write(
     document: GraphDocument,
     pretty_json: bool,
     meta: GraphSaveMetaV1,
-    validation_issue_count: usize,
+    validation_report: GraphValidationReport,
 ) -> Result<PreparedGraphWrite, String> {
     let payload = serialize_save_file(
         &GraphSaveFileV1::from_document_with_meta(&document, meta.refreshed()),
@@ -686,17 +692,17 @@ fn finalize_prepared_graph_write(
         document,
         payload,
         document_signature,
-        validation_issue_count,
+        validation_report,
     })
 }
 
-pub(crate) fn prepare_graph_document_write_with_meta_and_issue_count(
+pub(crate) fn prepare_graph_document_write_with_meta_and_validation_report(
     document: GraphDocument,
     pretty_json: bool,
     meta: GraphSaveMetaV1,
-    validation_issue_count: usize,
+    validation_report: GraphValidationReport,
 ) -> Result<PreparedGraphWrite, String> {
-    finalize_prepared_graph_write(document, pretty_json, meta, validation_issue_count)
+    finalize_prepared_graph_write(document, pretty_json, meta, validation_report)
 }
 
 pub(crate) fn prepare_graph_document_write_with_meta(
@@ -705,8 +711,8 @@ pub(crate) fn prepare_graph_document_write_with_meta(
     registry: &NodeRegistry,
     meta: GraphSaveMetaV1,
 ) -> Result<PreparedGraphWrite, String> {
-    let validation_issue_count = validate_graph_document_report(&document, registry).issue_count();
-    finalize_prepared_graph_write(document, pretty_json, meta, validation_issue_count)
+    let validation_report = validate_graph_document(&document, registry.core_registry());
+    finalize_prepared_graph_write(document, pretty_json, meta, validation_report)
 }
 
 pub fn prepare_graph_document_write(

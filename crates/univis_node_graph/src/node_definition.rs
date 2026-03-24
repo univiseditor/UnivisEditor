@@ -98,7 +98,7 @@ pub struct PortDefinition {
     #[serde(default)]
     pub connection_policy: ConnectionPolicy,
     #[serde(default)]
-    pub editable_in_popup: bool,
+    pub editable_inline: bool,
     #[serde(default)]
     pub ui_step: Option<f64>,
     #[serde(default)]
@@ -117,7 +117,7 @@ impl PortDefinition {
             color: None,
             requirement: None,
             connection_policy: ConnectionPolicy::Single,
-            editable_in_popup: false,
+            editable_inline: false,
             ui_step: None,
             ui_min: None,
             ui_max: None,
@@ -154,8 +154,8 @@ impl PortDefinition {
         self
     }
 
-    pub fn editable_in_popup(mut self) -> Self {
-        self.editable_in_popup = true;
+    pub fn editable_inline(mut self) -> Self {
+        self.editable_inline = true;
         self
     }
 

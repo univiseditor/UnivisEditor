@@ -5,7 +5,7 @@ use crate::interaction::{
     graph_editing_enabled, interaction_is_pointer_active, pointer_target_node,
 };
 use crate::node_spawn::node_icon_for_definition;
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui::UiTargetCamera;

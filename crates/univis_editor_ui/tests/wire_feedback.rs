@@ -1,14 +1,18 @@
 use bevy::prelude::*;
+use univis_editor_runtime::NodeRuntimePlugin;
 use univis_editor_ui::prelude::{
-    GraphConnectionUiDiagnostics, WireDragFeedback, wire_complete_system, wire_drag_feedback_system,
+    GraphConnectionUiDiagnostics, WireDragFeedback, refresh_connection_ui_diagnostics_system,
+    sync_live_graph_document_state, wire_complete_system, wire_drag_feedback_system,
 };
 use univis_node_graph::commands::GraphMutationTracker;
+use univis_node_graph::document::LiveGraphDocumentState;
 use univis_node_graph::pin::{GraphConnection, WireConnectionState};
 use univis_node_graph::prelude::{
     GraphNode, GraphPort, InputConnection, NodeCategory, NodeDefinition, NodeId, NodeRegistry,
     OutputConnections, PortDefinition, PortType, ProcessContext, ProcessResult,
 };
-use univis_node_graph::value::ValueType;
+use univis_editor_ui::interaction::sync_port_connection_caches_system;
+use univis_node_graph::value::{NodeValue, ValueType};
 use univis_ui::prelude::UInteraction;
 
 struct WireSourceNode;
@@ -36,7 +40,8 @@ impl NodeDefinition for WireSourceNode {
         vec![PortDefinition::new("Output", ValueType::String)]
     }
 
-    fn process(&self, _ctx: &mut ProcessContext) -> ProcessResult {
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        ctx.set(0, NodeValue::string("wire-source"));
         ProcessResult::Success
     }
 }
@@ -88,7 +93,10 @@ impl NodeDefinition for WireChainNode {
         vec![PortDefinition::new("Output", ValueType::String)]
     }
 
-    fn process(&self, _ctx: &mut ProcessContext) -> ProcessResult {
+    fn process(&self, ctx: &mut ProcessContext) -> ProcessResult {
+        if let Some(value) = ctx.inputs.first().cloned() {
+            ctx.set(0, value);
+        }
         ProcessResult::Success
     }
 }
@@ -98,14 +106,23 @@ fn build_test_app() -> App {
     app.add_plugins(MinimalPlugins)
         .init_resource::<NodeRegistry>()
         .init_resource::<ButtonInput<MouseButton>>()
+        .init_resource::<LiveGraphDocumentState>()
         .init_resource::<WireConnectionState>()
         .init_resource::<WireDragFeedback>()
         .init_resource::<GraphConnectionUiDiagnostics>()
         .init_resource::<GraphMutationTracker>()
+        .add_plugins(NodeRuntimePlugin)
         .add_systems(
             Update,
-            (wire_drag_feedback_system, wire_complete_system).chain(),
+            (
+                wire_drag_feedback_system,
+                wire_complete_system,
+                sync_port_connection_caches_system,
+                refresh_connection_ui_diagnostics_system,
+            )
+                .chain(),
         );
+    app.add_systems(PostUpdate, sync_live_graph_document_state);
 
     {
         let mut registry = app.world_mut().resource_mut::<NodeRegistry>();
@@ -237,6 +254,56 @@ fn wire_feedback_accepts_valid_hovered_input_and_pins_it_on_connect() {
         world.resource::<GraphConnectionUiDiagnostics>().pinned_port,
         Some(sink_port)
     );
+}
+
+#[test]
+fn connection_diagnostics_follow_runtime_state_without_legacy_connectivity_index() {
+    let mut app = build_test_app();
+
+    let source = app
+        .world_mut()
+        .spawn((
+            GraphNode::new(NodeId::new("tests/wire_source"), 0, 1),
+            Transform::default(),
+        ))
+        .id();
+    let sink = app
+        .world_mut()
+        .spawn((
+            GraphNode::new(NodeId::new("tests/wire_sink"), 1, 0),
+            Transform::default(),
+        ))
+        .id();
+    let source_port = spawn_output_port(app.world_mut(), source);
+    let sink_port = spawn_input_port(app.world_mut(), sink, false);
+    let connection = app
+        .world_mut()
+        .spawn(GraphConnection {
+            from_node: source,
+            from_index: 0,
+            to_node: sink,
+            to_index: 0,
+            from_port: source_port,
+            to_port: sink_port,
+        })
+        .id();
+
+    app.update();
+    app.update();
+
+    let diagnostics = app.world().resource::<GraphConnectionUiDiagnostics>();
+    let port_info = diagnostics
+        .ports
+        .get(&sink_port)
+        .expect("input port diagnostics should exist");
+    let connection_info = diagnostics
+        .connections
+        .get(&connection)
+        .expect("connection diagnostics should exist");
+
+    assert_eq!(port_info.status, "Connected");
+    assert_eq!(connection_info.severity, univis_editor_ui::connection_diagnostics::UiDiagnosticSeverity::Active);
+    assert!(connection_info.preview.is_some());
 }
 
 #[test]

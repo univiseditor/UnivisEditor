@@ -4,6 +4,7 @@ use univis_editor_ui::node_spawn::{
     spawn_node_from_definition_entity, spawn_placeholder_node_entity,
 };
 use univis_editor_ui::prelude::GraphCamera;
+use univis_graph_core::prelude::{GraphValidationReport, validate_graph_document};
 use univis_node_graph::prelude::*;
 
 use super::state::{
@@ -40,7 +41,7 @@ pub(super) fn handle_apply_graph_document_requests_system(
 
     let validation_report = request
         .validation_report
-        .unwrap_or_else(|| validate_graph_document_report(&request.document, &registry));
+        .unwrap_or_else(|| validate_graph_document(&request.document, registry.core_registry()));
     let validation_issue_count = validation_report.issue_count();
     live_validation.set_report_for_document(&request.document, validation_report.clone());
     live_document.document.prefabs = request.document.prefabs.clone();
@@ -181,17 +182,12 @@ pub(super) fn finalize_pending_graph_load_system(
         };
 
         for (index, value) in inputs.into_iter().enumerate() {
-            if index < node.values.inputs.len() {
-                node.values.inputs[index] = value.clone();
-                if let Some(authored_inputs) = authored_inputs.as_deref_mut() {
-                    if authored_inputs.values.len() < node.values.inputs.len() {
-                        authored_inputs
-                            .values
-                            .resize(node.values.inputs.len(), NodeValue::None);
-                    }
-                    authored_inputs.values[index] = value;
-                }
-            }
+            let _ = set_graph_node_authored_input_value(
+                &mut node,
+                authored_inputs.as_deref_mut(),
+                index,
+                value,
+            );
         }
     }
 

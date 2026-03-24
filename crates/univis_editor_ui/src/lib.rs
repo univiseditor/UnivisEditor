@@ -3,7 +3,6 @@ pub mod editor;
 pub mod inline_editors;
 pub mod interaction;
 pub mod menu;
-pub mod node_popup;
 pub mod node_spawn;
 pub mod overlay;
 pub mod widgets;
@@ -14,7 +13,6 @@ use connection_diagnostics::*;
 use inline_editors::*;
 use interaction::*;
 use menu::*;
-use node_popup::NodePopupState;
 use node_spawn::sync_node_icon_font_glyphs_system;
 use univis_ui::prelude::{UnivisTextFieldPlugin, UnivisUiPlugin};
 use wire::*;
@@ -55,7 +53,6 @@ impl Plugin for NodeUiPlugin {
             .add_message::<DeleteSelectedNodesRequest>()
             .init_resource::<GraphEditingUiActivation>()
             .init_resource::<overlay::GraphOverlayState>()
-            .init_resource::<NodePopupState>()
             .init_resource::<ContextMenuState>()
             .add_plugins(editor::EditorPlugin)
             .add_systems(
@@ -138,21 +135,25 @@ impl Plugin for NodeUiPlugin {
     }
 }
 
-pub mod prelude {
+pub(crate) mod internal_prelude {
     pub use univis_editor_commands::prelude::*;
-    pub use univis_editor_runtime::prelude::*;
     pub use univis_node_graph::prelude::*;
 
+    pub use crate::DeleteSelectedNodesRequest;
+    pub use crate::GraphEditingUiActivation;
+    pub use crate::connection_diagnostics::*;
+    pub use crate::editor::*;
+    pub use crate::node_spawn::*;
+    pub use crate::overlay::*;
+}
+
+pub mod prelude {
     pub use crate::DeleteSelectedNodesRequest;
     pub use crate::GraphEditingUiActivation;
     pub use crate::NodeUiPlugin;
     pub use crate::connection_diagnostics::*;
     pub use crate::editor::*;
-    pub use crate::interaction::*;
-    pub use crate::menu::*;
-    pub use crate::node_popup::*;
-    pub use crate::node_spawn::*;
-    pub use crate::overlay::*;
+    pub use crate::interaction::sync_live_graph_document_state;
     pub use crate::widgets::prelude::*;
     pub use crate::wire::*;
 }

@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use univis_editor_app::{NodeGraphPlugin, prelude::*};
+use univis_editor_app::NodeGraphPlugin;
+use univis_editor_ui::prelude::{
+    GraphCamera, InfiniteGrid, InfiniteGridPlugin, InfiniteGridSettings,
+};
 
 fn main() {
     App::new()

@@ -150,17 +150,13 @@ pub(super) fn spawn_prefab_instance_nodes_system(
 
             let prefab_value = NodeValue::string(prefab_id.clone());
 
-            let Some(mut node) = entity.get_mut::<GraphNode>() else {
-                return;
-            };
-            if let Some(input) = node.values.inputs.first_mut() {
-                *input = prefab_value.clone();
+            if let Some(mut authored_inputs) = entity.get_mut::<AuthoredNodeInputs>() {
+                authored_inputs.ensure_len(1);
+                authored_inputs.values[0] = prefab_value.clone();
             }
 
-            if let Some(mut authored_inputs) = entity.get_mut::<AuthoredNodeInputs>() {
-                if let Some(input) = authored_inputs.values.first_mut() {
-                    *input = prefab_value;
-                }
+            if let Some(mut node) = entity.get_mut::<GraphNode>() {
+                let _ = node.set_input_projection(0, prefab_value);
             }
         });
         mutation_tracker.mark_changed();

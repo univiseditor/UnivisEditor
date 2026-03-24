@@ -1,5 +1,5 @@
 use crate::node_spawn::{NodeIconFontGlyph, PortLabel};
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::prelude::*;
 use univis_ui::prelude::*;
 
@@ -199,31 +199,7 @@ pub(crate) fn set_node_input_value(
     input_index: usize,
     value: NodeValue,
 ) -> bool {
-    if input_index >= graph_node.values.inputs.len() {
-        return false;
-    }
-
-    let graph_unchanged = graph_node.values.inputs.get(input_index) == Some(&value);
-    let authored_unchanged = authored_inputs
-        .as_ref()
-        .and_then(|inputs| inputs.values.get(input_index))
-        == Some(&value);
-    if graph_unchanged && authored_unchanged {
-        return false;
-    }
-
-    graph_node.values.inputs[input_index] = value.clone();
-
-    if let Some(authored_inputs) = authored_inputs {
-        if authored_inputs.values.len() < graph_node.values.inputs.len() {
-            authored_inputs
-                .values
-                .resize(graph_node.values.inputs.len(), NodeValue::None);
-        }
-        authored_inputs.values[input_index] = value;
-    }
-
-    true
+    set_graph_node_authored_input_value(graph_node, authored_inputs, input_index, value)
 }
 
 pub(crate) fn handle_inline_node_section_toggle_system(
@@ -462,7 +438,7 @@ pub(crate) fn sync_inline_widgets_from_authored_inputs_system(
 }
 
 fn supports_inline_editor(port_def: &PortDefinition) -> bool {
-    port_def.editable_in_popup
+    port_def.editable_inline
         && matches!(
             port_def.value_type,
             ValueType::Float

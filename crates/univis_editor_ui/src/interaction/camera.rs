@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::internal_prelude::*;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 

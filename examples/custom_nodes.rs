@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use serde_json::json;
-use univis_editor_app::{NodeGraphPlugin, prelude::*};
+use univis_editor_app::NodeGraphPlugin;
+use univis_editor_ui::prelude::{
+    GraphCamera, InfiniteGrid, InfiniteGridPlugin, InfiniteGridSettings,
+};
 use univis_node_graph::register_node;
 use univis_node_graph::{
     node_definition::{
@@ -34,11 +37,11 @@ impl NodeDefinition for FloatBiasNode {
         vec![
             PortDefinition::input_float("Value")
                 .with_default(NodeValue::float(1.0))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(0.1),
             PortDefinition::input_float("Bias")
                 .with_default(NodeValue::float(0.5))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(0.1),
         ]
     }
@@ -78,13 +81,13 @@ impl NodeDefinition for ToggleTextNode {
         vec![
             PortDefinition::input_bool("Use A")
                 .with_default(NodeValue::bool(true))
-                .editable_in_popup(),
+                .editable_inline(),
             PortDefinition::input_string("Text A")
                 .with_default(NodeValue::string("Hello"))
-                .editable_in_popup(),
+                .editable_inline(),
             PortDefinition::input_string("Text B")
                 .with_default(NodeValue::string("World"))
-                .editable_in_popup(),
+                .editable_inline(),
         ]
     }
 
@@ -127,15 +130,15 @@ impl NodeDefinition for Vec3BuildNode {
         vec![
             PortDefinition::input_float("X")
                 .with_default(NodeValue::float(0.0))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(1.0),
             PortDefinition::input_float("Y")
                 .with_default(NodeValue::float(0.0))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(1.0),
             PortDefinition::input_float("Z")
                 .with_default(NodeValue::float(0.0))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(1.0),
         ]
     }
@@ -176,10 +179,10 @@ impl NodeDefinition for ColorBoostNode {
         vec![
             PortDefinition::new("Base", ValueType::Color)
                 .with_default(NodeValue::color(0.6, 0.7, 0.9, 1.0))
-                .editable_in_popup(),
+                .editable_inline(),
             PortDefinition::input_float("Gain")
                 .with_default(NodeValue::float(1.2))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(0.1)
                 .with_ui_min(0.0)
                 .with_ui_max(2.0),
@@ -232,15 +235,15 @@ impl NodeDefinition for MaterialMetalNode {
         vec![
             PortDefinition::input_float("Density")
                 .with_default(NodeValue::float(7.8))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(0.1),
             PortDefinition::input_float("Thickness")
                 .with_default(NodeValue::float(0.03))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(0.01),
             PortDefinition::new("Name", ValueType::String)
                 .with_default(NodeValue::string("Steel"))
-                .editable_in_popup(),
+                .editable_inline(),
         ]
     }
 
@@ -289,7 +292,7 @@ impl NodeDefinition for WheelPartNode {
             PortDefinition::input_tag("Metal", "material/metal"),
             PortDefinition::input_int("Spokes")
                 .with_default(NodeValue::int(5))
-                .editable_in_popup()
+                .editable_inline()
                 .with_ui_step(1.0)
                 .with_ui_min(1.0)
                 .with_ui_max(24.0),
@@ -343,7 +346,7 @@ impl NodeDefinition for PrefixTextNode {
         vec![
             PortDefinition::input_string("Text")
                 .with_default(NodeValue::string("demo"))
-                .editable_in_popup(),
+                .editable_inline(),
         ]
     }
 

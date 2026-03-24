@@ -32,8 +32,8 @@ struct TextNodeFieldWidget {
 
 fn write_single_output(world: &mut World, node_entity: Entity, value: NodeValue) {
     if let Some(mut graph_node) = world.get_mut::<GraphNode>(node_entity) {
-        if graph_node.values.outputs.len() == 1 && graph_node.values.outputs[0] != value {
-            graph_node.values.outputs[0] = value;
+        if graph_node.output_projection_len() == 1 {
+            let _ = graph_node.set_output_projection(0, value);
         }
     }
 }
